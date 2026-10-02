@@ -9,10 +9,11 @@ api_hash: "0123456789abcdef0123456789abcdef"
 # Your bot: create it in Telegram with @BotFather (/newbot) and paste the token.
 bot_token: "123456789:AAAA-your-bot-token"
 
-# When the bot collects new posts (your computer's local time).
-schedule: ["09:00", "20:00"]
+# How often the bot checks for new messages while the computer is on.
+interval_minutes: 15
 
-# How far back to look. Messages already collected are skipped anyway.
+# First read of a chat: how many days of history to take. After that only
+# messages newer than the last one seen are read (incremental).
 lookback_days: 3
 
 # Which chats to read: see telegram/channels.txt (one chat per line).

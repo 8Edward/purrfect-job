@@ -122,6 +122,7 @@ async def scan_chats(client, cfg, job_filter, state, dry_run=False):
     Returns (jobs, missing): new job posts oldest first, and channels.txt
     entries that matched no chat. Updates `state` in place.
     """
+    # lookback_days only matters for a chat read for the first time (no watermark yet).
     cutoff = datetime.now(timezone.utc) - timedelta(days=cfg.get("lookback_days", 3))
     seen_fps = set(state.get("fingerprints", []))
     last_ids = state.setdefault("last_ids", {})
@@ -141,8 +142,13 @@ async def scan_chats(client, cfg, job_filter, state, dry_run=False):
         if dialog.date and dialog.date < cutoff:
             continue  # nothing new in this chat
 
+        # Incremental load: the watermark is the last message id read in this chat. Telegram
+        # message ids only grow within a chat, so unlike timestamps nothing is skipped or
+        # re-read across clock changes or a run that crashed halfway.
         key = str(dialog.id)
         min_id = last_ids.get(key, 0)
+        if dialog.message and dialog.message.id <= min_id:
+            continue  # no new messages since the last check
         newest = min_id
         async for msg in client.iter_messages(entity, min_id=min_id):
             if msg.date < cutoff:

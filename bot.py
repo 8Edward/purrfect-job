@@ -1,7 +1,8 @@
 """Personal Telegram bot: the interface to the Telegram job collector.
 
-- Twice a day (config `schedule`) reads the chats from channels.txt with your
-  own account and sends you every new job post as a card with buttons:
+- Every `interval_minutes` (default 15) while the computer is on, reads only
+  the messages that arrived since the last check in the chats from
+  channels.txt, and alerts you with a card per new job post:
   👍 В работу  -> added to data/pipeline.md for /career-ops pipeline
   👎 Скрыть    -> logged to data/discard.log, never shown again
 - Commands: /scan /new /list /add /remove /help
@@ -27,7 +28,8 @@ BOT_SESSION = tc.TG_DIR / "bot"
 
 HELP = """<b>Бот вакансий из Telegram</b>
 
-Дважды в день я читаю чаты из списка и присылаю новые вакансии.
+Каждые 15 минут я проверяю новые сообщения в чатах из списка
+и присылаю алерт, если нашлась вакансия.
 👍 — в работу (попадёт в career-ops на оценку), 👎 — скрыть.
 
 /scan — собрать прямо сейчас
@@ -104,8 +106,8 @@ def remove_channel(arg):
 def card_text(job):
     tags = " ".join(f"#{t.replace('-', '_')}" for t in job["tags"])
     body = job["text"] if len(job["text"]) <= 1500 else job["text"][:1500] + "…"
-    head = f"<b>{html.escape(tc.guess_title(job['text']))}</b>\n💬 {html.escape(job['chat'])} · {job['date']:%d.%m %H:%M}"
-    return f"{head}\n{tags}\n\n{html.escape(body)}".replace("\n\n\n", "\n\n")
+    head = f"<b>{html.escape(tc.guess_title(job['text']), quote=False)}</b>\n💬 {html.escape(job['chat'], quote=False)} · {job['date']:%d.%m %H:%M}"
+    return f"{head}\n{tags}\n\n{html.escape(body, quote=False)}".replace("\n\n\n", "\n\n")
 
 
 def card_buttons(job, key):
@@ -126,6 +128,9 @@ class JobBot:
         self.bot.parse_mode = None  # plain text unless a call asks for html: chat names contain _ and *
         self.owner = None
         self.lock = asyncio.Lock()
+        self.last_attempt = None
+        self.failing = False
+        self.reported_missing = set()  # warn about a missing chat once, not every 15 minutes
 
     async def start(self):
         await self.user.connect()
@@ -170,32 +175,43 @@ class JobBot:
             save_inbox(inbox)
             log.info("scan: %d new job(s), %d missing chat(s)", len(jobs), len(missing))
 
+            if jobs:
+                await self.say(f"🔔 <b>Новых вакансий: {len(jobs)}</b>")
             for job in jobs:
-                await self.say(card_text(job), buttons=card_buttons(job, job_key(job)))
-            if missing:
-                names = "\n".join(f"• {html.escape(n)}" for n in missing)
+                await self.say(card_text(job), buttons=card_buttons(job, job_key(job)), silent=True)
+            if missing and (manual or set(missing) != self.reported_missing):
+                self.reported_missing = set(missing)
+                names = "\n".join(f"• {html.escape(n, quote=False)}" for n in missing)
                 await self.say(f"⚠️ Не нашёл эти чаты из списка (опечатка или ты в них не состоишь):\n{names}")
-            if jobs or manual:
-                await self.say(f"Готово: новых вакансий {len(jobs)}." if jobs else "Новых вакансий нет.")
+            if manual and not jobs:
+                await self.say("Новых вакансий нет.")
 
     async def scheduler(self):
-        slots = [datetime.strptime(t, "%H:%M").time() for t in self.cfg.get("schedule", ["09:00", "20:00"])]
-        last = tc.load_state().get("last_run")
-        if not last or datetime.now(timezone.utc) - datetime.fromisoformat(last) > timedelta(hours=12):
-            await self.safe_scan()  # computer was off at the last slot
+        """Scan every interval_minutes. Checks the wall clock once a minute instead of one long
+        sleep, so a laptop waking up from sleep scans right away rather than an interval later."""
         while True:
-            now = datetime.now()
-            upcoming = [datetime.combine(now.date() + timedelta(days=d), t) for d in (0, 1) for t in slots]
-            nxt = min(dt for dt in upcoming if dt > now)
-            await asyncio.sleep((nxt - now).total_seconds())
-            await self.safe_scan()
+            interval = timedelta(minutes=self.cfg.get("interval_minutes", 15))
+            last = tc.load_state().get("last_run")
+            due = [datetime.fromisoformat(last)] if last else []
+            if self.last_attempt:
+                due.append(self.last_attempt)  # after a failure, retry an interval later, not every minute
+            if not due or datetime.now(timezone.utc) - max(due) >= interval:
+                await self.safe_scan()
+            await asyncio.sleep(60)
 
     async def safe_scan(self, manual=False):
+        self.last_attempt = datetime.now(timezone.utc)
         try:
             await self.run_scan(manual)
         except Exception as e:
             log.exception("scan failed")
-            await self.say(f"❌ Сбор упал: {html.escape(str(e))}")
+            if manual or not self.failing:  # one alert per streak of failures
+                await self.say(f"❌ Сбор упал, попробую снова через {self.cfg.get('interval_minutes', 15)} мин: {html.escape(str(e), quote=False)}")
+            self.failing = True
+        else:
+            if self.failing:
+                await self.say("✅ Сбор снова работает.")
+            self.failing = False
 
     # ------------------------------------------------------------ handlers
 
@@ -218,7 +234,7 @@ class JobBot:
         if not chats:
             await event.respond("Список пуст. Добавь: /add @канал")
             return
-        lines = "\n".join(f"{i}. {html.escape(c)}" for i, c in enumerate(chats, 1))
+        lines = "\n".join(f"{i}. {html.escape(c, quote=False)}" for i, c in enumerate(chats, 1))
         await event.respond(f"<b>Читаю чаты:</b>\n{lines}\n\nУбрать: /remove номер", parse_mode="html")
 
     async def on_add(self, event):
