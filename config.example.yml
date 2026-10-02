@@ -9,16 +9,7 @@ api_hash: "0123456789abcdef0123456789abcdef"
 # How far back to look. Messages already collected are skipped anyway.
 lookback_days: 3
 
-# Which chats to read:
-#   all      — every group and channel you are subscribed to
-#   list     — only the chats in `include` below
-mode: all
-
-# Chat titles or @usernames. Used by mode: list.
-include: []
-
-# Chat titles or @usernames to never read (work chats, family, etc).
-exclude: []
+# Which chats to read: see telegram/channels.txt (one chat per line).
 
 # Messages shorter than this are ignored (greetings, "+", reactions).
 min_length: 120

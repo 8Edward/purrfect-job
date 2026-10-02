@@ -1,5 +1,6 @@
 """Offline checks for the job filter and pipeline formatting. Run: python telegram/test_tg_collect.py"""
 
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,5 +55,19 @@ assert line == (
     "- [ ] local:jds/tg-x.md | TG: Data / Jobs | Аналитик данных (Middle) | Remote"
     " | posted: 2026-10-02 | note: https://t.me/c/1234/42 [part-time, remote]"
 ), line
+
+
+# channels.txt parsing
+ck = tc.channel_key
+assert ck("@Data_Jobs") == "data_jobs"
+assert ck("https://t.me/data_jobs/123") == "data_jobs"
+assert ck("t.me/data_jobs") == "data_jobs"
+assert ck("https://t.me/c/1234567/89") == "id:1234567"
+assert ck("Аналитики | Вакансии") == "аналитики | вакансии"
+assert ck("C# / .NET jobs") == "c# / .net jobs"
+with tempfile.TemporaryDirectory() as d:
+    sample = Path(d) / "channels.txt"
+    sample.write_text("\ufeff# comment\n\n@data_jobs\n  C# jobs  \n# @disabled\n", encoding="utf-8")
+    assert tc.load_channels(sample) == ["@data_jobs", "C# jobs"]
 
 print("ok")

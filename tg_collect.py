@@ -27,6 +27,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 TG_DIR = ROOT / "telegram"
 CONFIG_PATH = TG_DIR / "config.yml"
+CHANNELS_PATH = TG_DIR / "channels.txt"
 SESSION_PATH = TG_DIR / "tg"  # Telethon adds .session
 STATE_PATH = ROOT / "data" / "tg-state.json"
 PIPELINE_PATH = ROOT / "data" / "pipeline.md"
@@ -91,13 +92,28 @@ def message_link(entity, msg_id):
     return None  # basic groups have no message links
 
 
-def chat_matches(entity, title, names):
-    username = (getattr(entity, "username", None) or "").lower()
-    for name in names:
-        n = str(name).lower().lstrip("@")
-        if n == title.lower() or (username and n == username):
-            return True
-    return False
+def load_channels(path):
+    """channels.txt: one chat per line as @username, t.me link or exact title. Lines starting with # are comments."""
+    lines = (line.strip() for line in path.read_text(encoding="utf-8-sig").splitlines())
+    return [line for line in lines if line and not line.startswith("#")]
+
+
+def channel_key(name):
+    """Normalize '@name', 't.me/name/45', 't.me/c/123/45' and plain titles to one comparable form."""
+    n = name.strip().lower()
+    link = re.match(r"^(https?://)?(www\.)?(t|telegram)\.me/(.+)$", n)
+    if link:
+        path = link.group(4)
+        private = re.match(r"^c/(\d+)", path)
+        return "id:" + private.group(1) if private else path.split("/")[0]
+    return n[1:] if n.startswith("@") else n
+
+
+def dialog_keys(entity, title):
+    keys = {title.strip().lower(), "id:" + str(entity.id)}
+    if getattr(entity, "username", None):
+        keys.add(entity.username.lower())
+    return keys
 
 
 async def collect(cfg, job_filter, state, dry_run):
@@ -107,6 +123,8 @@ async def collect(cfg, job_filter, state, dry_run):
     seen_fps = set(state.get("fingerprints", []))
     last_ids = state.setdefault("last_ids", {})
     found = []
+    channels = {n: channel_key(n) for n in load_channels(CHANNELS_PATH)}
+    matched = set()
 
     client = TelegramClient(str(SESSION_PATH), int(cfg["api_id"]), cfg["api_hash"])
     await client.start()  # first run asks for phone number and login code
@@ -115,10 +133,11 @@ async def collect(cfg, job_filter, state, dry_run):
             if not (dialog.is_group or dialog.is_channel):
                 continue
             entity, title = dialog.entity, dialog.name or "?"
-            if cfg.get("mode") == "list" and not chat_matches(entity, title, cfg.get("include", [])):
+            keys = dialog_keys(entity, title)
+            wanted = [n for n, k in channels.items() if k in keys]
+            if not wanted:
                 continue
-            if chat_matches(entity, title, cfg.get("exclude", [])):
-                continue
+            matched.update(wanted)
             if dialog.date and dialog.date < cutoff:
                 continue  # nothing new in this chat
 
@@ -149,6 +168,10 @@ async def collect(cfg, job_filter, state, dry_run):
                 last_ids[key] = newest
     finally:
         await client.disconnect()
+
+    for name in channels:
+        if name not in matched:
+            print(f"! не нашёл чат из channels.txt: {name} (проверь название или что ты в нём состоишь)")
 
     state["fingerprints"] = sorted(seen_fps)[-5000:]
     found.sort(key=lambda j: j["date"])
@@ -225,6 +248,8 @@ def main():
 
     if not CONFIG_PATH.exists():
         sys.exit(f"Нет {CONFIG_PATH}. Скопируй config.example.yml в config.yml и впиши api_id / api_hash.")
+    if not CHANNELS_PATH.exists():
+        sys.exit(f"Нет {CHANNELS_PATH}. Впиши туда чаты, по одному на строку.")
     cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     job_filter = JobFilter(cfg.get("keywords", {}), cfg.get("min_length", 120))
     state = load_state()
