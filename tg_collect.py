@@ -116,9 +116,12 @@ def dialog_keys(entity, title):
     return keys
 
 
-async def collect(cfg, job_filter, state, dry_run):
-    from telethon import TelegramClient
+async def scan_chats(client, cfg, job_filter, state, dry_run=False):
+    """Read the chats from channels.txt with a connected user client.
 
+    Returns (jobs, missing): new job posts oldest first, and channels.txt
+    entries that matched no chat. Updates `state` in place.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=cfg.get("lookback_days", 3))
     seen_fps = set(state.get("fingerprints", []))
     last_ids = state.setdefault("last_ids", {})
@@ -126,56 +129,66 @@ async def collect(cfg, job_filter, state, dry_run):
     channels = {n: channel_key(n) for n in load_channels(CHANNELS_PATH)}
     matched = set()
 
-    client = TelegramClient(str(SESSION_PATH), int(cfg["api_id"]), cfg["api_hash"])
+    async for dialog in client.iter_dialogs():
+        if not (dialog.is_group or dialog.is_channel):
+            continue
+        entity, title = dialog.entity, dialog.name or "?"
+        keys = dialog_keys(entity, title)
+        wanted = [n for n, k in channels.items() if k in keys]
+        if not wanted:
+            continue
+        matched.update(wanted)
+        if dialog.date and dialog.date < cutoff:
+            continue  # nothing new in this chat
+
+        key = str(dialog.id)
+        min_id = last_ids.get(key, 0)
+        newest = min_id
+        async for msg in client.iter_messages(entity, min_id=min_id):
+            if msg.date < cutoff:
+                break
+            newest = max(newest, msg.id)
+            text = msg.message or ""
+            if not job_filter.is_job(text):
+                continue
+            fp = fingerprint(text)
+            if fp in seen_fps:
+                continue
+            seen_fps.add(fp)
+            found.append({
+                "chat": title,
+                "chat_id": dialog.id,
+                "msg_id": msg.id,
+                "date": msg.date,
+                "link": message_link(entity, msg.id),
+                "text": text,
+                "tags": job_filter.tags_for(text),
+            })
+        if not dry_run:
+            last_ids[key] = newest
+
+    if not dry_run:
+        state["fingerprints"] = sorted(seen_fps)[-5000:]
+    found.sort(key=lambda j: j["date"])
+    return found, [n for n in channels if n not in matched]
+
+
+def user_client(cfg):
+    from telethon import TelegramClient
+
+    return TelegramClient(str(SESSION_PATH), int(cfg["api_id"]), cfg["api_hash"])
+
+
+async def collect(cfg, job_filter, state, dry_run):
+    client = user_client(cfg)
     await client.start()  # first run asks for phone number and login code
     try:
-        async for dialog in client.iter_dialogs():
-            if not (dialog.is_group or dialog.is_channel):
-                continue
-            entity, title = dialog.entity, dialog.name or "?"
-            keys = dialog_keys(entity, title)
-            wanted = [n for n, k in channels.items() if k in keys]
-            if not wanted:
-                continue
-            matched.update(wanted)
-            if dialog.date and dialog.date < cutoff:
-                continue  # nothing new in this chat
-
-            key = str(dialog.id)
-            min_id = last_ids.get(key, 0)
-            newest = min_id
-            async for msg in client.iter_messages(entity, min_id=min_id):
-                if msg.date < cutoff:
-                    break
-                newest = max(newest, msg.id)
-                text = msg.message or ""
-                if not job_filter.is_job(text):
-                    continue
-                fp = fingerprint(text)
-                if fp in seen_fps:
-                    continue
-                seen_fps.add(fp)
-                found.append({
-                    "chat": title,
-                    "chat_id": dialog.id,
-                    "msg_id": msg.id,
-                    "date": msg.date,
-                    "link": message_link(entity, msg.id),
-                    "text": text,
-                    "tags": job_filter.tags_for(text),
-                })
-            if not dry_run:
-                last_ids[key] = newest
+        jobs, missing = await scan_chats(client, cfg, job_filter, state, dry_run)
     finally:
         await client.disconnect()
-
-    for name in channels:
-        if name not in matched:
-            print(f"! не нашёл чат из channels.txt: {name} (проверь название или что ты в нём состоишь)")
-
-    state["fingerprints"] = sorted(seen_fps)[-5000:]
-    found.sort(key=lambda j: j["date"])
-    return found
+    for name in missing:
+        print(f"! не нашёл чат из channels.txt: {name} (проверь название или что ты в нём состоишь)")
+    return jobs
 
 
 # ---------------------------------------------------------------- output
@@ -233,6 +246,19 @@ def add_to_pipeline(lines):
 
 # ---------------------------------------------------------------- main
 
+def load_config():
+    return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def job_filter_from(cfg):
+    return JobFilter(cfg.get("keywords", {}), cfg.get("min_length", 120))
+
+
+def save_state(state):
+    STATE_PATH.parent.mkdir(exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
 def load_state():
     if STATE_PATH.exists():
         return json.loads(STATE_PATH.read_text(encoding="utf-8"))
@@ -250,8 +276,8 @@ def main():
         sys.exit(f"Нет {CONFIG_PATH}. Скопируй config.example.yml в config.yml и впиши api_id / api_hash.")
     if not CHANNELS_PATH.exists():
         sys.exit(f"Нет {CHANNELS_PATH}. Впиши туда чаты, по одному на строку.")
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    job_filter = JobFilter(cfg.get("keywords", {}), cfg.get("min_length", 120))
+    cfg = load_config()
+    job_filter = job_filter_from(cfg)
     state = load_state()
 
     jobs = asyncio.run(collect(cfg, job_filter, state, args.dry_run))
@@ -266,8 +292,7 @@ def main():
     lines = [pipeline_line(job, save_jd(job)) for job in jobs]
     if lines:
         add_to_pipeline(lines)
-    STATE_PATH.parent.mkdir(exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    save_state(state)
     print(f"[{stamp}] added {len(lines)} job post(s) to data/pipeline.md")
     for line in lines:
         print("  " + line)

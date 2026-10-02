@@ -70,4 +70,27 @@ with tempfile.TemporaryDirectory() as d:
     sample.write_text("\ufeff# comment\n\n@data_jobs\n  C# jobs  \n# @disabled\n", encoding="utf-8")
     assert tc.load_channels(sample) == ["@data_jobs", "C# jobs"]
 
+# bot: inbox round trip, cards, channel list editing
+import bot
+
+item = bot.to_inbox(job)
+assert item["status"] == "new" and bot.from_inbox(item)["date"] == job["date"]
+assert bot.job_key(job) == "1001234_42"
+card = bot.card_text(job)
+assert card.startswith("<b>Аналитик данных (Middle)</b>\n💬 Data | Jobs · 02.10 09:00\n#part_time #remote"), card
+assert len(bot.card_buttons(job, "k")) == 2 and len(bot.card_buttons(dict(job, link=None), "k")) == 1
+assert len(f"t:{bot.job_key(dict(job, chat_id=-1009999999999, msg_id=99999999))}".encode()) <= 64  # Telegram callback data limit
+
+with tempfile.TemporaryDirectory() as d:
+    real = tc.CHANNELS_PATH
+    tc.CHANNELS_PATH = Path(d) / "channels.txt"
+    tc.CHANNELS_PATH.write_text("# мои чаты\n@data_jobs\nАналитики | Чат\n", encoding="utf-8")
+    assert bot.add_channel("https://t.me/new_jobs") is True
+    assert bot.add_channel("@New_Jobs") is False  # same chat, other spelling
+    assert bot.remove_channel("2") == "Аналитики | Чат"
+    assert bot.remove_channel("t.me/data_jobs/5") == "t.me/data_jobs/5"
+    assert bot.remove_channel("@nope") is None
+    assert tc.CHANNELS_PATH.read_text(encoding="utf-8") == "# мои чаты\nhttps://t.me/new_jobs\n"
+    tc.CHANNELS_PATH = real
+
 print("ok")

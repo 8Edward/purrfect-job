@@ -10,7 +10,7 @@ if not exist config.yml (
 )
 py -3 test_tg_collect.py || goto :error
 echo.
-echo Setup OK. Next: fill config.yml, then run run.bat once to log in.
+echo Setup OK. Next: fill config.yml, then run login.bat once to log in.
 pause
 exit /b 0
 :error

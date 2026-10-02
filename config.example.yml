@@ -6,6 +6,12 @@
 api_id: 123456
 api_hash: "0123456789abcdef0123456789abcdef"
 
+# Your bot: create it in Telegram with @BotFather (/newbot) and paste the token.
+bot_token: "123456789:AAAA-your-bot-token"
+
+# When the bot collects new posts (your computer's local time).
+schedule: ["09:00", "20:00"]
+
 # How far back to look. Messages already collected are skipped anyway.
 lookback_days: 3
 
