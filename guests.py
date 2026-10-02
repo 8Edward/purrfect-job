@@ -295,27 +295,57 @@ def register(reg, user):
     }
     reg["users"][str(user.id)] = info
     guest = Guest(user.id, info)
+    if not guest.search_path.exists():  # a returning guest keeps old settings
+        guest.save_search(preset_search())
+    guest.update_state(step="role")
+    return guest
+
+
+def preset_search():
+    """The settings a newcomer starts with: search.default.yml + the preset file."""
     defaults = yaml.safe_load(tc.SEARCH_DEFAULT_PATH.read_text(encoding="utf-8")) or {}
     kw = defaults.get("keywords", {})
     preset = load_preset()
-    if not guest.search_path.exists():  # a returning guest keeps old settings
-        tags = dict(kw.get("tags", {}))
-        if preset.get("ru_companies"):
-            tags[RU_TAG] = preset["ru_companies"]
-        search = {
-            "lookback_days": DEFAULTS["lookback_days"],
-            "min_length": DEFAULTS["min_length"],
-            "keywords": {"job": kw.get("job", []), "role": preset.get("role", []),
-                         "negative": preset.get("negative") or kw.get("negative", []), "tags": tags},
-            "pool": [k for k in preset.get("pool", []) if k in load_pool()["channels"]],
-            "sites": [s for s in preset.get("sites", []) if s in SITE_CATALOG],
-        }
-        if HH_ID in preset.get("sites", []) and preset.get("hh"):
-            search["sites"].append(HH_ID)
-            search["hh"] = preset["hh"]
-        guest.save_search(search)
-    guest.update_state(step="role")
-    return guest
+    tags = dict(kw.get("tags", {}))
+    if preset.get("ru_companies"):
+        tags[RU_TAG] = preset["ru_companies"]
+    search = {
+        "lookback_days": DEFAULTS["lookback_days"],
+        "min_length": DEFAULTS["min_length"],
+        "keywords": {"job": kw.get("job", []), "role": preset.get("role", []),
+                     "negative": preset.get("negative") or kw.get("negative", []), "tags": tags},
+        "pool": [k for k in preset.get("pool", []) if k in load_pool()["channels"]],
+        "sites": [s for s in preset.get("sites", []) if s in SITE_CATALOG],
+    }
+    if HH_ID in preset.get("sites", []) and preset.get("hh"):
+        search["sites"].append(HH_ID)
+        search["hh"] = preset["hh"]
+    return search
+
+
+def reset_member(member, wipe_jobs=False):
+    """«Начать заново»: settings back to the newcomer preset, résumé and app choices forgotten.
+    Found vacancies, favourites and «в работе» stay unless wipe_jobs. Reading marks stay, so
+    old posts don't flood back. For you, bot-wide settings (intervals, sites in portals.yml) stay."""
+    fresh = preset_search()
+    if member.is_owner:
+        search = member.load_search()
+        search["keywords"] = fresh["keywords"]
+        search["pool"] = fresh["pool"]
+        search["sites"] = [HH_ID] if HH_ID in fresh["sites"] else []  # job boards = portals.yml, untouched
+        search["hh"] = fresh.get("hh", {})
+        member.save_search(search)
+    else:
+        member.save_search(fresh)
+    state = member.load_state()
+    for k in ("skin", "app_onboarded", "cv", "manual_at"):
+        state.pop(k, None)
+    member.save_state(state)
+    cv = (tc.ROOT / "data" / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
+    if cv.exists():
+        cv.unlink()
+    if wipe_jobs:
+        member.save_inbox({})
 
 
 def load_preset():

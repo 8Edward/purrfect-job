@@ -275,6 +275,24 @@ async def main():
                 assert (await (await c.post("/api/cv/delete", headers=auth)).json()) == {"cv": None}
                 assert not (g.dir / "cv.txt").exists()
 
+                # start over
+                form = aiohttp.FormData()
+                form.add_field("file", CV_TEXT.encode("utf-8"), filename="cv.txt")
+                await c.post("/api/cv", headers=auth, data=form)
+                await c.post("/api/cv/apply", headers=auth, json={"roles": ["business-analyst"], "mode": "replace"})
+                assert "data analyst" not in g.load_search()["keywords"]["role"]
+                assert (await c.post("/api/reset", headers=auth, json={})).status == 400  # no confirmation, nothing happens
+                assert "data analyst" not in g.load_search()["keywords"]["role"]
+                jobs_before = len(g.load_inbox())
+                assert (await (await c.post("/api/reset", headers=auth, json={"confirm": "reset"})).json()) == {"ok": True}
+                assert g.load_search()["keywords"]["role"] == guests.load_preset()["role"]
+                assert not (g.dir / "cv.txt").exists() and "cv" not in g.load_state() and "skin" not in g.load_state()
+                assert len(g.load_inbox()) == jobs_before > 0  # vacancies kept unless asked
+                me = await (await c.get("/api/me", headers=auth)).json()
+                assert not me["onboarded"] and me["skin"] is None
+                await c.post("/api/reset", headers=auth, json={"confirm": "reset", "wipe_jobs": True})
+                assert g.load_inbox() == {}
+
                 page = await c.get("/")
                 assert page.status == 200 and "{{v}}" not in await page.text()
                 assert (await c.get("/static/app.js")).status == 200

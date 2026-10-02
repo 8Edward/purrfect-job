@@ -223,6 +223,7 @@ class WebApp:
         r.add_post("/api/cv", self.api_cv_upload)
         r.add_post("/api/cv/apply", self.api_cv_apply)
         r.add_post("/api/cv/delete", self.api_cv_delete)
+        r.add_post("/api/reset", self.api_reset)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -602,6 +603,20 @@ class WebApp:
         m = self.member(request)
         cv_reader.forget(m)
         return web.json_response({"cv": None})
+
+    async def api_reset(self, request):
+        """«Начать заново». The page asks first; the word "reset" here is a second guard
+        against a stray call."""
+        m = self.member(request)
+        data = await self.body(request)
+        if data.get("confirm") != "reset":
+            raise web.HTTPBadRequest(text='{"error": "Нужно подтверждение"}', content_type="application/json")
+        guests.reset_member(m, wipe_jobs=bool(data.get("wipe_jobs")))
+        self.results.pop(m.id, None)
+        if m.is_owner:
+            self.radar.reload()
+        log.info("app: %s started over (wipe_jobs=%s)", m.name, bool(data.get("wipe_jobs")))
+        return web.json_response({"ok": True})
 
     async def api_refresh(self, request):
         """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""

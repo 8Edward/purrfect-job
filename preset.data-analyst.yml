@@ -32,7 +32,9 @@ negative:
   - 'стажёр'
   - 'only in office'
   - 'только офис'
-  - 'must be (located|based) in the (us|usa|united states)'
+  - 'us only'
+  - 'must be located in the us'
+  - 'must be based in the us'
 
 # Companies from the Russian-speaking market get a #ru_company tag on the card
 # (they are the priority). Names are plain words, case-insensitive; add your own.

@@ -458,6 +458,37 @@ async function deleteCv() {
   try { await api("/api/cv/delete", {}); setCv(null); toast("Резюме удалено"); } catch (e) { fail(e); }
 }
 
+/* ---------------------------------------------------------------- start over */
+
+function showReset() {
+  st.sheet = { reset: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>♻️ Начать заново?</h3>
+    <p class="hint" style="font-size:14px">Радар станет как у нового пользователя:</p>
+    <ul class="reset-list">
+      <li>слова для поиска, стоп-слова, каналы и hh.ru вернутся к примеру «Data Analyst»;</li>
+      <li>загруженное резюме удалится;</li>
+      <li>стиль сбросится, обучение покажется снова.</li>
+    </ul>
+    <p class="hint" style="font-size:14px">Найденные вакансии, избранное и «в работе» останутся, если не отметить ниже.</p>
+    <label class="check"><input type="checkbox" id="reset-jobs"> Удалить и все мои вакансии: ленту, избранное, «в работе», скрытые</label>
+    <div class="btns"><button class="bad" id="reset-yes">Да, начать заново</button><button id="reset-no">Отмена</button></div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  $("#reset-no").onclick = closeSheet;
+  $("#reset-yes").onclick = async () => {
+    const b = $("#reset-yes");
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = "Сбрасываю…";
+    try {
+      await api("/api/reset", { confirm: "reset", wipe_jobs: $("#reset-jobs").checked });
+      haptic("ok");
+      try { localStorage.removeItem("jr-skin"); } catch (e) { /* blocked */ }
+      location.reload();
+    } catch (e) { b.disabled = false; b.textContent = "Да, начать заново"; fail(e); }
+  };
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+}
+
 /* ---------------------------------------------------------------- memo */
 
 const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div class="memo">
@@ -486,6 +517,7 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 <li>Ваш список видите только вы. Каналы и сайты общие на всех (до 30 каналов), а отметки у каждого свои.</li>
 <li>Радар живёт на компьютере владельца. Если приложение не открывается, компьютер выключен или спит: загляните позже, новые вакансии он догонит.</li>
 <li>Канал можно добавить свой (до 3 в день), сайт можно предложить владельцу.</li>
+<li>Запутались в настройках? «Ещё → ♻️ Начать заново» вернёт всё к примеру. Перед сбросом приложение переспросит.</li>
 </ul></div>
 <div class="btns"><button class="yes wide" id="memo-ok">Понятно</button></div>`;
 function showMemo() {
@@ -547,7 +579,7 @@ $("#onb-skip").onclick = finishOnboarding;
 function show(name) {
   $$(".nav button").forEach((b) => (b.dataset.s === name ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
   $$(".screen").forEach((s) => (s.hidden = s.id !== "s-" + name));
-  window.scrollTo(0, 0);
+  $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more") { loadSources().catch(fail); loadCv(); }
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
@@ -586,6 +618,7 @@ $("#hh-form").onsubmit = (e) => { e.preventDefault(); change({ type: "hh", query
 $("#hh-remote").onclick = () => change({ type: "hh", remote: $("#hh-remote").getAttribute("aria-pressed") !== "true" });
 $("#again").onclick = showOnboarding;
 $("#memo").onclick = showMemo;
+$("#reset").onclick = showReset;
 
 async function start() {
   try { setSkin(localStorage.getItem("jr-skin") || "radar"); } catch (e) { setSkin("radar"); }
