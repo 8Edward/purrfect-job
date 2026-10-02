@@ -19,30 +19,35 @@ html[data-skin="tropic"] {
   --r: 26px; --r-sm: 999px; color-scheme: light;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; }
-body { min-height: 100vh; overscroll-behavior-y: none; }
+/* Fit every phone: nothing may be wider than the screen (a wider page makes the phone zoom out,
+   and the whole app «spreads like a puddle»), and sizes follow the screen within sane limits. */
+html, body { margin: 0; width: 100%; max-width: 100%; overflow-x: hidden; background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: clamp(14px, 3.9vw, 16px); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { min-height: var(--tg-viewport-stable-height, 100vh); overscroll-behavior-y: none; }
+img, svg { max-width: 100%; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
-main { padding: 0 16px calc(88px + env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto; }
-.h2 { font-family: var(--f-display); font-size: 21px; font-weight: 700; margin: 18px 0 12px; }
-html[data-skin="dossier"] .h2 { font-size: 16px; }
+main { padding: 0 clamp(12px, 4vw, 20px) calc(84px + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: 560px; margin: 0 auto; }
+.screen, .screen > * { min-width: 0; max-width: 100%; }
+.h2 { font-family: var(--f-display); font-size: clamp(18px, 5.4vw, 22px); font-weight: 700; margin: 16px 0 12px; }
+html[data-skin="dossier"] .h2 { font-size: clamp(14px, 4.2vw, 16px); }
 
-/* hero */
-.hero { position: relative; padding: 14px 0 14px; overflow: visible; }
+/* hero: the decorations (radar sweep, blob, stamp) are clipped to the screen edge, never wider */
+.hero { position: relative; padding: 12px clamp(12px, 4vw, 20px) 12px; margin: 0 calc(-1 * clamp(12px, 4vw, 20px)); overflow: hidden; }
 .hero > *:not(.sweep):not(.blob):not(.stamp) { position: relative; }
-.brand { font-family: var(--f-display); font-size: 20px; display: flex; align-items: center; gap: 10px; }
-.brand .mark { width: 32px; height: 32px; flex: none; }
-.icon-btn { margin-left: auto; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 18px; }
+.brand { font-family: var(--f-display); font-size: clamp(17px, 5vw, 20px); display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand .mark { width: 30px; height: 30px; flex: none; }
+.icon-btn { margin-left: auto; width: 38px; height: 38px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 18px; }
 .icon-btn.spin { animation: spin 1s linear infinite; }
-.hello { margin: 12px 0 2px; font-size: 26px; font-weight: 700; line-height: 1.1; text-wrap: balance; }
+.hello { margin: 10px 0 2px; font-size: clamp(21px, 6.6vw, 27px); font-weight: 700; line-height: 1.1; text-wrap: balance; overflow-wrap: anywhere; }
 .hello em { font-style: normal; color: var(--accent); }
 .sub { color: var(--muted); font-size: 13px; min-height: 1em; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
-.stat { background: var(--surface); border-radius: var(--r-sm); padding: 10px; border: 1px solid var(--line); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.stat { background: var(--surface); border-radius: var(--r-sm); padding: clamp(7px, 2.4vw, 10px); border: 1px solid var(--line); min-width: 0; }
 html[data-skin="tropic"] .stat { border-radius: 18px; }
-.stat b { display: block; font-family: var(--f-display); font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat b { display: block; font-family: var(--f-display); font-size: clamp(16px, 5vw, 20px); font-variant-numeric: tabular-nums; }
 .stat span { font-size: 11.5px; color: var(--muted); }
 .sweep { position: absolute; right: -50px; top: -40px; width: 180px; height: 180px; border-radius: 50%; pointer-events: none; opacity: 0;
   background: conic-gradient(from 0deg, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70deg);
@@ -61,13 +66,21 @@ html[data-skin="dossier"] .stamp { opacity: .85; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
 /* swipe stack */
-.stack { position: relative; height: 340px; }
+/* the card stack takes what the screen can give: tall phones get a taller card, small ones still fit */
+.stack { position: relative; height: clamp(220px, calc(var(--tg-viewport-stable-height, 100vh) - 440px), 420px); }
+@media (max-height: 740px) { /* short phones: drop the counter tiles so the card and its buttons fit on one screen */
+  .stats { display: none; }
+  .stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 360px), 420px); }
+  .left { margin: 6px 0 4px; font-size: 12px; }
+  .hello { margin-top: 6px; }
+}
 .card { position: absolute; inset: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px;
   display: flex; flex-direction: column; gap: 9px; touch-action: pan-y; user-select: none; transition: transform .25s ease, opacity .25s ease; overflow: hidden; }
 .card.drag { transition: none; }
 .card .src { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .card .src span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card h3 { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; text-wrap: balance; }
+.card h3 { margin: 0; font-size: clamp(16px, 5vw, 20px); line-height: 1.2; font-weight: 700; text-wrap: balance; overflow-wrap: anywhere; }
+.card .co, .card .meta, .card .tags { min-width: 0; overflow-wrap: anywhere; }
 .co { font-weight: 600; }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -81,9 +94,9 @@ html[data-skin="dossier"] .tag.ru { border-style: solid; background: var(--accen
 .verdict.yes { right: 14px; color: var(--ok); }
 .verdict.no { left: 14px; color: var(--bad); }
 .left { font-size: 12.5px; color: var(--muted); text-align: center; margin: 12px 0 8px; }
-.acts { display: flex; justify-content: center; align-items: center; gap: 18px; }
-.act { width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 22px; display: grid; place-items: center; }
-.act.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); width: 66px; height: 66px; }
+.acts { display: flex; justify-content: center; align-items: center; gap: clamp(12px, 5vw, 20px); }
+.act { width: clamp(48px, 14vw, 58px); height: clamp(48px, 14vw, 58px); border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 22px; display: grid; place-items: center; }
+.act.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); width: clamp(56px, 17vw, 68px); height: clamp(56px, 17vw, 68px); }
 html[data-skin="dossier"] .act { border-radius: 6px; }
 .empty { text-align: center; padding: 46px 12px; color: var(--muted); line-height: 1.5; }
 .empty b { display: block; font-size: 18px; color: var(--fg); margin-bottom: 6px; }
@@ -150,7 +163,7 @@ html[data-skin="tropic"] .row { border-radius: 18px; }
 .skin .sw3 i { flex: 1; }
 
 /* bottom nav */
-.nav { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line);
+.nav { position: fixed; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line);
   background: var(--surface); padding: 6px 6px calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 10; }
 .nav button { border: none; background: none; display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 6px 0; position: relative; }
 .nav button span { font-size: 19px; line-height: 1; }
@@ -169,6 +182,26 @@ html[data-skin="tropic"] .row { border-radius: 18px; }
 .sheet .btns button, .sheet .btns a { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-sm); padding: 12px; font-weight: 700; text-align: center; text-decoration: none; color: var(--fg); }
 .sheet .btns .yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .sheet .btns .wide { grid-column: 1 / -1; }
+
+/* résumé -> preset */
+.cv { padding: 0 14px 14px; display: grid; gap: 10px; font-size: 14px; line-height: 1.45; min-width: 0; }
+.cv p { margin: 0; color: var(--muted); }
+.cv .file-btn { position: relative; display: block; text-align: center; overflow: hidden; }
+.cv .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.cv .lbl { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+.cv .chiprow { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv .rolechip { border: 1.5px solid var(--line); background: var(--surface2); border-radius: var(--r-sm); padding: 6px 10px; font-size: 13.5px; text-align: left; }
+.cv .rolechip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.cv .rolechip small { display: block; font-size: 11px; opacity: .8; }
+.cv .skill { font-size: 12.5px; padding: 3px 8px; border-radius: var(--r-sm); background: var(--tag); }
+.cv .preview { background: var(--surface2); border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.cv .preview b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.cv .twobtn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cv .twobtn button { padding: 11px 6px; }
+.cv .ghost { border: 1px solid var(--line); background: var(--surface2); border-radius: var(--r-sm); font-weight: 700; }
+.cv .check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.cv .muted { font-size: 12px; color: var(--muted); }
+.cv .busy { text-align: center; padding: 14px 0; color: var(--muted); }
 
 .memo { line-height: 1.55; font-size: 14.5px; }
 .memo h4 { font-family: var(--f-display); font-size: 14px; margin: 16px 0 6px; }

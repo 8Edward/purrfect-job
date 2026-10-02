@@ -24,6 +24,7 @@ import yaml
 from aiohttp import web
 from telethon import utils
 
+import cv_reader
 import guests
 import tg_collect as tc
 
@@ -205,7 +206,7 @@ class WebApp:
         return data if isinstance(data, dict) else {}
 
     def app(self):
-        app = web.Application(client_max_size=64 * 1024, middlewares=[self.errors])
+        app = web.Application(client_max_size=6 * 1024 * 1024, middlewares=[self.errors])  # room for a résumé
         r = app.router
         r.add_get("/", self.index)
         r.add_get("/api/me", self.api_me)
@@ -218,6 +219,10 @@ class WebApp:
         r.add_post("/api/sources", self.api_sources_change)
         r.add_post("/api/settings", self.api_settings)
         r.add_post("/api/refresh", self.api_refresh)
+        r.add_get("/api/cv", self.api_cv)
+        r.add_post("/api/cv", self.api_cv_upload)
+        r.add_post("/api/cv/apply", self.api_cv_apply)
+        r.add_post("/api/cv/delete", self.api_cv_delete)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -540,6 +545,63 @@ class WebApp:
         if fields:
             m.update_state(**fields)
         return web.json_response({"ok": True, **fields})
+
+    # -- résumé -> preset (cv_reader.py)
+
+    def cv_payload(self, m):
+        info = m.load_state().get("cv")
+        if not info:
+            return {"cv": None}
+        graph, pool = load_graph(), guests.load_pool()
+        analysis = dict(info.get("analysis") or {})
+        analysis["roles"] = [dict(r, words=cv_reader.role_words(graph, [r["id"]]), hh=cv_reader.hh_query(graph, [r["id"]]))
+                             for r in analysis.get("roles", []) if r["id"] in graph]
+        ticked, suggested = set(m.selected(pool)), set(analysis.get("channels", []))
+        analysis["channels"] = [{"key": k, "title": c.get("title") or k, "on": k in ticked, "suggested": k in suggested}
+                                for k, c in pool["channels"].items() if k in suggested or k in ticked]
+        return {"cv": {"file": info.get("file"), "at": info.get("at"), **analysis}}
+
+    async def api_cv(self, request):
+        return web.json_response(self.cv_payload(self.member(request)))
+
+    async def api_cv_upload(self, request):
+        m = self.member(request)
+        try:
+            form = await request.post()
+        except Exception:
+            raise web.HTTPBadRequest(text='{"error": "Файл не дошёл, попробуйте ещё раз"}', content_type="application/json")
+        field = form.get("file")
+        if not hasattr(field, "file"):
+            raise web.HTTPBadRequest(text='{"error": "Выберите файл с резюме"}', content_type="application/json")
+        data = field.file.read(cv_reader.MAX_BYTES + 1)
+        try:
+            text = await asyncio.get_running_loop().run_in_executor(None, cv_reader.extract_text, field.filename, data)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        analysis = cv_reader.analyze(text, load_graph(), guests.load_pool())
+        cv_reader.save(m, field.filename, text, analysis)
+        log.info("cv for %s: %d chars, roles %s", m.name, len(text), [r["id"] for r in analysis["roles"] if r["primary"]])
+        return web.json_response(self.cv_payload(m))
+
+    async def api_cv_apply(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        roles = [str(r) for r in data.get("roles") or []][:10]
+        channels = [str(c) for c in data.get("channels") or []][:guests.MAX_POOL] if "channels" in data else None
+        try:
+            result = cv_reader.apply(m, load_graph(), roles, channels, "replace" if data.get("mode") == "replace" else "merge",
+                                     skill_words=bool(data.get("skill_words", True)))
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        if m.is_owner:
+            self.radar.reload()
+        log.info("cv preset applied for %s: %s", m.name, result)
+        return web.json_response({"ok": True, **result})
+
+    async def api_cv_delete(self, request):
+        m = self.member(request)
+        cv_reader.forget(m)
+        return web.json_response({"cv": None})
 
     async def api_refresh(self, request):
         """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""

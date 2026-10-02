@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import aiohttp  # noqa: E402
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
 import guests  # noqa: E402
@@ -56,6 +57,44 @@ view = webapp.graph_view(graph, "business-analyst", "бизнес аналити
 kinds = {n["id"]: n["kind"] for n in view["nodes"]}
 assert kinds["system-analyst"] == "adj" and kinds["product-manager"] == "far" and "syn:1" in kinds
 assert "business-analyst" in graph["system-analyst"]["links"]  # links work both ways
+
+
+CV_TEXT = """Анна Петрова — Middle бизнес-аналитик
+Опыт: 4 года. Бизнес-аналитик в банке: сбор и анализ требований, BPMN-схемы, user stories,
+техническое задание для разработки, работа с Jira и Confluence. Писала SQL-запросы к PostgreSQL
+для проверки данных, строила отчёты в Excel. Вместе с системным аналитиком описывала интеграции.
+Языки: английский — B2 (upper-intermediate)."""
+
+
+def make_docx(text):
+    import io
+    import zipfile
+    body = "".join(f"<w:p><w:r><w:t>{line}</w:t></w:r></w:p>" for line in text.splitlines())
+    xml = ('<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/'
+           f'wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>')
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("word/document.xml", xml)
+    return buf.getvalue()
+
+
+def make_pdf():
+    """A tiny real one-page PDF with an English data-analyst résumé (built by hand, no libraries)."""
+    lines = ["John Smith - Data Analyst", "Data Analyst at Acme: SQL, Python, Tableau, ClickHouse dashboards.",
+             "Data Analyst at Beta: A/B tests, retention and funnel analysis for the product team.",
+             "Built ETL in Airflow. English: C1. Looking for a remote data analyst role."] * 2
+    stream = "BT /F1 11 Tf 40 760 Td 14 TL " + " ".join(f"({l}) '" for l in lines) + " ET"
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = "%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF"
+    return out.encode("latin-1")
 
 
 class FakeEntity:
@@ -204,6 +243,37 @@ async def main():
                 me = await (await c.get("/api/me", headers=auth)).json()
                 assert me["skin"] == "tropic" and me["onboarded"]
                 assert (await (await c.post("/api/refresh", headers=auth)).json()) == {"busy": False, "new": 0}
+
+                # résumé -> preset
+                assert (await (await c.get("/api/cv", headers=auth)).json()) == {"cv": None}
+                form = aiohttp.FormData()
+                form.add_field("file", make_docx(CV_TEXT), filename="Резюме.docx")
+                cv = (await (await c.post("/api/cv", headers=auth, data=form)).json())["cv"]
+                primary = [r["id"] for r in cv["roles"] if r["primary"]]
+                assert primary[0] == "business-analyst" and "system-analyst" in [r["id"] for r in cv["roles"]], cv["roles"]
+                assert cv["english"] == "B2" and cv["level"] == "Middle" and "Требования / BPMN" in [s["label"] for s in cv["skills"]]
+                assert "sql" in cv["skill_words"] and cv["roles"][0]["words"][0] == "бизнес аналитик"
+                assert '"бизнес аналитик"' in cv["roles"][0]["hh"] and (g.dir / "cv.txt").exists()
+                r = await (await c.post("/api/cv/apply", headers=auth, json={"roles": ["business-analyst", "system-analyst"],
+                                                                             "channels": ["datajob"], "mode": "replace"})).json()
+                assert r["ok"] and r["hh_query"].startswith('"бизнес аналитик"')
+                words = g.load_search()["keywords"]["role"]
+                assert "бизнес аналитик" in words and "системный аналитик" in words and "data analyst" not in words, words
+                assert "datajob" in g.selected(guests.load_pool()) and "hh" in g.load_search()["sites"]
+                r = await c.post("/api/cv/apply", headers=auth, json={"roles": [], "mode": "merge"})
+                assert r.status == 400
+                for name, blob, ok in (("cv.txt", CV_TEXT.encode("utf-8"), True), ("cv.pdf", make_pdf(), True),
+                                       ("photo.jpg", b"\xff\xd8\xff" + b"0" * 500, False), ("short.txt", b"hi", False)):
+                    form = aiohttp.FormData()
+                    form.add_field("file", blob, filename=name)
+                    resp = await c.post("/api/cv", headers=auth, data=form)
+                    assert (resp.status == 200) == ok, (name, resp.status, await resp.text())
+                    if not ok:
+                        assert (await resp.json())["error"]
+                pdf_cv = (await (await c.get("/api/cv", headers=auth)).json())["cv"]
+                assert pdf_cv["file"] == "cv.pdf" and pdf_cv["roles"][0]["id"] == "data-analyst", pdf_cv["roles"]
+                assert (await (await c.post("/api/cv/delete", headers=auth)).json()) == {"cv": None}
+                assert not (g.dir / "cv.txt").exists()
 
                 page = await c.get("/")
                 assert page.status == 200 and "{{v}}" not in await page.text()

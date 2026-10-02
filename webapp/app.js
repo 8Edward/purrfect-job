@@ -371,6 +371,93 @@ async function change(body, note) {
   } catch (e) { fail(e); }
 }
 
+/* ---------------------------------------------------------------- résumé -> preset */
+
+const cvState = { data: null, roles: new Set(), channels: new Set(), skills: true, busy: false };
+
+async function loadCv() {
+  try { setCv((await api("/api/cv")).cv); } catch (e) { fail(e); }
+}
+function setCv(cv) {
+  cvState.data = cv;
+  if (cv) {
+    cvState.roles = new Set(cv.roles.filter((r) => r.primary).map((r) => r.id));
+    cvState.channels = new Set(cv.channels.filter((c) => c.suggested || c.on).map((c) => c.key));
+  }
+  renderCv();
+}
+function uploadHtml(again) {
+  return `<label class="cta file-btn">${again ? "Загрузить другое резюме" : "📄 Загрузить резюме"}
+    <input type="file" id="cv-file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></label>`;
+}
+function renderCv() {
+  const box = $("#cv-box");
+  if (!box) return;
+  const cv = cvState.data;
+  if (cvState.busy) { box.innerHTML = '<div class="cv"><div class="busy">Читаю резюме и подбираю роли…</div></div>'; return; }
+  if (!cv) {
+    box.innerHTML = `<div class="cv"><p>Загрузите резюме (PDF, DOCX или TXT). Я найду в нём ваши роли и навыки и предложу настройки поиска: слова, запрос для hh.ru и каналы. Ничего не поменяется, пока вы не нажмёте «Применить».</p>
+      ${uploadHtml(false)}<span class="muted">Хранится только текст резюме, на компьютере владельца бота. Удалить можно в любой момент.</span></div>`;
+  } else {
+    const chosen = cv.roles.filter((r) => cvState.roles.has(r.id));
+    const words = [...new Set(chosen.flatMap((r) => r.words).concat(cvState.skills ? cv.skill_words : []))];
+    const hh = [...new Set(chosen.map((r) => r.hh).filter(Boolean))].join(" OR ");
+    const facts = [cv.level && "уровень: " + cv.level, cv.english && "английский: " + cv.english, cv.skills.length + " " + plural(cv.skills.length, "навык", "навыка", "навыков")].filter(Boolean);
+    box.innerHTML = `<div class="cv">
+      <span class="muted">${esc(cv.file)} · ${esc(facts.join(" · "))}</span>
+      <div class="lbl">Похоже, вы ищете</div>
+      <div class="chiprow">${cv.roles.length ? cv.roles.map((r) => `<button class="rolechip" data-role="${esc(r.id)}" aria-pressed="${cvState.roles.has(r.id)}">${esc(r.label)}<small>${esc(r.why[0] || "")}</small></button>`).join("")
+        : '<span class="muted">Роли не распознал. Добавьте слова вручную ниже.</span>'}</div>
+      ${cv.skills.length ? `<div class="lbl">Нашёл навыки</div><div class="chiprow">${cv.skills.map((s) => `<span class="skill">${esc(s.label)}</span>`).join("")}</div>` : ""}
+      <label class="check"><input type="checkbox" id="cv-skills" ${cvState.skills ? "checked" : ""}> Искать и по инструментам (${esc(cv.skill_words.join(", ") || "нет")})</label>
+      <div class="preview"><b>Слова для поиска</b>${esc(words.join(", ") || "—")}</div>
+      <div class="preview"><b>Запрос на hh.ru</b>${esc(hh || "—")}</div>
+      ${cv.channels.length ? `<div class="lbl">Каналы</div>${cv.channels.map((c) => `<div class="tg" style="padding:8px 0"><span>${esc(c.title)}<small>@${esc(c.key)}${c.suggested ? " · подходит" : ""}</small></span><button class="sw" data-cvch="${esc(c.key)}" aria-pressed="${cvState.channels.has(c.key)}" aria-label="${esc(c.title)}"></button></div>`).join("")}` : ""}
+      <div class="twobtn"><button class="cta" id="cv-replace">Заменить мои слова</button><button class="ghost" id="cv-merge">Добавить к моим</button></div>
+      ${uploadHtml(true)}
+      <button class="link" id="cv-delete">Удалить резюме</button></div>`;
+    $$("[data-role]", box).forEach((b) => (b.onclick = () => { const id = b.dataset.role; cvState.roles.has(id) ? cvState.roles.delete(id) : cvState.roles.add(id); haptic(); renderCv(); }));
+    $$("[data-cvch]", box).forEach((b) => (b.onclick = () => { const k = b.dataset.cvch; cvState.channels.has(k) ? cvState.channels.delete(k) : cvState.channels.add(k); haptic(); renderCv(); }));
+    $("#cv-skills").onchange = (e) => { cvState.skills = e.target.checked; renderCv(); };
+    $("#cv-replace").onclick = () => applyCv("replace");
+    $("#cv-merge").onclick = () => applyCv("merge");
+    $("#cv-delete").onclick = deleteCv;
+  }
+  const file = $("#cv-file");
+  if (file) file.onchange = () => file.files[0] && uploadCv(file.files[0]);
+}
+async function uploadCv(file) {
+  if (file.size > 5 * 1024 * 1024) return fail(new Error("Файл больше 5 МБ."));
+  cvState.busy = true;
+  renderCv();
+  try {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const res = await fetch("/api/cv", { method: "POST", headers: { Authorization: "tma " + INIT }, body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Ошибка " + res.status);
+    cvState.busy = false;
+    setCv(data.cv);
+    haptic("ok");
+    toast(data.cv.roles.some((r) => r.primary) ? "Готово! Проверьте роли и нажмите «Применить»" : "Резюме прочитал, но роли не распознал");
+  } catch (e) { cvState.busy = false; renderCv(); fail(e); }
+}
+async function applyCv(mode) {
+  if (!cvState.roles.size) return fail(new Error("Отметьте хотя бы одну роль."));
+  try {
+    const d = await api("/api/cv/apply", { roles: [...cvState.roles], channels: [...cvState.channels], mode, skill_words: cvState.skills });
+    haptic("ok");
+    toast(`Готово: ${d.words} ${plural(d.words, "слово", "слова", "слов")} для поиска, hh.ru настроен`);
+    await loadSources();
+    loadMe().catch(() => {});
+  } catch (e) { fail(e); }
+}
+async function deleteCv() {
+  const b = $("#cv-delete");
+  if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Точно удалить? Нажмите ещё раз"; return; }
+  try { await api("/api/cv/delete", {}); setCv(null); toast("Резюме удалено"); } catch (e) { fail(e); }
+}
+
 /* ---------------------------------------------------------------- memo */
 
 const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div class="memo">
@@ -384,7 +471,7 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 <li><b>#ru_company:</b> метка на вакансиях русскоязычных компаний: Plata, Salmon, Uzum, Kaspi, Яндекс, Ozon, Avito и др.</li>
 <li><b>Стоп-слова:</b> стажировки, «только офис», «только для США», резюме соискателей.</li>
 </ul>
-<p>Это <b>пример</b>. Если вы ищете другое, поменяйте всё во вкладке «Ещё»: слова, каналы, сайты, запрос для hh.ru.</p>
+<p>Это <b>пример</b>. Если вы ищете другое, проще всего загрузить резюме: «Ещё → 📄 Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или поменяйте всё вручную там же: слова, каналы, сайты, запрос для hh.ru.</p>
 <h4>Как пользоваться</h4>
 <ul>
 <li><b>Лента:</b> свайп вправо — в работу, влево — скрыть, ★ — в избранное, тап — полный текст и ссылка.</li>
@@ -420,6 +507,7 @@ const SLIDES = [
     <p><b>Точно</b> — фраза один в один. <b>Похожие роли</b> — граф: синонимы и смежные профессии, например «бизнес-аналитик → системный, продуктовый».</p>`,
   () => `<div class="pic" style="height:auto"><div class="skins" id="onb-skins">${skinsHtml()}</div></div><h2>Выбери стиль</h2>
     <p>Каналы, сайты и слова для поиска — во вкладке «Ещё». Там же можно сменить стиль в любой момент.</p>
+    <button class="cta" id="onb-cv">📄 Настроить поиск по моему резюме</button>
     <button class="link" id="onb-memo">📖 Памятка: что уже настроено и как всё устроено</button>`,
 ];
 let slide = 0;
@@ -435,6 +523,7 @@ function renderSlide() {
   $("#onb-skip").style.visibility = slide === SLIDES.length - 1 ? "hidden" : "visible";
   if ($("#onb-skins")) bindSkins($("#onb-skins"));
   if ($("#onb-memo")) $("#onb-memo").onclick = () => { finishOnboarding(); showMemo(); };
+  if ($("#onb-cv")) $("#onb-cv").onclick = () => { finishOnboarding(); show("more"); };
 }
 function finishOnboarding() {
   $("#onb").hidden = true;
@@ -460,7 +549,7 @@ function show(name) {
   $$(".screen").forEach((s) => (s.hidden = s.id !== "s-" + name));
   window.scrollTo(0, 0);
   if (name === "saved") loadSaved();
-  if (name === "more") loadSources().catch(fail);
+  if (name === "more") { loadSources().catch(fail); loadCv(); }
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
 }
 $$(".nav button").forEach((b) => (b.onclick = () => { haptic(); show(b.dataset.s); }));
