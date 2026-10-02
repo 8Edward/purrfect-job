@@ -630,13 +630,23 @@ class JobRadar:
             log.exception("mini app did not start; the bot keeps working in the chat")
 
     async def set_app_url(self, url):
-        """The tunnel got a (new) address, or lost it: re-point the «Открыть» buttons."""
+        """The tunnel got a (new) address, or lost it: re-point every «Открыть» button —
+        the default menu button, each person's own one (clients cache the default), and
+        the app buttons in messages already sent."""
         self.app_url = url
-        try:
-            button = types.BotMenuButton("Радар", url) if url else types.BotMenuButtonCommands()
-            await self.bot(functions.bots.SetBotMenuButtonRequest(user_id=types.InputUserEmpty(), button=button))
-        except Exception:
-            log.warning("could not set the menu button", exc_info=True)
+        button = types.BotMenuButton("Радар", url) if url else types.BotMenuButtonCommands()
+        people = [self.owner] + [g.id for g in guests.all_guests(guests.load_registry())]
+        for user in [None] + people:
+            try:
+                peer = types.InputUserEmpty() if user is None else await self.bot.get_input_entity(user)
+                await self.bot(functions.bots.SetBotMenuButtonRequest(user_id=peer, button=button))
+            except Exception:
+                log.warning("could not set the menu button for %s", user or "everyone", exc_info=True)
+        state = tc.load_state()
+        if url and url != state.get("app_url"):
+            state["app_url"] = url
+            tc.save_state(state)
+            await self.repoint_app_buttons(url)
         home = tc.load_state().get("home_msg")
         if home:
             try:
@@ -691,9 +701,12 @@ class JobRadar:
         to = guest.id if guest else self.owner
         picture = self.guest_dashboard(guest) if guest else self.dashboard()
         try:
-            return await self.bot.send_file(to, picture, caption=fit(caption), buttons=buttons, silent=silent)
+            msg = await self.bot.send_file(to, picture, caption=fit(caption), buttons=buttons, silent=silent)
         except Exception:
             log.exception("cannot message %s — did they press Start in the bot chat?", to)
+            return None
+        self.remember_app_button(to, msg.id, buttons)
+        return msg
 
     async def edit_screen(self, target, caption, buttons, refresh_picture=False, guest=None):
         """target: a CallbackQuery event or a message id."""
@@ -701,9 +714,52 @@ class JobRadar:
         kw = {"buttons": buttons, "link_preview": False}
         if refresh_picture:
             kw["file"] = self.guest_dashboard(guest) if guest else self.dashboard()
+        chat = guest.id if guest else self.owner
+        self.remember_app_button(chat, target if isinstance(target, int) else target.message_id, buttons)
         if isinstance(target, int):
-            return await self.bot.edit_message(guest.id if guest else self.owner, target, caption, **kw)
+            return await self.bot.edit_message(chat, target, caption, **kw)
         return await target.edit(caption, **kw)
+
+    def remember_app_button(self, chat, msg_id, buttons):
+        """Note messages that carry an app button, so a new tunnel address can be patched in."""
+        if not any(isinstance(b, types.KeyboardInlineButton) and isinstance(b.type, types.InlineButtonTypeWebView)
+                   for row in buttons or [] for b in (row if isinstance(row, list) else [row])):
+            return
+        state = tc.load_state()
+        seen = [m for m in state.get("app_msgs", []) if m != [chat, msg_id]]
+        state["app_msgs"] = (seen + [[chat, msg_id]])[-200:]
+        tc.save_state(state)
+
+    async def repoint_app_buttons(self, url):
+        """Put the new address into the app buttons of messages already sent."""
+        by_chat = {}
+        for chat, msg_id in tc.load_state().get("app_msgs", []):
+            by_chat.setdefault(chat, []).append(msg_id)
+        fixed, alive = 0, []
+        for chat, ids in by_chat.items():
+            try:
+                msgs = await self.bot.get_messages(chat, ids=ids)
+            except Exception:
+                log.warning("app buttons: cannot read messages in %s", chat, exc_info=True)
+                continue
+            for msg in msgs:
+                if not msg or not getattr(msg, "reply_markup", None):
+                    continue
+                rows = [[types.KeyboardInlineButton(b.text, types.InlineButtonTypeWebView(url))
+                         if isinstance(b, types.KeyboardInlineButton) and isinstance(b.type, types.InlineButtonTypeWebView) else b
+                         for b in row.buttons] for row in msg.reply_markup.rows]
+                try:
+                    await self.bot.edit_message(chat, msg.id, buttons=rows)
+                    fixed += 1
+                    alive.append([chat, msg.id])
+                except Exception as e:
+                    if "not modified" in str(e).lower():
+                        alive.append([chat, msg.id])
+                await asyncio.sleep(0.3)
+        state = tc.load_state()
+        state["app_msgs"] = alive[-200:]
+        tc.save_state(state)
+        log.info("app buttons re-pointed in %d messages", fixed)
 
     async def show_home(self, target=None):
         caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url)
