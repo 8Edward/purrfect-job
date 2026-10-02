@@ -59,6 +59,12 @@ class JobFilter:
             return False
         return any(p.search(text) for p in self.job) and any(p.search(text) for p in self.role)
 
+    def is_job_like(self, text):
+        """A job post by its own words (вакансия, hiring…), whatever the role: for search."""
+        if not text or len(text) < self.min_length or any(p.search(text) for p in self.negative):
+            return False
+        return any(p.search(text) for p in self.job)
+
     def tags_for(self, text):
         return [name for name, pats in self.tags.items() if any(p.search(text) for p in pats)]
 

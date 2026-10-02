@@ -331,6 +331,74 @@ def web_tags(member, text):
     return tc.JobFilter({"tags": tags}, 0).tags_for(text)
 
 
+def parse_posted(text):
+    """'2026-10-02T17:36:33+03:00' / '2026-10-02' / junk -> an aware datetime (now if unknown)."""
+    for value in (str(text or "").strip(), str(text or "")[:10]):
+        try:
+            date = datetime.fromisoformat(value)
+        except ValueError:
+            continue
+        return date if date.tzinfo else date.replace(tzinfo=timezone.utc)
+    return now()
+
+
+def web_job(j, site, member=None):
+    """A raw site / hh.ru vacancy {title, url, company, location, comp, posted} -> a stored job."""
+    date = parse_posted(j.get("posted"))
+    company, title = j.get("company") or "", j.get("title") or "Вакансия"
+    cells = [j["url"], company or site, title, j.get("location", ""), j.get("comp", "")]
+    line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
+    return {"source": "web", "key": boards.board_key(j["url"]), "title": title, "company": company,
+            "location": j.get("location", ""), "comp": j.get("comp", ""), "site": site, "link": j["url"],
+            "date": date, "tags": web_tags(member, f"{title} {company}") if member else [],
+            "pipeline_line": line}
+
+
+# ---------------------------------------------------------------- one vacancy: store and act
+
+DISCARD_LOG = tc.ROOT / "data" / "discard.log"
+
+
+def to_item(job):
+    """A found job -> the stored inbox item (status new, not starred)."""
+    item = dict(job, status="new", fav=False)
+    item.setdefault("source", "tg")
+    if item["source"] == "tg":
+        item.setdefault("title", tc.guess_title(job["text"]))
+    item["date"] = job["date"].isoformat()
+    item.pop("key", None)
+    return item
+
+
+def job_action(member, key, item, action):
+    """take / hide / restore / fav on one stored vacancy (changes `item`; the caller saves).
+    Returns (changed, note). For you, «take» also puts it into career-ops pipeline.md."""
+    if action in ("take", "hide") and item["status"] != "new":
+        return False, "Уже разобрано"
+    if action == "take":
+        if member.is_owner:
+            if item.get("source") == "web":
+                tc.add_to_pipeline([item["pipeline_line"]])
+            else:
+                job = dict(item, date=datetime.fromisoformat(item["date"]))
+                tc.add_to_pipeline([tc.pipeline_line(job, tc.save_jd(job))])
+        item["status"] = "taken"
+        return True, "👍 В работе! Оценка: /career-ops pipeline" if member.is_owner else "👍 В работе"
+    if action == "hide":
+        if member.is_owner:
+            with DISCARD_LOG.open("a", encoding="utf-8") as f:
+                f.write(f"{now().isoformat(timespec='seconds')}\t{item.get('link') or key}\thidden in job radar\n")
+        item["status"] = "hidden"
+        return True, "🙈 Скрыто"
+    if action == "restore":
+        item["status"] = "new"
+        return True, "↩️ Вернул в новые"
+    if action == "fav":
+        item["fav"] = not item.get("fav", False)
+        return True, "⭐ В избранном" if item["fav"] else "Убрал из избранного"
+    return False, None
+
+
 def remove(reg, uid):
     """Stop serving a guest. Their folder stays (it's their data); an invite brings them back."""
     return reg["users"].pop(str(uid), None) is not None
@@ -634,7 +702,8 @@ async def fetch_feed(providers, timeout=900):
     except asyncio.TimeoutError:
         proc.kill()
         raise RuntimeError("сайты не ответили за 15 минут")
-    lines = [l for l in out.decode("utf-8", "replace").splitlines() if l.startswith("{")]
+    # split("\n"), not splitlines(): job texts carry U+2028 and friends, which splitlines() breaks on
+    lines = [l.strip() for l in out.decode("utf-8", "replace").split("\n") if l.startswith("{")]
     if not lines:
         raise RuntimeError("board-feed.mjs: нет ответа")
     return json.loads(lines[-1])
@@ -660,14 +729,7 @@ def match_site_jobs(feed, member, listed):
             text = " ".join([j["title"], j.get("company", ""), j.get("location", "")])
             if not any(p.search(text) for p in role) or any(p.search(text) for p in negative):
                 continue
-            try:
-                date = datetime.fromisoformat(j["posted"][:10]).replace(tzinfo=timezone.utc)
-            except (KeyError, ValueError):
-                date = now()
-            jobs.append({"source": "web", "key": key, "title": j["title"] or "Вакансия",
-                         "company": j.get("company", ""), "location": j.get("location", ""), "comp": "",
-                         "site": listed.get(provider, provider), "link": j["url"], "date": date,
-                         "tags": web_tags(member, text)})
+            jobs.append(web_job(j, listed.get(provider, provider), member))
     member.update_state(site_seen=sorted(seen)[-20000:], sites_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]
 
@@ -771,15 +833,6 @@ def match_hh_jobs(raw, member):
             continue
         if any(p.search(f"{j['title']} {j['company']}") for p in negative):
             continue
-        try:
-            date = datetime.fromisoformat(j["posted"])
-        except ValueError:
-            date = now()
-        cells = [j["url"], j["company"] or "hh.ru", j["title"], j["location"], j["comp"]]
-        line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
-        jobs.append({"source": "web", "key": key, "title": j["title"], "company": j["company"],
-                     "location": j["location"], "comp": j["comp"], "site": HH_NAME, "link": j["url"],
-                     "date": date, "tags": web_tags(member, f"{j['title']} {j['company']}"),
-                     "pipeline_line": line})
+        jobs.append(web_job(j, HH_NAME, member))
     member.update_state(hh_seen=sorted(seen)[-20000:], hh_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]

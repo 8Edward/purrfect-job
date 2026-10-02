@@ -1,0 +1,79 @@
+# Role graph for 🔍 Поиск → «Похожие роли» in the Job Radar app.
+#
+# Each role has `names` (synonyms: the same job under different words, RU and EN)
+# and `links` to other roles: `adj` = adjacent role (close, often the same skills),
+# `far` = related but further away. Links work both ways: if A links to B, B shows A.
+# Names are matched as phrases, case-insensitive, with Russian endings allowed
+# («аналитик данных» also finds «аналитика данных»). Add your own roles freely.
+# Avoid names of 1-3 letters (BA, PM): they match too much junk, so search skips them.
+
+roles:
+  data-analyst:
+    names: [аналитик данных, data analyst, дата аналитик, data analytics]
+    links: {bi-analyst: adj, product-analyst: adj, analytics-engineer: adj, data-quality: adj, marketing-analyst: far, business-analyst: far, data-scientist: far}
+  bi-analyst:
+    names: [bi аналитик, bi analyst, bi developer, bi разработчик, bi engineer, business intelligence]
+    links: {reporting-analyst: adj, analytics-engineer: far}
+  reporting-analyst:
+    names: [reporting analyst, аналитик отчетности, report analyst]
+    links: {data-analyst: adj, financial-analyst: far}
+  product-analyst:
+    names: [продуктовый аналитик, product analyst, product analytics]
+    links: {business-analyst: adj, marketing-analyst: adj, product-manager: far}
+  business-analyst:
+    names: [бизнес аналитик, business analyst, бизнес-аналитика]
+    links: {system-analyst: adj, requirements-analyst: adj, product-manager: far, project-manager: far, financial-analyst: far}
+  system-analyst:
+    names: [системный аналитик, system analyst, systems analyst]
+    links: {requirements-analyst: adj, solution-architect: far}
+  requirements-analyst:
+    names: [аналитик требований, requirements analyst, requirements engineer]
+    links: {}
+  analytics-engineer:
+    names: [analytics engineer, инженер аналитики, analytics developer]
+    links: {data-engineer: adj}
+  data-engineer:
+    names: [data engineer, дата инженер, инженер данных, etl developer, etl разработчик, dwh developer, dwh разработчик]
+    links: {data-quality: far, ml-engineer: far, solution-architect: far}
+  data-quality:
+    names: [data quality, аналитик качества данных, dq engineer, dq analyst]
+    links: {}
+  data-scientist:
+    names: [data scientist, дата сайентист, специалист по данным]
+    links: {ml-engineer: adj, product-analyst: far}
+  ml-engineer:
+    names: [ml engineer, ml инженер, machine learning engineer, ai engineer]
+    links: {}
+  marketing-analyst:
+    names: [маркетинговый аналитик, marketing analyst, веб аналитик, web analyst]
+    links: {}
+  financial-analyst:
+    names: [финансовый аналитик, financial analyst, fp&a, экономист, economist]
+    links: {accountant: far}
+  product-manager:
+    names: [product manager, продакт менеджер, менеджер продукта, product owner, продакт оунер]
+    links: {project-manager: adj}
+  project-manager:
+    names: [project manager, менеджер проектов, руководитель проектов]
+    links: {}
+  solution-architect:
+    names: [solution architect, архитектор решений]
+    links: {}
+  accountant:
+    names: [бухгалтер, accountant, главный бухгалтер, главбух]
+    links: {}
+  designer:
+    names: [дизайнер, designer, ux designer, ui designer, продуктовый дизайнер, product designer]
+    links: {graphic-designer: adj}
+  graphic-designer:
+    names: [графический дизайнер, graphic designer, моушн дизайнер, motion designer]
+    links: {}
+  recruiter:
+    names: [рекрутер, recruiter, talent acquisition, hr менеджер, hr manager]
+    links: {}
+  qa-engineer:
+    names: [тестировщик, qa engineer, qa инженер, qa analyst, test engineer]
+    links: {system-analyst: far}
+  support:
+    names: [специалист поддержки, customer support, support specialist, оператор поддержки]
+    links: {}

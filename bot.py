@@ -29,6 +29,8 @@ import boards
 import guests
 import screens
 import tg_collect as tc
+import tunnel
+import webapp
 
 INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
 DISCARD_LOG = tc.ROOT / "data" / "discard.log"
@@ -136,14 +138,8 @@ def job_key(job):
     return job.get("key") or f"{abs(job['chat_id'])}_{job['msg_id']}"
 
 
-def to_inbox(job):
-    item = dict(job, status="new", fav=False)
-    item.setdefault("source", "tg")
-    if item["source"] == "tg":
-        item.setdefault("title", tc.guess_title(job["text"]))
-    item["date"] = job["date"].isoformat()
-    item.pop("key", None)
-    return item
+to_inbox = guests.to_item
+ACTIONS = {"t": "take", "n": "hide", "r": "restore", "f": "fav"}
 
 
 def from_inbox(item):
@@ -221,7 +217,12 @@ def add_keywords(search, group, text):
 HOME_BTN = btn("🏠 Домой", "h")
 
 
-def home_screen(inbox, next_check=None, owner=False):
+def app_button(url, text="📱 Открыть приложение"):
+    """A button that opens the Job Radar mini app inside Telegram."""
+    return types.KeyboardInlineButton(text, types.InlineButtonTypeWebView(url))
+
+
+def home_screen(inbox, next_check=None, owner=False, app_url=None):
     s = stats_of(inbox)
     if s["new"]:
         n = s["new"]
@@ -240,6 +241,8 @@ def home_screen(inbox, next_check=None, owner=False):
     ]
     if owner:
         rows.append([btn("👥 Близкие", "u")])
+    if app_url:
+        rows.insert(0, [app_button(app_url)])
     return "\n".join(lines), rows
 
 
@@ -598,6 +601,8 @@ class JobRadar:
         self.hh_busy = False
         self.last_seen = {}  # guest id -> time of the last action (anti-flood)
         self.bot_username = None
+        self.app_url = None  # the mini app's public address (tunnel.py), None while offline
+        self.webapp = None
 
     async def start(self):
         await self.user.connect()
@@ -617,6 +622,28 @@ class JobRadar:
         self.bot.add_event_handler(self.on_button, events.CallbackQuery())
         await self.set_profile()
         log.info("started, owner %s", self.owner)
+        try:
+            self.webapp = webapp.WebApp(self)
+            await self.webapp.start()
+            asyncio.create_task(tunnel.run(webapp.PORT, self.set_app_url, self.cfg.get("cloudflared")))
+        except Exception:
+            log.exception("mini app did not start; the bot keeps working in the chat")
+
+    async def set_app_url(self, url):
+        """The tunnel got a (new) address, or lost it: re-point the «Открыть» buttons."""
+        self.app_url = url
+        try:
+            button = types.BotMenuButton("Радар", url) if url else types.BotMenuButtonCommands()
+            await self.bot(functions.bots.SetBotMenuButtonRequest(user_id=types.InputUserEmpty(), button=button))
+        except Exception:
+            log.warning("could not set the menu button", exc_info=True)
+        home = tc.load_state().get("home_msg")
+        if home:
+            try:
+                caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=url)
+                await self.edit_screen(home, caption, buttons)
+            except Exception:
+                pass  # the home message may be gone or unchanged
 
     async def set_profile(self):
         try:
@@ -679,7 +706,7 @@ class JobRadar:
         return await target.edit(caption, **kw)
 
     async def show_home(self, target=None):
-        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True)
+        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url)
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True)
         state = tc.load_state()
@@ -764,9 +791,16 @@ class JobRadar:
         save_inbox(inbox)
         return items
 
+    def found(self, items, period=None):
+        """The «new vacancies» screen, with the app button on top once the app is online."""
+        caption, rows = found_screen(items, period)
+        if self.app_url and items:
+            rows.insert(0, [app_button(self.app_url, "📱 Разобрать в приложении")])
+        return caption, rows
+
     async def alert(self, items):
         if items:
-            caption, buttons = found_screen(items)
+            caption, buttons = self.found(items)
             await self.send_screen(caption, buttons)
 
     async def scheduler(self):
@@ -852,7 +886,7 @@ class JobRadar:
         if found is None:
             caption, buttons = "⏳ <b>Уже проверяю</b>\n\nЗагляни через минуту.", [[HOME_BTN]]
         else:
-            caption, buttons = found_screen(found, days)
+            caption, buttons = self.found(found, days)
         await self.edit_screen(target, caption, buttons, refresh_picture=True)
 
     # ------------------------------------------------------------ buttons
@@ -899,27 +933,9 @@ class JobRadar:
         item = inbox.get(key)
         if not item:
             return await event.answer("Вакансия не найдена", alert=True)
-        if action in ("t", "n") and item["status"] != "new":
-            return await event.answer("Уже разобрано")
-        if action == "t":
-            if item.get("source") == "web":
-                tc.add_to_pipeline([item["pipeline_line"]])
-            else:
-                job = from_inbox(item)
-                tc.add_to_pipeline([tc.pipeline_line(job, tc.save_jd(job))])
-            item["status"] = "taken"
-            note = "👍 В работе! Оценка: /career-ops pipeline"
-        elif action == "n":
-            with DISCARD_LOG.open("a", encoding="utf-8") as f:
-                f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}\t{item.get('link') or key}\thidden in job radar bot\n")
-            item["status"] = "hidden"
-            note = "🙈 Скрыто"
-        elif action == "r":
-            item["status"] = "new"
-            note = "↩️ Вернул в новые"
-        else:
-            item["fav"] = not item.get("fav", False)
-            note = "⭐ В избранном" if item["fav"] else "Убрал из избранного"
+        changed, note = guests.job_action(self.me, key, item, ACTIONS[action])
+        if not changed:
+            return await event.answer(note)
         save_inbox(inbox)
         await event.answer(note)
         await self.edit_screen(event, *card_screen(key, item, view, int(page)))
@@ -1067,15 +1083,17 @@ class JobRadar:
             result = await self.check_pool([self.me] + people)
         for m in [self.me] + people:
             if result[m.id]:
-                await self.send_screen(*found_screen(result[m.id]), guest=self.g(m))
+                await self.send_screen(*self.found(result[m.id]), guest=self.g(m))
 
     async def sites_pass(self):
         listed = guests.listed_sites()
         people = [g for g in guests.all_guests(guests.load_registry())
                   if not g.load_state().get("step") and g.sites(listed)]
-        if not people:
+        wanted = {s for m in people + [self.me] for s in m.sites(listed)}  # yours too: the app's search reads the cache
+        if not wanted - {guests.HH_ID}:
             return
-        feed = await guests.fetch_feed(sorted({s for g in people for s in g.sites(listed)}))
+        feed = await guests.fetch_feed(sorted(wanted))
+        guests.write_json(webapp.FEED_CACHE_PATH, {"at": datetime.now(timezone.utc).isoformat(), "feed": feed})
         errors = {p: r["error"] for p, r in feed.items() if "error" in r}
         if errors:
             log.warning("site feed errors: %s", errors)
@@ -1083,7 +1101,7 @@ class JobRadar:
             items = self.guest_store(g, guests.match_site_jobs(feed, g, listed))
             log.info("sites for %s: %d new", g.name, len(items))
             if items:
-                await self.send_screen(*found_screen(items), guest=g)
+                await self.send_screen(*self.found(items), guest=g)
 
     async def hh_pass(self):
         listed = guests.listed_sites()
@@ -1100,7 +1118,7 @@ class JobRadar:
             items = self.store_for(m, guests.match_hh_jobs(raw, m))
             log.info("hh.ru for %s: %d of %d new", m.name, len(items), len(raw))
             if items:
-                await self.send_screen(*found_screen(items), guest=self.g(m))
+                await self.send_screen(*self.found(items), guest=self.g(m))
             await asyncio.sleep(guests.HH_PAUSE)
 
     async def hh_task(self):
@@ -1286,7 +1304,7 @@ class JobRadar:
     # ------------------------------------------------------------ 👥 family: the guest's side
 
     async def guest_show_home(self, guest, target=None):
-        caption, buttons = home_screen(guest.load_inbox())
+        caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url)
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
         msg = await self.send_screen(caption, buttons, guest=guest)
@@ -1337,7 +1355,7 @@ class JobRadar:
             guest.update_state(manual_at=datetime.now(timezone.utc).isoformat())
             async with self.lock:
                 items = (await self.check_pool([guest], rescan_days=days))[guest.id]
-            caption, buttons = found_screen(items, days)
+            caption, buttons = self.found(items, days)
         await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
 
     async def on_guest_message(self, event):
@@ -1482,19 +1500,10 @@ class JobRadar:
         view = view if view in VIEWS else "all"
         if not item:
             return await event.answer("Вакансия не найдена", alert=True)
-        note = None
-        if action in ("t", "n") and item["status"] != "new":
-            return await event.answer("Уже разобрано")
-        if action == "t":
-            item["status"], note = "taken", "👍 В работе"
-        elif action == "n":
-            item["status"], note = "hidden", "🙈 Скрыто"
-        elif action == "r":
-            item["status"], note = "new", "↩️ Вернул в новые"
-        elif action == "f":
-            item["fav"] = not item.get("fav", False)
-            note = "⭐ В избранном" if item["fav"] else "Убрал из избранного"
-        if note:
+        changed, note = guests.job_action(guest, key, item, ACTIONS.get(action, ""))
+        if action in ("t", "n") and not changed:
+            return await event.answer(note)
+        if changed:
             guest.save_inbox(inbox)
         await event.answer(note)
         await self.edit_screen(event, *card_screen(key, item, view, to_int(page), GUEST_STATUS_LINE), guest=guest)

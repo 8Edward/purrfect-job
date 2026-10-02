@@ -106,7 +106,7 @@ async def scan_boards(timeout=600):
     except asyncio.TimeoutError:
         proc.kill()
         raise RuntimeError("поиск по сайтам не уложился в 10 минут")
-    lines = [l for l in out.decode("utf-8", "replace").splitlines() if l.startswith("{")]
+    lines = [l.strip() for l in out.decode("utf-8", "replace").split("\n") if l.startswith("{")]  # not splitlines(): U+2028
     if not lines:
         tail = err.decode("utf-8", "replace").strip().splitlines()[-1:] or ["нет вывода"]
         raise RuntimeError(f"scan.mjs: {tail[0][:200]}")
