@@ -6,6 +6,10 @@
 # How often the bot checks for new messages while the computer is on.
 interval_minutes: 15
 
+# Job boards (career-ops scan.mjs, the sites in portals.yml): on/off and how often.
+boards_enabled: true
+boards_interval_hours: 2
+
 # Reads are incremental: only messages newer than the last one seen in each chat.
 # This caps how old a message may be (first read of a chat, or after the laptop was off).
 lookback_days: 1

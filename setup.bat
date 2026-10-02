@@ -1,10 +1,18 @@
 @echo off
-rem One-time setup: installs Python packages and creates config.yml.
+rem One-time setup: Python packages, career-ops packages (job boards), config.yml.
 cd /d "%~dp0"
 py -3 -m pip install -r requirements.txt || goto :error
+where node >nul 2>nul
+if errorlevel 1 (
+  echo Node.js not found - job boards will be off. Install it from https://nodejs.org and run setup.bat again.
+) else (
+  pushd ..
+  call npm install || goto :error
+  popd
+)
 if not exist config.yml (
   copy config.example.yml config.yml >nul
-  echo Created telegram\config.yml - open it and fill in api_id and api_hash.
+  echo Created telegram\config.yml - open it and fill in api_id, api_hash and bot_token.
 ) else (
   echo telegram\config.yml already exists.
 )

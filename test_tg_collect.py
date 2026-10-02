@@ -70,17 +70,27 @@ with tempfile.TemporaryDirectory() as d:
     sample.write_text("\ufeff# comment\n\n@data_jobs\n  C# jobs  \n# @disabled\n", encoding="utf-8")
     assert tc.load_channels(sample) == ["@data_jobs", "C# jobs"]
 
-# bot: inbox round trip, cards, channel list editing
+# bot: inbox, screens, channel list editing
+import boards
 import bot
 
+
+def data(button):
+    return button.type.data.decode()
+
+
 item = bot.to_inbox(job)
-assert item["status"] == "new" and bot.from_inbox(item)["date"] == job["date"]
+assert item["status"] == "new" and item["source"] == "tg" and item["title"] == "Аналитик данных (Middle)"
+assert bot.from_inbox(item)["date"] == job["date"]
 assert bot.job_key(job) == "1001234_42"
-card = bot.card_text(job)
-assert card.startswith("<b>Аналитик данных (Middle)</b>\n💬 Data | Jobs · 02.10 09:00\n#part_time #remote"), card
-assert len(bot.card_buttons(job, "k")) == 3 and len(bot.card_buttons(dict(job, link=None), "k")) == 2
-assert "✅ В работе" in bot.card_text(job, "taken") and bot.card_text(job, fav=True).startswith("⭐ ")
-assert len(f"t:{bot.job_key(dict(job, chat_id=-1009999999999, msg_id=99999999))}".encode()) <= 64  # Telegram callback data limit
+assert len(f"t:{bot.job_key(dict(job, chat_id=-1009999999999, msg_id=99999999))}:all:99".encode()) <= 64
+
+caption, rows = bot.card_screen("1001234_42", item, "new", 2)
+assert caption.startswith("<b>Аналитик данных (Middle)</b>") and "💬 Data | Jobs · 02.10 09:00" in caption
+assert [data(b) for b in rows[0]] == ["t:1001234_42:new:2", "n:1001234_42:new:2"]
+assert data(rows[-1][0]) == "l:new:2"  # back to the same list page
+assert "✅ <b>В работе</b>" in bot.card_screen("k", dict(item, status="taken"))[0]
+assert bot.card_screen("k", dict(item, fav=True))[0].startswith("⭐ ")
 
 with tempfile.TemporaryDirectory() as d:
     real = tc.CHANNELS_PATH
@@ -92,28 +102,70 @@ with tempfile.TemporaryDirectory() as d:
     assert bot.remove_channel("t.me/data_jobs/5") == "t.me/data_jobs/5"
     assert bot.remove_channel("@nope") is None
     assert tc.CHANNELS_PATH.read_text(encoding="utf-8") == "# мои чаты\nhttps://t.me/new_jobs\n"
+
+    # screens that read channels.txt
+    caption, rows = bot.settings_screen(dict(cfg, boards_enabled=True))
+    assert "1 чат," in caption and all(bot.visible_len(caption) <= 1024 for _ in [0])
+    caption, rows = bot.chats_screen()
+    assert data(rows[0][0]) == "c:del:0"
     tc.CHANNELS_PATH = real
 
-# bot: list pages, keywords from chat
+# board jobs
+line = "- [ ] https://weworkremotely.com/remote-jobs/x | Acme | Data Analyst | Anywhere | $60k | posted: 2026-09-30"
+info = boards.parse_pipeline_line(line)
+assert (info["company"], info["title"], info["location"], info["comp"], info["posted"]) == ("Acme", "Data Analyst", "Anywhere", "$60k", "2026-09-30")
+assert boards.parse_pipeline_line("- [ ] https://x.io/1 | Co | Role | posted: 2026-10-01")["location"] == ""
+web = boards.board_job("https://weworkremotely.com/remote-jobs/x", line)
+assert web["site"] == "We Work Remotely" and web["key"].startswith("w_")
+web_item = bot.to_inbox(web)
+assert bot.job_key(web) == web["key"] and "key" not in web_item and web_item["pipeline_line"] == line
+caption, rows = bot.card_screen(web["key"], web_item)
+assert "🏢 Acme" in caption and "📍 Anywhere" in caption and "💰 $60k" in caption and "🌐 We Work Remotely" in caption
+
+with tempfile.TemporaryDirectory() as d:
+    real = tc.PIPELINE_PATH
+    tc.PIPELINE_PATH = Path(d) / "pipeline.md"
+    tc.PIPELINE_PATH.write_text("## Pending\n\n" + line + "\n- [ ] https://other.io/2 | B | C\n\n## Processed\n", encoding="utf-8")
+    taken = boards.take_from_pipeline(["https://weworkremotely.com/remote-jobs/x"])
+    assert taken == {"https://weworkremotely.com/remote-jobs/x": line}
+    assert "weworkremotely" not in tc.PIPELINE_PATH.read_text() and "other.io/2" in tc.PIPELINE_PATH.read_text()
+    tc.PIPELINE_PATH = real
+
+# lists: newest first, paging, back to home; mixed sources
 inbox = {}
 for i in range(11):
     j = dict(job, msg_id=i, date=job["date"].replace(day=1 + i))
     inbox[bot.job_key(j)] = dict(bot.to_inbox(j), status="hidden" if i == 0 else "new", fav=i in (3, 5))
-text, rows = bot.list_view(inbox, "all")
-assert "· 11 · стр. 1/2" in text and len(rows) == 3, text  # 4 + 4 numbers, nav row
-assert rows[0][0].type.data == b"o:1001234_10"  # newest first
-text, rows = bot.list_view(inbox, "all", page=1)
-assert "стр. 2/2" in text and "🙈" in text and len(rows) == 2
-assert "· 10" in bot.list_view(inbox, "new")[0]
-text, rows = bot.list_view(inbox, "fav")
-assert "· 2" in text and rows is not None and len(rows[0]) == 2
-assert bot.list_view({}, "fav")[1] is None
+inbox[web["key"]] = web_item
+caption, rows = bot.list_screen(inbox, "all")
+assert "· 12" in caption and "стр. 1/2" in caption and data(rows[0][0]) == "o:1001234_10:all:0", caption
+assert [data(b) for b in rows[2]] == ["l:all:1"] and data(rows[-1][0]) == "h"
+caption, rows = bot.list_screen(inbox, "all", page=1)
+assert "🙈" in caption and "🌐 We Work Remotely" in caption and [data(b) for b in rows[1]] == ["l:all:0"]
+assert "· 2" in bot.list_screen(inbox, "fav")[0]
+assert "Пока пусто" in bot.list_screen({}, "fav")[0]
+for view in ("new", "all", "fav"):
+    for page in (0, 1):
+        assert bot.visible_len(bot.list_screen(inbox, view, page)[0]) <= 1024
 
+caption, rows = bot.home_screen(inbox, next_check=7)
+assert "<b>11</b> новых вакансий" in caption and "через 7 мин" in caption and data(rows[0][0]) == "l:new:0"
+assert bot.plural(1, "a", "b", "c") == "a" and bot.plural(3, "a", "b", "c") == "b" and bot.plural(12, "a", "b", "c") == "c"
+assert "2 новые вакансии" in bot.found_screen([item, web_item])[0]
+assert "за 3 дн. нет" in bot.found_screen([], 3)[0]
+assert bot.visible_len(bot.HELP) <= 1024
+long_card = bot.card_screen("k", dict(item, text="слово " * 400, title="Очень длинный заголовок " * 4))[0]
+assert bot.visible_len(long_card) <= 1024
+assert bot.visible_len(bot.fit("<b>x</b>" + "я" * 2000)) <= 1024
+
+# keywords from chat
+assert [bot.show_pattern(p) for p in ["\\banalyst\\b", "power ?bi", "парт-?тайм", "C\\+\\+", "#cv\\b"]] == ["analyst", "power bi", "парт-тайм", "C++", "#cv"]
+assert bot.short("Очень длинный заголовок вакансии", 20) == "Очень длинный…"
+assert "1</b> новая вакансия ждёт тебя" in bot.home_screen({"a": item})[0]
 assert bot.word_to_pattern("power bi") == "power bi" and bot.word_to_pattern("C++") == "C\\+\\+"
 search = {"keywords": {"role": ["sql"]}}
 assert bot.add_keywords(search, "role", "Tableau, SQL, , metabase") == ["Tableau", "metabase"]
 assert search["keywords"]["role"] == ["sql", "Tableau", "metabase"]
-f2 = tc.JobFilter({"job": ["вакансия"], "role": search["keywords"]["role"]}, 10)
-assert f2.is_job("Вакансия: аналитик Metabase")
+assert tc.JobFilter({"job": ["вакансия"], "role": search["keywords"]["role"]}, 10).is_job("Вакансия: аналитик Metabase")
 
 print("ok")

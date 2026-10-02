@@ -1,14 +1,15 @@
-"""Personal Telegram bot: the interface to the Telegram job collector.
+"""Job Radar — personal Telegram bot that works like an app.
 
-- Every `interval_minutes` (default 15) while the computer is on, reads only
-  the messages that arrived since the last check in the chats from
-  channels.txt, and alerts you with a card per new job post:
-  👍 В работу  -> added to data/pipeline.md for /career-ops pipeline
-  👎 Скрыть    -> logged to data/discard.log
-  ⭐           -> favourites
-- Menu: new / all / favourite job lists, re-check the last 1 or 3 days,
-  settings (interval, depth, keywords, chats) editable from the chat.
-- Answers only you (the account logged in via login.bat).
+One screen (a dashboard picture with a caption and buttons) that changes in
+place: home -> lists -> job card -> settings, instead of a stream of messages.
+
+Sources:
+- Telegram: chats from channels.txt, checked every `interval_minutes`,
+  incrementally (only messages newer than the last one seen).
+- Job boards: career-ops scan.mjs, every `boards_interval_hours`.
+
+A job card: 👍 В работу -> data/pipeline.md for /career-ops pipeline,
+👎 Скрыть, ⭐ favourite. Answers only you (the account logged in via login.bat).
 
 Run: pyw -3 telegram/bot.py   (no console; log in data/tg-bot.log)
 """
@@ -20,60 +21,93 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from telethon import Button, TelegramClient, events
+from telethon import Button, TelegramClient, events, functions, types
 
+import boards
+import screens
 import tg_collect as tc
 
 INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
 DISCARD_LOG = tc.ROOT / "data" / "discard.log"
 LOG_PATH = tc.ROOT / "data" / "tg-bot.log"
+SCREENS_DIR = tc.ROOT / "data" / "tg-screens"
 BOT_SESSION = tc.TG_DIR / "bot"
 
 PAGE_SIZE = 8
-
-BTN_NEW, BTN_ALL, BTN_FAV = "🆕 Новое", "📋 Все вакансии", "⭐ Избранное"
-BTN_DAY, BTN_3DAYS, BTN_SETTINGS = "🔄 За сутки", "🔄 За 3 дня", "⚙️ Настройки"
-MENU = [
-    [Button.text(BTN_NEW, resize=True), Button.text(BTN_ALL), Button.text(BTN_FAV)],
-    [Button.text(BTN_DAY), Button.text(BTN_3DAYS)],
-    [Button.text(BTN_SETTINGS)],
-]
+CAPTION_LIMIT = 1024
+EXCERPT = 520
 
 VIEWS = {
     "new": ("🆕 Новые", lambda item: item["status"] == "new"),
     "all": ("📋 Все вакансии", lambda item: True),
     "fav": ("⭐ Избранное", lambda item: item.get("fav")),
 }
+EMPTY = {
+    "new": "Всё разобрано 🎉\nНовые вакансии появятся здесь после следующей проверки.",
+    "fav": "Пока пусто.\nОткрой вакансию и нажми ⭐ — она окажется здесь.",
+    "all": "Пока ни одной вакансии.\nНажми «🔄 Обновить», чтобы проверить прямо сейчас.",
+}
 STATUS_ICON = {"new": "🆕", "taken": "✅", "hidden": "🙈"}
-STATUS_LABEL = {"taken": "✅ В работе — оценка: /career-ops pipeline", "hidden": "🙈 Скрыто"}
+STATUS_LINE = {"taken": "✅ <b>В работе</b> — оценит /career-ops pipeline", "hidden": "🙈 <b>Скрыта</b>"}
 
 KEYWORD_GROUPS = {
     "job": ("🔑 Признаки вакансии", "В сообщении должно быть хотя бы одно из этих слов."),
     "role": ("🎯 Роль и стек", "И хотя бы одно из этих."),
     "negative": ("🚫 Стоп-слова", "Если есть хоть одно — сообщение пропускается."),
 }
-INTERVALS, DEPTHS, MIN_LENGTHS = (5, 15, 30, 60), (1, 3, 7), (50, 120, 200)
+INTERVALS, DEPTHS, MIN_LENGTHS, BOARD_HOURS = (5, 15, 30, 60), (1, 3, 7), (50, 120, 200), (1, 2, 4, 8)
 
-HELP = """<b>Бот вакансий из Telegram</b>
+HELP = """<b>❓ Как это работает</b>
 
-Каждые 15 минут я проверяю новые сообщения в чатах из списка и присылаю алерт 🔔, если нашлась вакансия.
-👍 — в работу (попадёт в career-ops на оценку), 👎 — скрыть, ⭐ — в избранное.
+<b>Откуда вакансии</b>
+💬 Твои Telegram-чаты — проверяю каждые 15 минут, только новые сообщения.
+🌐 Сайты удалённой работы — раз в пару часов.
 
-Кнопки внизу:
-🆕 Новое · 📋 Все вакансии · ⭐ Избранное — списки
-🔄 За сутки / За 3 дня — перепроверить чаты за период (найдёт то, что пропустили старые настройки)
-⚙️ Настройки — интервал, глубина, слова для поиска, чаты
+<b>Что делать с вакансией</b>
+👍 <b>В работу</b> — уйдёт в career-ops: /career-ops pipeline оценит её и подготовит резюме.
+👎 <b>Скрыть</b> — больше не мешает (можно вернуть).
+⭐ — в избранное.
 
-Команды: /scan — проверить сейчас, /help — эта справка"""
+<b>Обновить за сутки / 3 дня</b> — перечитать чаты за период: найдёт то, что пропустили старые настройки (например, после добавления слова).
 
-log = logging.getLogger("tg-bot")
+<b>⚙️ Настройки</b> — частота, глубина, слова для поиска, чаты, сайты. Всё кнопками, без файлов."""
+
+log = logging.getLogger("job-radar")
 
 
 def esc(text):
     return html.escape(str(text), quote=False)
 
 
-# ---------------------------------------------------------------- storage
+def visible_len(caption):
+    return len(html.unescape(re.sub(r"<[^>]+>", "", caption)))
+
+
+def fit(caption, limit=CAPTION_LIMIT):
+    """Telegram rejects captions over 1024 visible characters: fall back to trimmed plain text."""
+    if visible_len(caption) <= limit:
+        return caption
+    log.warning("caption too long (%d), trimming", visible_len(caption))
+    plain = html.unescape(re.sub(r"<[^>]+>", "", caption))
+    return esc(plain[:limit - 1] + "…")
+
+
+def short(text, limit):
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(",.:;—-") + "…"
+
+
+def show_pattern(pattern):
+    """'\\banalyst\\b' -> 'analyst', 'power ?bi' -> 'power bi': keywords as a person reads them."""
+    text = pattern.replace("\\b", "").replace(" ?", " ").replace("-?", "-")
+    return re.sub(r"\\(.)", r"\1", text)
+
+
+def btn(text, data):
+    return Button.inline(text, data.encode())
+
+
+# ---------------------------------------------------------------- inbox
 
 def load_inbox():
     if INBOX_PATH.exists():
@@ -87,7 +121,17 @@ def save_inbox(inbox):
 
 
 def job_key(job):
-    return f"{abs(job['chat_id'])}_{job['msg_id']}"
+    return job.get("key") or f"{abs(job['chat_id'])}_{job['msg_id']}"
+
+
+def to_inbox(job):
+    item = dict(job, status="new", fav=False)
+    item.setdefault("source", "tg")
+    if item["source"] == "tg":
+        item.setdefault("title", tc.guess_title(job["text"]))
+    item["date"] = job["date"].isoformat()
+    item.pop("key", None)
+    return item
 
 
 def from_inbox(item):
@@ -96,10 +140,20 @@ def from_inbox(item):
     return job
 
 
-def to_inbox(job):
-    item = dict(job, status="new", fav=False)
-    item["date"] = job["date"].isoformat()
-    return item
+def title_of(item):
+    return item.get("title") or tc.guess_title(item.get("text", ""))
+
+
+def origin_of(item):
+    return f"🌐 {item['site']}" if item.get("source") == "web" else f"💬 {item['chat']}"
+
+
+def stats_of(inbox):
+    return {
+        "new": sum(1 for i in inbox.values() if i["status"] == "new"),
+        "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
+        "fav": sum(1 for i in inbox.values() if i.get("fav")),
+    }
 
 
 # ---------------------------------------------------------------- channels.txt
@@ -150,123 +204,199 @@ def add_keywords(search, group, text):
     return added
 
 
-# ---------------------------------------------------------------- views
+# ---------------------------------------------------------------- screens (caption, buttons)
 
-def card_text(job, status="new", fav=False):
-    tags = " ".join(f"#{t.replace('-', '_')}" for t in job["tags"])
-    body = job["text"] if len(job["text"]) <= 1500 else job["text"][:1500] + "…"
-    star = "⭐ " if fav else ""
-    head = f"{star}<b>{esc(tc.guess_title(job['text']))}</b>\n💬 {esc(job['chat'])} · {job['date']:%d.%m %H:%M}"
-    text = f"{head}\n{tags}\n\n{esc(body)}".replace("\n\n\n", "\n\n")
-    if status in STATUS_LABEL:
-        text += f"\n\n<b>{STATUS_LABEL[status]}</b>"
-    return text
+HOME_BTN = btn("🏠 Домой", "h")
 
 
-def card_buttons(job, key, status="new", fav=False):
-    rows = []
-    if status == "new":
-        rows.append([Button.inline("👍 В работу", f"t:{key}".encode()), Button.inline("👎 Скрыть", f"h:{key}".encode())])
-    elif status == "hidden":
-        rows.append([Button.inline("↩️ Вернуть в новые", f"r:{key}".encode())])
-    rows.append([Button.inline("★ Убрать из избранного" if fav else "⭐ В избранное", f"f:{key}".encode())])
-    if job.get("link"):
-        rows.append([Button.url("🔗 Открыть пост", job["link"])])
-    return rows
+def home_screen(inbox, next_check=None):
+    s = stats_of(inbox)
+    if s["new"]:
+        n = s["new"]
+        hello = f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя"
+    else:
+        hello = "✨ Всё разобрано — новых вакансий пока нет"
+    lines = [hello]
+    if next_check:
+        lines.append(f"⏱ Следующая проверка через {next_check} мин")
+    rows = [
+        [btn(f"🆕 Новые · {s['new']}", "l:new:0"), btn(f"⭐ Избранное · {s['fav']}", "l:fav:0")],
+        [btn(f"📋 Все вакансии · {len(inbox)}", "l:all:0")],
+        [btn("🔄 Обновить за сутки", "rf:1"), btn("🔄 За 3 дня", "rf:3")],
+        [btn("⚙️ Настройки", "s"), btn("❓ Как это работает", "help")],
+    ]
+    return "\n".join(lines), rows
 
 
-def item_card(key, item):
-    job = from_inbox(item)
-    status, fav = item["status"], item.get("fav", False)
-    return card_text(job, status, fav), card_buttons(job, key, status, fav)
+def plural(n, one, few, many):
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
 
 
-def list_view(inbox, view, page=0):
+def list_screen(inbox, view, page=0):
     title, keep = VIEWS[view]
     items = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True)
     if not items:
-        empty = {"new": "Новых вакансий нет.", "fav": "В избранном пусто. Жми ⭐ на карточке.", "all": "Пока ни одной вакансии."}
-        return f"<b>{title}</b>\n\n{empty[view]}", None
+        return f"<b>{title}</b>\n\n{EMPTY[view]}", [[HOME_BTN]]
     pages = (len(items) + PAGE_SIZE - 1) // PAGE_SIZE
     page = max(0, min(page, pages - 1))
     chunk = items[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
 
-    lines = [f"<b>{title}</b> · {len(items)}" + (f" · стр. {page + 1}/{pages}" if pages > 1 else "")]
+    lines = [f"<b>{title}</b> · {len(items)}" + (f"   стр. {page + 1}/{pages}" if pages > 1 else ""), ""]
     for n, (_, item) in enumerate(chunk, 1):
-        job = from_inbox(item)
         icons = STATUS_ICON[item["status"]] + ("⭐" if item.get("fav") else "")
-        lines.append(f"{n}. {icons} <b>{esc(tc.guess_title(job['text'])[:60])}</b>\n     {esc(job['chat'])} · {job['date']:%d.%m}")
-    lines.append("\nНажми номер, чтобы открыть карточку.")
+        date = datetime.fromisoformat(item["date"])
+        lines.append(f"<b>{n}.</b> {icons} {esc(short(title_of(item), 52))}\n      <i>{esc(origin_of(item)[:40])} · {date:%d.%m}</i>")
+    caption = "\n".join(lines)
 
-    numbers = [Button.inline(str(n), f"o:{key}".encode()) for n, (key, _) in enumerate(chunk, 1)]
+    numbers = [btn(f"{n}", f"o:{key}:{view}:{page}") for n, (key, _) in enumerate(chunk, 1)]
     rows = [numbers[:4], numbers[4:]] if len(numbers) > 4 else [numbers]
-    if pages > 1:
-        rows.append([
-            Button.inline("◀️", f"l:{view}:{page - 1}".encode()) if page else Button.inline(" ", b"x"),
-            Button.inline(f"{page + 1}/{pages}", b"x"),
-            Button.inline("▶️", f"l:{view}:{page + 1}".encode()) if page < pages - 1 else Button.inline(" ", b"x"),
-        ])
-    return "\n".join(lines), rows
+    nav = []
+    if page:
+        nav.append(btn("◀️", f"l:{view}:{page - 1}"))
+    if page < pages - 1:
+        nav.append(btn("▶️", f"l:{view}:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([HOME_BTN])
+    return caption, rows
 
 
-def settings_view(cfg):
+def card_screen(key, item, view="all", page=0):
+    job = from_inbox(item)
+    star = "⭐ " if item.get("fav") else ""
+    head = [f"{star}<b>{esc(short(title_of(item), 80))}</b>", ""]
+    if item.get("source") == "web":
+        if item.get("company"):
+            head.append(f"🏢 {esc(item['company'])}")
+        if item.get("location"):
+            head.append(f"📍 {esc(item['location'])}")
+        if item.get("comp"):
+            head.append(f"💰 {esc(item['comp'])}")
+        head.append(f"{esc(origin_of(item))} · {job['date']:%d.%m}")
+        body = "Полное описание — на сайте, кнопка «🔗 Вакансия»."
+    else:
+        head.append(f"{esc(origin_of(item))} · {job['date']:%d.%m %H:%M}")
+        if item.get("tags"):
+            head.append(" ".join(f"#{t.replace('-', '_')}" for t in item["tags"]))
+        text = item["text"].strip()
+        body = esc(text if len(text) <= EXCERPT else text[:EXCERPT].rsplit(" ", 1)[0] + "…")
+    caption = "\n".join(head) + f"\n\n{body}"
+    if item["status"] in STATUS_LINE:
+        caption += f"\n\n{STATUS_LINE[item['status']]}"
+
+    ctx = f"{key}:{view}:{page}"
+    rows = []
+    if item["status"] == "new":
+        rows.append([btn("👍 В работу", f"t:{ctx}"), btn("👎 Скрыть", f"n:{ctx}")])
+    elif item["status"] == "hidden":
+        rows.append([btn("↩️ Вернуть в новые", f"r:{ctx}")])
+    rows.append([btn("★ Убрать из избранного" if item.get("fav") else "⭐ В избранное", f"f:{ctx}")])
+    links = []
+    if item.get("source") != "web" and len(item.get("text", "")) > EXCERPT:
+        links.append(btn("📄 Полный текст", f"full:{key}"))
+    if item.get("link"):
+        links.append(Button.url("🔗 Вакансия" if item.get("source") == "web" else "🔗 Пост", item["link"]))
+    if links:
+        rows.append(links)
+    rows.append([btn("⬅️ К списку", f"l:{view}:{page}"), HOME_BTN])
+    return caption, rows
+
+
+def found_screen(items, period=None):
+    if not items:
+        where = f" за {period} дн." if period else ""
+        return f"🔍 <b>Новых вакансий{where} нет</b>\n\nВсё найденное раньше — в «📋 Все вакансии».", [[HOME_BTN]]
+    n = len(items)
+    lines = [f"🔔 <b>{n} {plural(n, 'новая вакансия', 'новые вакансии', 'новых вакансий')}</b>", ""]
+    for item in items[:6]:
+        lines.append(f"• {esc(short(title_of(item), 48))}\n   <i>{esc(origin_of(item)[:40])}</i>")
+    if n > 6:
+        lines.append(f"…и ещё {n - 6}")
+    return "\n".join(lines), [[btn("👀 Смотреть новые", "l:new:0")], [HOME_BTN]]
+
+
+def settings_screen(cfg):
     kw = cfg.get("keywords", {})
     interval, depth, min_len = cfg.get("interval_minutes", 15), cfg.get("lookback_days", 1), cfg.get("min_length", 120)
-    text = (
-        "<b>⚙️ Настройки поиска</b>\n\n"
-        f"⏱ Проверка каждые <b>{interval} мин</b>\n"
-        f"📅 Сообщения не старше <b>{depth} дн.</b>\n"
-        f"📏 Короче <b>{min_len}</b> символов — пропускаю\n"
-        f"💬 Чатов в списке: <b>{len(tc.load_channels(tc.CHANNELS_PATH))}</b>\n"
-        f"🔑 Слов: признаки {len(kw.get('job', []))} · роль {len(kw.get('role', []))} · стоп {len(kw.get('negative', []))}"
+    web_on, web_hours = cfg.get("boards_enabled", True), cfg.get("boards_interval_hours", 2)
+    chats = len(tc.load_channels(tc.CHANNELS_PATH))
+    caption = (
+        "<b>⚙️ Настройки</b>\n\n"
+        f"💬 <b>Telegram</b>: {chats} {plural(chats, 'чат', 'чата', 'чатов')}, проверка каждые {interval} мин,\n"
+        f"      сообщения не старше {depth} дн., короче {min_len} символов — мимо\n"
+        f"🌐 <b>Сайты</b>: " + (f"каждые {web_hours} ч" if web_on else "выключены") + "\n"
+        f"🔑 <b>Слова</b>: признаки {len(kw.get('job', []))} · роль {len(kw.get('role', []))} · стоп {len(kw.get('negative', []))}\n\n"
+        "<i>Нажми на значение, чтобы выбрать. ✓ — сейчас.</i>"
     )
 
     def choice(prefix, values, current, unit):
-        return [Button.inline(f"{'✓ ' if v == current else ''}{v}{unit}", f"s:{prefix}:{v}".encode()) for v in values]
+        return [btn(f"{'✓' if v == current else ''}{v}{unit}", f"s:{prefix}:{v}") for v in values]
 
     rows = [
+        [btn("⏱ Как часто проверять чаты", "noop")],
         choice("int", INTERVALS, interval, " мин"),
-        choice("lb", DEPTHS, depth, " дн"),
-        choice("ml", MIN_LENGTHS, min_len, " симв"),
-        [Button.inline("💬 Чаты", b"c:list")],
-        [Button.inline(KEYWORD_GROUPS[g][0], f"k:{g}".encode()) for g in ("job", "role")],
-        [Button.inline(KEYWORD_GROUPS["negative"][0], b"k:negative")],
+        [btn("📅 Глубина", "noop")] + choice("lb", DEPTHS, depth, " дн"),
+        [btn("📏 Мин. длина", "noop")] + choice("ml", MIN_LENGTHS, min_len, ""),
+        [btn("🌐 Сайты: " + ("✓ вкл" if web_on else "выкл"), "s:web:" + ("off" if web_on else "on"))]
+        + (choice("wi", BOARD_HOURS, web_hours, " ч") if web_on else []),
+        [btn(f"💬 Чаты · {chats}", "c")],
+        [btn(KEYWORD_GROUPS["job"][0], "k:job"), btn(KEYWORD_GROUPS["role"][0], "k:role")],
+        [btn(KEYWORD_GROUPS["negative"][0], "k:negative"), HOME_BTN],
     ]
-    return text, rows
+    return caption, rows
 
 
-def keywords_view(cfg, group):
+def keywords_screen(cfg, group):
     title, hint = KEYWORD_GROUPS[group]
     patterns = cfg.get("keywords", {}).get(group, [])
-    text = f"<b>{title}</b>\n{hint}\n\nНажми на слово, чтобы удалить."
-    buttons = [Button.inline(f"✖ {p}"[:40], f"k:del:{group}:{i}".encode()) for i, p in enumerate(patterns)]
-    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-    rows.append([Button.inline("➕ Добавить", f"k:add:{group}".encode()), Button.inline("⬅️ Назад", b"s:main")])
-    return text, rows
+    caption = f"<b>{title}</b>\n\n{hint}\n\n<i>Нажми на слово, чтобы удалить.</i>"
+    buttons = [btn(f"✖ {show_pattern(p)}"[:40], f"k:del:{group}:{i}") for i, p in enumerate(patterns)]
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([btn("➕ Добавить", f"k:add:{group}"), btn("⬅️ Назад", "s")])
+    return caption, rows
 
 
-def chats_view():
+def chats_screen():
     chats = tc.load_channels(tc.CHANNELS_PATH)
-    text = "<b>💬 Чаты</b>\nЧитаю только их. Нажми на чат, чтобы убрать." if chats else "<b>💬 Чаты</b>\nСписок пуст — добавь чат."
-    rows = [[Button.inline(f"✖ {c}"[:60], f"c:del:{i}".encode())] for i, c in enumerate(chats)]
-    rows.append([Button.inline("➕ Добавить", b"c:add"), Button.inline("⬅️ Назад", b"s:main")])
-    return text, rows
+    caption = ("<b>💬 Чаты</b>\n\nЧитаю только их.\n\n<i>Нажми на чат, чтобы убрать.</i>" if chats
+               else "<b>💬 Чаты</b>\n\nСписок пуст — добавь первый чат.")
+    rows = [[btn(f"✖ {c}"[:60], f"c:del:{i}")] for i, c in enumerate(chats)]
+    rows.append([btn("➕ Добавить", "c:add"), btn("⬅️ Назад", "s")])
+    return caption, rows
+
+
+def input_screen(what):
+    prompts = {
+        "chat": "<b>➕ Новый чат</b>\n\nПришли сообщением:\n• @username\n• ссылку t.me/…\n"
+                "• для приватного — ссылку на любое сообщение в нём\n• или точное название чата",
+    }
+    if what in prompts:
+        caption = prompts[what]
+    else:
+        caption = (f"<b>➕ {KEYWORD_GROUPS[what][0]}</b>\n\nПришли слово сообщением — можно несколько через запятую.\n\n"
+                   "<i>Регистр не важен, ищу как часть слова: «аналит» найдёт и «аналитик», и «аналитика».</i>")
+    back = "c" if what == "chat" else f"k:{what}"
+    return caption, [[btn("✖ Отмена", back)]]
 
 
 # ---------------------------------------------------------------- bot
 
-class JobBot:
+class JobRadar:
     def __init__(self, cfg):
         self.cfg = cfg
         self.user = tc.user_client(cfg)
         self.bot = TelegramClient(str(BOT_SESSION), int(cfg["api_id"]), cfg["api_hash"])
-        self.bot.parse_mode = None  # plain text unless a call asks for html: chat names contain _ and *
+        self.bot.parse_mode = "html"
         self.owner = None
         self.lock = asyncio.Lock()
-        self.last_attempt = None
-        self.failing = False
-        self.reported_missing = set()  # warn about a missing chat once, not every 15 minutes
-        self.awaiting = None  # ("kw", group) or ("chat",): the next text you send is that input
+        self.failing = {"tg": False, "web": False}
+        self.last_attempt = {"tg": None, "web": None}
+        self.reported_missing = set()
+        self.awaiting = None  # (what, screen message id): the next text you send is that input
 
     async def start(self):
         await self.user.connect()
@@ -276,256 +406,354 @@ class JobBot:
         await self.bot.start(bot_token=self.cfg["bot_token"])
         self.bot.add_event_handler(self.on_message, events.NewMessage(from_users=self.owner))
         self.bot.add_event_handler(self.on_button, events.CallbackQuery())
-        log.info("bot started, owner %s", self.owner)
+        await self.set_profile()
+        log.info("started, owner %s", self.owner)
 
-    async def say(self, text, **kw):
+    async def set_profile(self):
         try:
-            await self.bot.send_message(self.owner, text, parse_mode="html", link_preview=False, **kw)
+            await self.bot(functions.bots.SetBotCommandsRequest(
+                scope=types.BotCommandScopeDefault(), lang_code="",
+                commands=[types.BotCommand("start", "🏠 Главный экран"), types.BotCommand("scan", "🔄 Проверить сейчас")]))
+            await self.bot(functions.bots.SetBotInfoRequest(
+                lang_code="", about="Радар удалённых вакансий: чаты Telegram + сайты",
+                description="Job Radar находит вакансии в твоих Telegram-чатах и на сайтах удалённой работы "
+                            "и показывает их как приложение: новые, избранное, в работе."))
         except Exception:
-            log.exception("cannot message owner — did you press Start in the bot chat?")
+            log.warning("could not set bot commands/description", exc_info=True)
 
     def reload(self):
         self.cfg = tc.load_config()
 
-    # ------------------------------------------------------------ scanning
+    # ------------------------------------------------------------ screen plumbing
 
-    async def run_scan(self, manual=False, rescan_days=None):
-        if self.lock.locked():
-            if manual:
-                await self.say("Уже проверяю, подожди минуту.")
-            return
-        async with self.lock:
-            self.reload()  # pick up settings edits without a restart
+    def dashboard(self):
+        inbox = load_inbox()
+        state = tc.load_state()
+        last = state.get("last_run")
+        stats = dict(stats_of(inbox),
+                     chats=len(tc.load_channels(tc.CHANNELS_PATH)),
+                     boards=state.get("boards_scanned", 0) if self.cfg.get("boards_enabled", True) else 0,
+                     checked_at=datetime.fromisoformat(last).astimezone().replace(second=0, microsecond=0) if last else None)
+        return screens.render_dashboard(stats, SCREENS_DIR)
+
+    def minutes_to_next_check(self):
+        last = tc.load_state().get("last_run")
+        if not last:
+            return None
+        due = datetime.fromisoformat(last) + timedelta(minutes=self.cfg.get("interval_minutes", 15))
+        return max(1, int((due - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+
+    async def send_screen(self, caption, buttons, silent=False):
+        try:
+            return await self.bot.send_file(self.owner, self.dashboard(), caption=fit(caption), buttons=buttons, silent=silent)
+        except Exception:
+            log.exception("cannot message owner — did you press Start in the bot chat?")
+
+    async def edit_screen(self, target, caption, buttons, refresh_picture=False):
+        """target: a CallbackQuery event or a message id."""
+        caption = fit(caption)
+        kw = {"buttons": buttons, "link_preview": False}
+        if refresh_picture:
+            kw["file"] = self.dashboard()
+        if isinstance(target, int):
+            return await self.bot.edit_message(self.owner, target, caption, **kw)
+        return await target.edit(caption, **kw)
+
+    async def show_home(self, target=None):
+        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check())
+        if target is not None:
+            return await self.edit_screen(target, caption, buttons, refresh_picture=True)
+        state = tc.load_state()
+        msg = await self.send_screen(caption, buttons)
+        if msg and state.get("home_msg"):
+            try:  # keep the chat tidy: one home screen at a time
+                await self.bot.delete_messages(self.owner, state["home_msg"])
+            except Exception:
+                pass
+        if msg:
             state = tc.load_state()
-            jobs, missing = await tc.scan_chats(
-                self.user, self.cfg, tc.job_filter_from(self.cfg), state, rescan_days=rescan_days)
-            if not rescan_days:
-                state["last_run"] = datetime.now(timezone.utc).isoformat()
+            state["home_msg"] = msg.id
             tc.save_state(state)
 
-            inbox = load_inbox()
-            for job in jobs:
-                inbox[job_key(job)] = to_inbox(job)
-            save_inbox(inbox)
-            log.info("scan (rescan=%s): %d new job(s), %d missing chat(s)", rescan_days, len(jobs), len(missing))
+    # ------------------------------------------------------------ checking
 
-            if jobs:
-                await self.say(f"🔔 <b>Новых вакансий: {len(jobs)}</b>")
-            for job in jobs:
-                text, buttons = item_card(job_key(job), inbox[job_key(job)])
-                await self.say(text, buttons=buttons, silent=True)
-            if missing and (manual or set(missing) != self.reported_missing):
-                self.reported_missing = set(missing)
-                names = "\n".join(f"• {esc(n)}" for n in missing)
-                await self.say(f"⚠️ Не нашёл эти чаты из списка (опечатка или ты в них не состоишь):\n{names}")
-            if manual and not jobs:
-                period = f" за {rescan_days} дн." if rescan_days else ""
-                await self.say(f"Новых вакансий{period} нет. Все найденные раньше — в «{BTN_ALL}».")
+    async def check(self, tg=True, web=False, rescan_days=None, manual=False):
+        """Run the sources under one lock. Returns new inbox items, or None if busy."""
+        if self.lock.locked():
+            return None
+        found = []
+        async with self.lock:
+            self.reload()
+            if tg:
+                found += await self.guarded("tg", self.check_telegram(rescan_days, manual), manual)
+            if web and self.cfg.get("boards_enabled", True):
+                found += await self.guarded("web", self.check_boards(), manual)
+        return found
+
+    async def guarded(self, source, coro, manual):
+        if source == "tg" or not manual:
+            self.last_attempt[source] = datetime.now(timezone.utc)
+        name = "Telegram" if source == "tg" else "сайтов"
+        try:
+            result = await coro
+        except Exception as e:
+            log.exception("%s check failed", source)
+            if manual or not self.failing[source]:  # one alert per streak of failures
+                await self.send_screen(f"❌ <b>Проверка {name} не удалась</b>\n\n<code>{esc(str(e)[:300])}</code>\n\n"
+                                       "Попробую снова автоматически.", [[HOME_BTN]])
+            self.failing[source] = True
+            return []
+        if self.failing[source]:
+            await self.send_screen(f"✅ Проверка {name} снова работает.", [[HOME_BTN]], silent=True)
+        self.failing[source] = False
+        return result
+
+    async def check_telegram(self, rescan_days, manual):
+        state = tc.load_state()
+        jobs, missing = await tc.scan_chats(
+            self.user, self.cfg, tc.job_filter_from(self.cfg), state, rescan_days=rescan_days)
+        if not rescan_days:
+            state["last_run"] = datetime.now(timezone.utc).isoformat()
+        tc.save_state(state)
+        if missing and (manual or set(missing) != self.reported_missing):
+            self.reported_missing = set(missing)
+            names = "\n".join(f"• {esc(n)}" for n in missing)
+            await self.send_screen(f"⚠️ <b>Не нашёл чаты из списка</b>\n\n{names}\n\n"
+                                   "Опечатка в названии или ты в них не состоишь.", [[btn("💬 Чаты", "c")], [HOME_BTN]])
+        log.info("telegram: %d new (rescan=%s)", len(jobs), rescan_days)
+        return self.store(jobs)
+
+    async def check_boards(self):
+        jobs, receipt = await boards.scan_boards()
+        state = tc.load_state()
+        state["boards_run"] = datetime.now(timezone.utc).isoformat()
+        state["boards_scanned"] = receipt.get("scanned", 0)
+        tc.save_state(state)
+        log.info("boards: %d new of %s found", len(jobs), receipt.get("found"))
+        return self.store(jobs)
+
+    def store(self, jobs):
+        inbox = load_inbox()
+        items = []
+        for job in jobs:
+            key = job_key(job)
+            if key not in inbox:
+                inbox[key] = to_inbox(job)
+                items.append(inbox[key])
+        save_inbox(inbox)
+        return items
+
+    async def alert(self, items):
+        if items:
+            caption, buttons = found_screen(items)
+            await self.send_screen(caption, buttons)
 
     async def scheduler(self):
-        """Scan every interval_minutes. Checks the wall clock once a minute instead of one long
-        sleep, so a laptop waking up from sleep scans right away rather than an interval later."""
+        """Checks the wall clock once a minute instead of one long sleep, so a laptop
+        waking up from sleep checks right away rather than an interval later."""
         while True:
-            interval = timedelta(minutes=self.cfg.get("interval_minutes", 15))
-            last = tc.load_state().get("last_run")
-            due = [datetime.fromisoformat(last)] if last else []
-            if self.last_attempt:
-                due.append(self.last_attempt)  # after a failure, retry an interval later, not every minute
-            if not due or datetime.now(timezone.utc) - max(due) >= interval:
-                await self.safe_scan()
-            await asyncio.sleep(60)
+            now, state = datetime.now(timezone.utc), tc.load_state()
 
-    async def safe_scan(self, manual=False, rescan_days=None):
-        if not rescan_days:
-            self.last_attempt = datetime.now(timezone.utc)
-        try:
-            await self.run_scan(manual, rescan_days)
-        except Exception as e:
-            log.exception("scan failed")
-            if manual or not self.failing:  # one alert per streak of failures
-                await self.say(f"❌ Проверка упала, попробую снова через {self.cfg.get('interval_minutes', 15)} мин: {esc(e)}")
-            self.failing = True
-        else:
-            if self.failing:
-                await self.say("✅ Проверка снова работает.")
-            self.failing = False
+            def due(source, state_key, interval):
+                times = [datetime.fromisoformat(state[state_key])] if state.get(state_key) else []
+                if self.last_attempt[source]:
+                    times.append(self.last_attempt[source])  # after a failure, retry an interval later
+                return not times or now - max(times) >= interval
+
+            tg = due("tg", "last_run", timedelta(minutes=self.cfg.get("interval_minutes", 15)))
+            web = self.cfg.get("boards_enabled", True) and due(
+                "web", "boards_run", timedelta(hours=self.cfg.get("boards_interval_hours", 2)))
+            if tg or web:
+                if web:
+                    self.last_attempt["web"] = now
+                found = await self.check(tg=tg, web=web)
+                await self.alert(found or [])
+            await asyncio.sleep(60)
 
     # ------------------------------------------------------------ messages
 
     async def on_message(self, event):
         text = event.raw_text.strip()
-        menu = {
-            BTN_NEW: lambda: self.show_list("new"),
-            BTN_ALL: lambda: self.show_list("all"),
-            BTN_FAV: lambda: self.show_list("fav"),
-            BTN_DAY: lambda: self.rescan(1),
-            BTN_3DAYS: lambda: self.rescan(3),
-            BTN_SETTINGS: self.show_settings,
-        }
-        if text in menu:
-            self.awaiting = None
-            return await menu[text]()
-
         command = text.split()[0].split("@")[0].lower() if text.startswith("/") else None
-        if command in ("/start", "/help"):
-            self.awaiting = None
-            return await event.respond(HELP, parse_mode="html", buttons=MENU)
-        if command == "/scan":
-            await event.respond("Проверяю…")
-            return await self.safe_scan(manual=True)
-        if command == "/add":  # kept from the first version
-            return await self.handle_input(("chat",), text.partition(" ")[2])
-        if command == "/remove":
-            removed = remove_channel(text.partition(" ")[2].strip())
-            return await event.respond(f"Убрал: {removed}" if removed else "Не нашёл такого в списке.")
+        try:
+            await event.delete()  # the chat stays a clean "app screen"
+        except Exception:
+            pass
 
         if self.awaiting and not command:
-            awaiting, self.awaiting = self.awaiting, None
-            return await self.handle_input(awaiting, text)
-        await event.respond("Выбери действие в меню внизу 👇", buttons=MENU)
+            what, screen_id = self.awaiting
+            self.awaiting = None
+            return await self.handle_input(what, text, screen_id)
+        self.awaiting = None
+        if command == "/scan":
+            msg = await self.send_screen("⏳ <b>Проверяю чаты и сайты…</b>", None)
+            return await self.refresh(msg.id if msg else None, None)
+        await self.show_home()
 
-    async def handle_input(self, awaiting, text):
-        text = text.strip()
-        if not text:
-            return await self.say("Пусто — ничего не добавил.")
-        if awaiting[0] == "chat":
-            added = add_channel(text)
-            await self.say(f"Добавил чат: {esc(text)}. Начну читать со следующей проверки." if added else "Этот чат уже в списке.")
-            view_text, buttons = chats_view()
+    async def handle_input(self, what, text, screen_id):
+        if what == "chat":
+            if text:
+                add_channel(text)
+            caption, buttons = chats_screen()
         else:
-            group = awaiting[1]
             search = tc.load_search()
-            added = add_keywords(search, group, text)
+            add_keywords(search, what, text)
             tc.save_search(search)
             self.reload()
-            await self.say(f"Добавил: {esc(', '.join(added))}" if added else "Эти слова уже есть.")
-            view_text, buttons = keywords_view(self.cfg, group)
-        await self.say(view_text, buttons=buttons)
+            caption, buttons = keywords_screen(self.cfg, what)
+        await self.edit_screen(screen_id, caption, buttons)
 
-    async def show_list(self, view, page=0, event=None):
-        text, buttons = list_view(load_inbox(), view, page)
-        if event:
-            return await event.edit(text, parse_mode="html", buttons=buttons)
-        await self.say(text, buttons=buttons)
-
-    async def show_settings(self, event=None):
-        self.reload()
-        text, buttons = settings_view(self.cfg)
-        if event:
-            return await event.edit(text, parse_mode="html", buttons=buttons)
-        await self.say(text, buttons=buttons)
-
-    async def rescan(self, days):
-        await self.say(f"Перепроверяю чаты за {days} дн.…")
-        await self.safe_scan(manual=True, rescan_days=days)
+    async def refresh(self, target, days):
+        if target is None:
+            return
+        found = await self.check(tg=True, web=True, rescan_days=days, manual=True)
+        if found is None:
+            caption, buttons = "⏳ <b>Уже проверяю</b>\n\nЗагляни через минуту.", [[HOME_BTN]]
+        else:
+            caption, buttons = found_screen(found, days)
+        await self.edit_screen(target, caption, buttons, refresh_picture=True)
 
     # ------------------------------------------------------------ buttons
 
     async def on_button(self, event):
         if event.sender_id != self.owner:
-            return await event.answer("Это не твой бот.")
-        action, _, arg = event.data.decode().partition(":")
-        if action == "x":
-            return await event.answer()
-        if action == "l":
-            view, _, page = arg.partition(":")
-            await event.answer()
-            return await self.show_list(view, int(page), event)
-        if action == "s":
-            return await self.on_setting(event, arg)
-        if action == "k":
-            return await self.on_keywords(event, arg)
-        if action == "c":
-            return await self.on_chats(event, arg)
-        return await self.on_job(event, action, arg)
+            return await event.answer("Это личный бот.", alert=True)
+        parts = event.data.decode().split(":")
+        action, args = parts[0], parts[1:]
+        handler = {
+            "h": self.b_home, "l": self.b_list, "o": self.b_open, "full": self.b_full, "close": self.b_close,
+            "rf": self.b_refresh, "help": self.b_help, "s": self.b_settings, "k": self.b_keywords,
+            "c": self.b_chats, "noop": self.b_noop,
+        }.get(action)
+        if handler:
+            return await handler(event, *args)
+        if action in ("t", "n", "r", "f"):
+            return await self.b_job(event, action, *args)
+        await event.answer()
 
-    async def on_job(self, event, action, key):
+    async def b_noop(self, event, *_):
+        await event.answer()
+
+    async def b_home(self, event):
+        self.awaiting = None
+        await event.answer()
+        await self.show_home(event)
+
+    async def b_list(self, event, view, page):
+        await event.answer()
+        await self.edit_screen(event, *list_screen(load_inbox(), view, int(page)))
+
+    async def b_open(self, event, key, view="all", page="0"):
+        item = load_inbox().get(key)
+        if not item:
+            return await event.answer("Вакансия не найдена", alert=True)
+        await event.answer()
+        await self.edit_screen(event, *card_screen(key, item, view, int(page)))
+
+    async def b_job(self, event, action, key, view="all", page="0"):
         inbox = load_inbox()
         item = inbox.get(key)
         if not item:
-            return await event.answer("Не нашёл эту вакансию.")
-        if action == "o":
-            text, buttons = item_card(key, item)
-            await event.answer()
-            return await self.say(text, buttons=buttons)
-
-        job = from_inbox(item)
-        if action in ("t", "h") and item["status"] != "new":
-            return await event.answer("Уже разобрано.")
+            return await event.answer("Вакансия не найдена", alert=True)
+        if action in ("t", "n") and item["status"] != "new":
+            return await event.answer("Уже разобрано")
         if action == "t":
-            tc.add_to_pipeline([tc.pipeline_line(job, tc.save_jd(job))])
+            if item.get("source") == "web":
+                tc.add_to_pipeline([item["pipeline_line"]])
+            else:
+                job = from_inbox(item)
+                tc.add_to_pipeline([tc.pipeline_line(job, tc.save_jd(job))])
             item["status"] = "taken"
-        elif action == "h":
+            note = "👍 В работе! Оценка: /career-ops pipeline"
+        elif action == "n":
             with DISCARD_LOG.open("a", encoding="utf-8") as f:
-                f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}\t{job.get('link') or key}\thidden in telegram bot\n")
+                f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}\t{item.get('link') or key}\thidden in job radar bot\n")
             item["status"] = "hidden"
-        elif action == "r" and item["status"] == "hidden":
+            note = "🙈 Скрыто"
+        elif action == "r":
             item["status"] = "new"
-        elif action == "f":
+            note = "↩️ Вернул в новые"
+        else:
             item["fav"] = not item.get("fav", False)
-            await event.answer("Добавил в избранное ⭐" if item["fav"] else "Убрал из избранного")
-        if action != "f":
-            await event.answer()
+            note = "⭐ В избранном" if item["fav"] else "Убрал из избранного"
         save_inbox(inbox)
-        text, buttons = item_card(key, item)
-        await event.edit(text, parse_mode="html", buttons=buttons, link_preview=False)
+        await event.answer(note)
+        await self.edit_screen(event, *card_screen(key, item, view, int(page)))
 
-    async def on_setting(self, event, arg):
-        if arg != "main":
-            name, _, value = arg.partition(":")
-            field = {"int": "interval_minutes", "lb": "lookback_days", "ml": "min_length"}[name]
+    async def b_full(self, event, key):
+        item = load_inbox().get(key)
+        await event.answer()
+        if item:
+            text = f"<b>{esc(title_of(item))}</b>\n{esc(origin_of(item))}\n\n{esc(item.get('text', ''))}"
+            await self.bot.send_message(self.owner, text[:4000], buttons=[[btn("✖ Закрыть", "close")]], link_preview=False)
+
+    async def b_close(self, event):
+        await event.answer()
+        await event.delete()
+
+    async def b_refresh(self, event, days):
+        await event.answer("Проверяю…")
+        await self.edit_screen(event, f"⏳ <b>Проверяю чаты за {days} дн. и сайты…</b>\n\nЭто займёт до минуты.", None)
+        await self.refresh(event, int(days))
+
+    async def b_help(self, event):
+        await event.answer()
+        await self.edit_screen(event, HELP, [[HOME_BTN]])
+
+    async def b_settings(self, event, name=None, value=None):
+        if name:
             search = tc.load_search()
-            search[field] = int(value)
+            if name == "web":
+                search["boards_enabled"] = value == "on"
+            else:
+                field = {"int": "interval_minutes", "lb": "lookback_days", "ml": "min_length", "wi": "boards_interval_hours"}[name]
+                search[field] = int(value)
             tc.save_search(search)
             await event.answer("Сохранил ✓")
         else:
+            self.awaiting = None
             await event.answer()
-        await self.show_settings(event)
-
-    async def on_keywords(self, event, arg):
         self.reload()
-        parts = arg.split(":")
-        if parts[0] == "add":
-            self.awaiting = ("kw", parts[1])
+        await self.edit_screen(event, *settings_screen(self.cfg))
+
+    async def b_keywords(self, event, sub, group=None, index=None):
+        self.reload()
+        if sub == "add":
+            self.awaiting = (group, event.message_id)
             await event.answer()
-            return await self.say(
-                f"Напиши слово для «{KEYWORD_GROUPS[parts[1]][0]}» — можно несколько через запятую.\n"
-                "Регистр не важен, ищу как часть слова: «аналит» найдёт и «аналитик», и «аналитика».")
-        if parts[0] == "del":
-            group, index = parts[1], int(parts[2])
+            return await self.edit_screen(event, *input_screen(group))
+        if sub == "del":
             search = tc.load_search()
             patterns = search.get("keywords", {}).get(group, [])
-            if index < len(patterns):
-                removed = patterns.pop(index)
+            if int(index) < len(patterns):
+                removed = patterns.pop(int(index))
                 tc.save_search(search)
                 self.reload()
-                await event.answer(f"Удалил: {removed}")
+                await event.answer(f"Удалил: {show_pattern(removed)}")
             else:
                 await event.answer()
-            group_name = group
         else:
+            group = sub
+            self.awaiting = None
             await event.answer()
-            group_name = parts[0]
-        text, buttons = keywords_view(self.cfg, group_name)
-        await event.edit(text, parse_mode="html", buttons=buttons)
+        await self.edit_screen(event, *keywords_screen(self.cfg, group))
 
-    async def on_chats(self, event, arg):
-        if arg == "add":
-            self.awaiting = ("chat",)
+    async def b_chats(self, event, sub=None, index=None):
+        if sub == "add":
+            self.awaiting = ("chat", event.message_id)
             await event.answer()
-            return await self.say("Пришли чат: @username, ссылку t.me/… (для приватного — ссылку на любое сообщение в нём) или точное название.")
-        if arg.startswith("del:"):
+            return await self.edit_screen(event, *input_screen("chat"))
+        if sub == "del":
             chats = tc.load_channels(tc.CHANNELS_PATH)
-            index = int(arg.split(":")[1])
-            if index < len(chats):
-                remove_channel(chats[index])
-                await event.answer(f"Убрал: {chats[index]}")
+            if int(index) < len(chats):
+                remove_channel(chats[int(index)])
+                await event.answer(f"Убрал: {chats[int(index)]}")
             else:
                 await event.answer()
         else:
+            self.awaiting = None
             await event.answer()
-        text, buttons = chats_view()
-        await event.edit(text, parse_mode="html", buttons=buttons)
+        await self.edit_screen(event, *chats_screen())
 
 
 async def main():
@@ -537,10 +765,10 @@ async def main():
     cfg = tc.load_config()
     if not cfg.get("bot_token"):
         raise SystemExit("В telegram/config.yml нет bot_token — создай бота у @BotFather и впиши токен.")
-    app = JobBot(cfg)
+    app = JobRadar(cfg)
     await app.start()
+    await app.show_home()
     asyncio.create_task(app.scheduler())
-    await app.say("🤖 Бот запущен.", buttons=MENU)
     await app.bot.run_until_disconnected()
 
 
