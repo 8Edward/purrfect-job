@@ -168,15 +168,17 @@ def numbers(text):
 
 
 def latin_names(text):
-    return {w.lower() for w in re.findall(r"\b[A-Za-z][A-Za-z0-9+#.]{1,}\b", text or "")}
+    """Tool and product names: PostgreSQL, ClickHouse, Visio, dbt-like words with capitals or digits.
+    Ordinary words (and the capital that starts a line, months) are not names."""
+    return resume.name_tokens(text)
 
 
 def invented(new, allowed_text, check_latin=True):
-    """What `new` brings that `allowed_text` doesn't have: numbers and (for same-language edits) Latin names."""
+    """What `new` brings that `allowed_text` doesn't have: numbers and tool/product names."""
     extra = sorted(numbers(new) - numbers(allowed_text))
     if check_latin:
-        known = latin_names(allowed_text)
-        extra += sorted(w for w in latin_names(new) - known if len(w) > 2 and not w.isdigit())
+        known = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9+#.]*", allowed_text or "")}
+        extra += sorted(w for w in latin_names(new) if w not in known)
     return extra
 
 

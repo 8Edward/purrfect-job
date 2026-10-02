@@ -106,6 +106,12 @@ changes, dropped = resume_ai.checked_changes([
 assert [c["after"] for c in changes] == ["Описала процессы в BPMN"] and dropped == 4, (changes, dropped)
 assert changes[0]["index"] == next(i for i, b in enumerate(bl) if b["x"] == "Отвечала за BPMN-схемы процессов")
 assert resume_ai.parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+# English résumé: ordinary new words and line-initial verbs are fine; a new tool name is not
+en_md = "# John\n\n## Work Experience\n\n- Executed complex ad-hoc SQL queries (CTEs) for top management in March 2024\n"
+assert resume_ai.invented("Wrote streamlined ad-hoc SQL queries (CTEs) for executives", en_md) == []
+assert resume_ai.invented("Wrote ad-hoc SQL and Snowflake queries for executives", en_md) == ["snowflake"]
+assert resume_ai.invented("Delivered queries in September 2024 using PostgreSQL", en_md) == ["postgresql"]
+assert resume.name_tokens("- Built marts in Greenplum. Optimized C++ code, S3 and dbt") == {"greenplum", "c++", "s3"}
 
 
 class FakeAI:

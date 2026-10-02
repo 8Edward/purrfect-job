@@ -614,6 +614,30 @@ def skill_suggestions(title):
 
 # ---------------------------------------------------------------- translation guard
 
+MONTHS = {"january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+          "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+          "present", "i", "a", "the", "and", "or", "in", "for", "with", "of", "to", "on", "at", "by"}
+
+
+def name_tokens(text):
+    """Latin tokens that look like names of tools, products or companies: a capital letter after the
+    first one (PostgreSQL), digits or +/# (C++, S3), or a capitalised word that doesn't start the line
+    or sentence (Visio, Kafka). Lower-cased. Ordinary words, months and line-initial verbs are skipped."""
+    out = set()
+    for line in (text or "").splitlines():
+        line = BULLET.sub("", re.sub(r"^#+\s*", "", line.strip()))
+        for m in re.finditer(r"[A-Za-z][A-Za-z0-9+#.]*[A-Za-z0-9+#]|[A-Za-z]", line):
+            w = m.group(0)
+            low = w.lower()
+            if low in MONTHS or len(w) < 2:
+                continue
+            before = line[:m.start()]
+            starts_sentence = not before.strip() or re.search(r"[.!?:;—–-]\s*$", before)
+            special = any(c.isupper() for c in w[1:]) or any(c.isdigit() or c in "+#" for c in w)
+            if special or (w[0].isupper() and not starts_sentence):
+                out.add(low)
+    return out
+
 def translation_guard(source, target, target_lang):
     """Facts that must survive a translation: numbers, emails, links, handles, Latin names,
     and the shape (headings, bullets). Returns a list of human-readable problems."""
@@ -633,9 +657,10 @@ def translation_guard(source, target, target_lang):
         missing = [t for t in set(tokens(rx, source)) if t not in target]
         if missing:
             problems.append(f"Пропали {label}: " + ", ".join(missing[:5]))
-    latin = {w for w in re.findall(r"\b[A-Za-z][A-Za-z0-9+#.]{2,}\b", source) if not w.islower() or len(w) > 3}
     if target_lang == "en":
-        gone = sorted(w for w in latin if w.lower() not in target.lower())
+        target_words = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9+#.]*[A-Za-z0-9+#]|[A-Za-z]", target)}
+        as_written = {w.lower(): w for w in re.findall(r"[A-Za-z][A-Za-z0-9+#.]*[A-Za-z0-9+#]", source)}
+        gone = sorted(as_written.get(w, w) for w in name_tokens(source) if w not in target_words and w not in target.lower())
         if gone:
             problems.append("Пропали названия: " + ", ".join(gone[:10]))
         cyr = [b["x"] for b in blocks(target) if re.search(r"[а-яё]{3,}", b["x"], re.I) and b["t"] != "h1"]
