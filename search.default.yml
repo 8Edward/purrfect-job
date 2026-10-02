@@ -1,0 +1,82 @@
+# Search settings — defaults. The bot's ⚙️ Настройки writes your changes to
+# telegram/search.yml (which then wins over this file). You can also edit
+# search.yml by hand; the bot picks up changes on the next check.
+# Chats to read live in telegram/channels.txt.
+
+# How often the bot checks for new messages while the computer is on.
+interval_minutes: 15
+
+# Reads are incremental: only messages newer than the last one seen in each chat.
+# This caps how old a message may be (first read of a chat, or after the laptop was off).
+lookback_days: 1
+
+# Messages shorter than this are ignored (greetings, "+", reactions).
+min_length: 120
+
+# A message is a job post when it matches at least one `job` pattern
+# AND at least one `role` pattern AND no `negative` pattern.
+# Patterns are case-insensitive regular expressions.
+keywords:
+  job:
+    - 'ваканси'
+    - '#вакансия'
+    - '#job'
+    - '\bищем\b'
+    - 'в команду'
+    - 'требуется'
+    - 'hiring'
+    - "we're looking for"
+    - 'we are looking for'
+    - 'open position'
+    - '\bjob\b'
+    - '\bvacancy\b'
+    - 'зарплат'
+    - 'вилка'
+    - '\bsalary\b'
+  role:
+    - 'аналитик'
+    - '\banalyst\b'
+    - 'analytics'
+    - '\bdata\b'
+    - '\bданных\b'
+    - '\bsql\b'
+    - '\bbi\b'
+    - '\betl\b'
+    - '\bdwh\b'
+    - '\bdbt\b'
+    - 'airflow'
+    - 'greenplum'
+    - 'clickhouse'
+    - 'tableau'
+    - 'power ?bi'
+    - 'superset'
+    - 'looker'
+  negative:
+    - '#резюме'
+    - '#ищу'
+    - '#cv\b'
+    - '\bищу работу\b'
+    - 'looking for a job'
+    - 'open to work'
+  # These don't filter anything, they only add a tag to the pipeline line.
+  tags:
+    part-time:
+      - 'парт-?тайм'
+      - 'part-?time'
+      - 'частичн'
+      - 'подработк'
+      - 'фриланс'
+      - 'freelance'
+      - '\bпроект\w*\b.{0,30}\b(час|ч/нед)'
+      - '\d{2}\s*(ч|час\w*)\s*/?\s*(в\s*)?нед'
+    contract:
+      - 'контракт'
+      - 'contract'
+      - '\bb2b\b'
+      - '\bип\b'
+      - 'самозанят'
+    remote:
+      - 'удал[её]н'
+      - '\bremote\b'
+      - 'из любой точки'
+      - 'anywhere'

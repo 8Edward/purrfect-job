@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TG_DIR = ROOT / "telegram"
 CONFIG_PATH = TG_DIR / "config.yml"
 CHANNELS_PATH = TG_DIR / "channels.txt"
+SEARCH_DEFAULT_PATH = TG_DIR / "search.default.yml"
+SEARCH_PATH = TG_DIR / "search.yml"  # written by the bot's settings menu
 SESSION_PATH = TG_DIR / "tg"  # Telethon adds .session
 STATE_PATH = ROOT / "data" / "tg-state.json"
 PIPELINE_PATH = ROOT / "data" / "pipeline.md"
@@ -116,14 +118,19 @@ def dialog_keys(entity, title):
     return keys
 
 
-async def scan_chats(client, cfg, job_filter, state, dry_run=False):
+async def scan_chats(client, cfg, job_filter, state, dry_run=False, rescan_days=None):
     """Read the chats from channels.txt with a connected user client.
+
+    Normal run: incremental, only messages newer than each chat's watermark and
+    not older than lookback_days. rescan_days=N re-reads the last N days ignoring
+    the watermark (catches posts missed by an older keyword set); posts already
+    collected are still skipped by fingerprint.
 
     Returns (jobs, missing): new job posts oldest first, and channels.txt
     entries that matched no chat. Updates `state` in place.
     """
-    # lookback_days only matters for a chat read for the first time (no watermark yet).
-    cutoff = datetime.now(timezone.utc) - timedelta(days=cfg.get("lookback_days", 3))
+    days = rescan_days or cfg.get("lookback_days", 1)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     seen_fps = set(state.get("fingerprints", []))
     last_ids = state.setdefault("last_ids", {})
     found = []
@@ -146,10 +153,11 @@ async def scan_chats(client, cfg, job_filter, state, dry_run=False):
         # message ids only grow within a chat, so unlike timestamps nothing is skipped or
         # re-read across clock changes or a run that crashed halfway.
         key = str(dialog.id)
-        min_id = last_ids.get(key, 0)
+        watermark = last_ids.get(key, 0)
+        min_id = 0 if rescan_days else watermark
         if dialog.message and dialog.message.id <= min_id:
             continue  # no new messages since the last check
-        newest = min_id
+        newest = watermark
         async for msg in client.iter_messages(entity, min_id=min_id):
             if msg.date < cutoff:
                 break
@@ -252,8 +260,21 @@ def add_to_pipeline(lines):
 
 # ---------------------------------------------------------------- main
 
+def load_search():
+    path = SEARCH_PATH if SEARCH_PATH.exists() else SEARCH_DEFAULT_PATH
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def save_search(search):
+    header = "# Search settings, written by the bot (⚙️ Настройки). Safe to edit by hand.\n"
+    body = yaml.safe_dump(search, allow_unicode=True, sort_keys=False, width=1000)
+    SEARCH_PATH.write_text(header + body, encoding="utf-8")
+
+
 def load_config():
-    return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    """config.yml (credentials) + search settings (search.yml or its defaults)."""
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    return {**cfg, **load_search()}
 
 
 def job_filter_from(cfg):

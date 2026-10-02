@@ -8,7 +8,7 @@ import yaml
 
 import tg_collect as tc
 
-cfg = yaml.safe_load((Path(__file__).parent / "config.example.yml").read_text(encoding="utf-8"))
+cfg = yaml.safe_load((Path(__file__).parent / "search.default.yml").read_text(encoding="utf-8"))
 f = tc.JobFilter(cfg["keywords"], cfg["min_length"])
 
 JOB_RU = """🔥 #вакансия Аналитик данных (Middle)
@@ -78,7 +78,8 @@ assert item["status"] == "new" and bot.from_inbox(item)["date"] == job["date"]
 assert bot.job_key(job) == "1001234_42"
 card = bot.card_text(job)
 assert card.startswith("<b>Аналитик данных (Middle)</b>\n💬 Data | Jobs · 02.10 09:00\n#part_time #remote"), card
-assert len(bot.card_buttons(job, "k")) == 2 and len(bot.card_buttons(dict(job, link=None), "k")) == 1
+assert len(bot.card_buttons(job, "k")) == 3 and len(bot.card_buttons(dict(job, link=None), "k")) == 2
+assert "✅ В работе" in bot.card_text(job, "taken") and bot.card_text(job, fav=True).startswith("⭐ ")
 assert len(f"t:{bot.job_key(dict(job, chat_id=-1009999999999, msg_id=99999999))}".encode()) <= 64  # Telegram callback data limit
 
 with tempfile.TemporaryDirectory() as d:
@@ -92,5 +93,27 @@ with tempfile.TemporaryDirectory() as d:
     assert bot.remove_channel("@nope") is None
     assert tc.CHANNELS_PATH.read_text(encoding="utf-8") == "# мои чаты\nhttps://t.me/new_jobs\n"
     tc.CHANNELS_PATH = real
+
+# bot: list pages, keywords from chat
+inbox = {}
+for i in range(11):
+    j = dict(job, msg_id=i, date=job["date"].replace(day=1 + i))
+    inbox[bot.job_key(j)] = dict(bot.to_inbox(j), status="hidden" if i == 0 else "new", fav=i in (3, 5))
+text, rows = bot.list_view(inbox, "all")
+assert "· 11 · стр. 1/2" in text and len(rows) == 3, text  # 4 + 4 numbers, nav row
+assert rows[0][0].type.data == b"o:1001234_10"  # newest first
+text, rows = bot.list_view(inbox, "all", page=1)
+assert "стр. 2/2" in text and "🙈" in text and len(rows) == 2
+assert "· 10" in bot.list_view(inbox, "new")[0]
+text, rows = bot.list_view(inbox, "fav")
+assert "· 2" in text and rows is not None and len(rows[0]) == 2
+assert bot.list_view({}, "fav")[1] is None
+
+assert bot.word_to_pattern("power bi") == "power bi" and bot.word_to_pattern("C++") == "C\\+\\+"
+search = {"keywords": {"role": ["sql"]}}
+assert bot.add_keywords(search, "role", "Tableau, SQL, , metabase") == ["Tableau", "metabase"]
+assert search["keywords"]["role"] == ["sql", "Tableau", "metabase"]
+f2 = tc.JobFilter({"job": ["вакансия"], "role": search["keywords"]["role"]}, 10)
+assert f2.is_job("Вакансия: аналитик Metabase")
 
 print("ok")
