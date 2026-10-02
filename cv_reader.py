@@ -262,7 +262,9 @@ def apply(member, graph, rids, channels, mode, skill_words=True):
     words = role_words(graph, rids) + (analysis.get("skill_words", []) if skill_words else [])
     search = member.load_search()
     kw = search.setdefault("keywords", {})
-    if mode == "replace":
+    preset = guests.load_preset()
+    untouched = {p.lower() for p in kw.get("role", [])} == {p.lower() for p in preset.get("role", [])}
+    if mode == "replace" or untouched:  # still the newcomer example (Data Analyst): their own résumé replaces it
         kw["role"] = []
     added, _ = guests.add_words(search, "role", ", ".join(words))
     member.save_search(search)
@@ -275,5 +277,7 @@ def apply(member, graph, rids, channels, mode, skill_words=True):
     pool = guests.load_pool()
     if channels is not None:
         ticked = member.selected(pool)
+        if untouched and set(ticked) == set(preset.get("pool", [])) & set(pool["channels"]):
+            ticked = []  # the example's channels were never changed: keep only what fits this résumé
         member.set_selected(ticked + [k for k in channels if k in pool["channels"] and k not in ticked])
     return {"words": len(kw.get("role", [])), "added": len(added), "hh_query": query}
