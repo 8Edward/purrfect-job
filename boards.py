@@ -31,7 +31,9 @@ SITE_NAMES = {
 
 
 def site_name(url):
-    host = urlparse(url).netloc.lower().removeprefix("www.")
+    host = urlparse(url).netloc.lower()
+    if host.startswith("www."):  # str.removeprefix needs Python 3.9+
+        host = host[4:]
     return SITE_NAMES.get(host, host)
 
 

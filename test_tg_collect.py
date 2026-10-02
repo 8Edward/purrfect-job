@@ -168,4 +168,258 @@ assert bot.add_keywords(search, "role", "Tableau, SQL, , metabase") == ["Tableau
 assert search["keywords"]["role"] == ["sql", "Tableau", "metabase"]
 assert tc.JobFilter({"job": ["вакансия"], "role": search["keywords"]["role"]}, 10).is_job("Вакансия: аналитик Metabase")
 
+# family mode: invites, folders, limits, shared channel pool, shared sites
+import asyncio
+from datetime import timedelta
+from types import SimpleNamespace
+
+import guests
+
+
+def all_data(rows):
+    return [data(b) for row in rows for b in row if hasattr(b, "data") or hasattr(b.type, "data")]
+
+
+def check_buttons(rows):
+    for row in rows:
+        for b in row:
+            if hasattr(b, "type") and hasattr(b.type, "data"):
+                assert len(b.type.data) <= 64, b.type.data
+
+
+assert guests.folder_name(42, "Mama_Ivanova") == "42_Mama_Ivanova"
+assert guests.folder_name(42, None, "Мама Иванова") == "42_Мама_Иванова"
+assert guests.folder_name(42, None, "🌸") == "42_user"
+assert guests.folder_name(42, "../../etc") == "42_etc"  # no path tricks in folder names
+assert guests.public_username("@Buh_Jobs") == "buh_jobs"
+assert guests.public_username("https://t.me/buh_jobs/15") == "buh_jobs"
+assert guests.public_username("https://t.me/c/123/4") is None  # private chat
+assert guests.public_username("Бухгалтеры | Чат") is None  # a title isn't enough
+assert guests.split_channels("@a_jobs, t.me/b_jobs\n@c_jobs") == ["@a_jobs", "t.me/b_jobs", "@c_jobs"]
+assert len(guests.split_channels(" ".join(f"@ch{i}_xx" for i in range(50)))) == 10
+assert bot.to_int("7") == 7 and bot.to_int("x") == 0 and bot.to_int("99999999") == 10_000 and bot.to_int(None, -1) == -1
+
+# keywords: literal, limited
+s = {"keywords": {"role": []}}
+added, refused = guests.add_words(s, "role", "бухгалт, 1С, (a+)+$, " + "x" * 50)
+assert added == ["бухгалт", "1С", "(a+)+$"] and len(refused) == 1
+assert s["keywords"]["role"][2] == "\\(a\\+\\)\\+\\$"  # a regex trick stays plain text
+s = {"keywords": {"role": [f"w{i}" for i in range(guests.MAX_WORDS)]}}
+assert guests.add_words(s, "role", "ещё")[0] == []
+
+caption, rows = bot.home_screen({}, owner=True)
+assert data(rows[-1][0]) == "u" and ["p:v:0", "w"] == [data(b) for b in rows[3]]
+assert [data(b) for b in bot.home_screen({})[1][-1]] == ["s", "help"]  # guests have no 👥 button
+assert "✅ <b>В работе</b>" == bot.card_screen("k", dict(item, status="taken"), status_lines=bot.GUEST_STATUS_LINE)[0].split("\n\n")[-1]
+
+with tempfile.TemporaryDirectory() as d:
+    saved = guests.USERS_DIR, guests.REGISTRY_PATH, guests.POOL_PATH, guests.PORTALS_PATH
+    guests.USERS_DIR = Path(d)
+    guests.REGISTRY_PATH = Path(d) / "users.json"
+    guests.POOL_PATH = Path(d) / "pool.json"
+    guests.PORTALS_PATH = Path(d) / "portals.yml"
+    guests.PORTALS_PATH.write_text(
+        "# my portals\ntitle_filter:\n  positive: [Analyst]\n\n# boards\njob_boards:\n"
+        "  - name: Remotive\n    provider: remotive\n    enabled: true\n"
+        "  - name: Himalayas\n    provider: himalayas\n    enabled: false\n\n"
+        "# WebSearch\nsearch_queries: []\n", encoding="utf-8")
+
+    # invites
+    reg = guests.load_registry()
+    code = guests.new_invite(reg)
+    assert guests.use_invite(reg, code) and not guests.use_invite(reg, code)  # one-time
+    old = guests.new_invite(reg)
+    reg["invites"][old]["created"] = (guests.now() - timedelta(days=8)).isoformat()
+    assert not guests.use_invite(reg, old) and old not in reg["invites"]  # expired
+    full = {"users": {str(i): {} for i in range(guests.MAX_MEMBERS - 1)}, "invites": {}}
+    assert guests.new_invite(full) and guests.new_invite(full) is None  # open invites count too
+
+    mama = guests.register(reg, SimpleNamespace(id=101, username="mama", first_name="Мама", last_name=None))
+    papa = guests.register(reg, SimpleNamespace(id=202, username=None, first_name="Папа", last_name="Петров"))
+    guests.save_registry(reg)
+    assert (Path(d) / "101_mama" / "search.yml").exists() and papa.dir.name == "202_Папа_Петров"
+    assert guests.get(guests.load_registry(), 101).name == "@mama" and papa.name == "Папа Петров"
+    assert mama.load_state()["step"] == "role" and mama.cfg()["keywords"]["role"] == []
+    assert "#резюме" in mama.cfg()["keywords"]["negative"]
+    for g, words in ((mama, "бухгалт, 1С, accountant"), (papa, "водител")):
+        s = g.load_search()
+        guests.add_words(s, "role", words)
+        g.save_search(s)
+        g.update_state(step=None)
+
+    t0 = datetime.now(timezone.utc)
+    BUH = ("#вакансия Бухгалтер на первичку, 1С 8.3, удалённо, зарплата 80к. "
+           "Пишите в личку, ждём резюме с опытом от года, обучение за счёт компании.")
+    DRIVER = ("Требуется водитель категории B на доставку по городу, график 5/2, зарплата 90к, "
+              "оформление по ТК, служебный автомобиль и топливная карта.")
+    posts = {
+        "buh_jobs": [SimpleNamespace(id=3, date=t0, message=BUH), SimpleNamespace(id=2, date=t0, message="привет всем")],
+        "shared_jobs": [SimpleNamespace(id=7, date=t0, message=DRIVER), SimpleNamespace(id=6, date=t0, message=BUH),
+                        SimpleNamespace(id=1, date=t0 - timedelta(days=5), message=DRIVER)],
+        "some_person": [],
+    }
+
+    class FakeClient:
+        def __init__(self):
+            self.reads = []
+
+        async def get_entity(self, key):
+            if key not in posts:
+                raise ValueError("No user has that username")
+            cls = type("User" if key == "some_person" else "Channel", (), {})
+            e = cls()
+            e.id, e.title, e.username = 500 + len(key), key.upper(), key
+            return e
+
+        async def iter_messages(self, entity, min_id=0):
+            self.reads.append((entity.username, min_id))
+            for msg in posts[entity.username]:  # newest first, like Telegram
+                if msg.id > min_id:
+                    yield msg
+
+    guests.utils.get_peer_id = lambda e: -1000000000000 - e.id  # fake entities aren't real peers
+
+    # pool: adding, validation, daily limit, hard cap
+    pool = guests.load_pool()
+    added, refused = asyncio.run(guests.add_to_pool(FakeClient(), pool, mama,
+                                                    "@buh_jobs t.me/shared_jobs @nope_chan @some_person t.me/c/1/2"))
+    assert added == ["buh_jobs", "shared_jobs"], added
+    assert [w for w, _ in refused] == ["@nope_chan", "@some_person", "t.me/c/1/2"], refused
+    assert set(guests.load_pool()["channels"]) == {"buh_jobs", "shared_jobs"}
+    assert mama.selected(guests.load_pool()) == ["buh_jobs", "shared_jobs"]
+    assert guests.pool_adds_left(guests.load_pool(), mama) == guests.POOL_ADDS_PER_DAY - 2
+    pool = guests.load_pool()
+    added, _ = asyncio.run(guests.add_to_pool(FakeClient(), pool, papa, "@shared_jobs"))
+    assert added == ["shared_jobs"] and guests.pool_adds_left(guests.load_pool(), papa) == guests.POOL_ADDS_PER_DAY  # ticking isn't adding
+    pool = guests.load_pool()
+    assert guests.can_remove(pool, "buh_jobs", mama) and not guests.can_remove(pool, "buh_jobs", papa)
+    assert guests.can_remove(pool, "buh_jobs", SimpleNamespace(is_owner=True, id=1))
+    pool["adds"]["101"] = [guests.now().isoformat()] * 3
+    posts["more_jobs"] = []
+    assert asyncio.run(guests.add_to_pool(FakeClient(), pool, mama, "@more_jobs"))[1][0][1].startswith("не больше")
+    for i in range(guests.MAX_POOL - 2):
+        pool["channels"][f"filler_{i:02d}"] = {"title": "", "added_by": 1, "added": ""}
+    assert asyncio.run(guests.add_to_pool(FakeClient(), pool, SimpleNamespace(is_owner=True, id=1, selected=lambda p: [], set_selected=lambda k: None), "@more_jobs"))[1][0][1].startswith("в пуле уже")
+    for i in range(guests.MAX_POOL - 2):
+        del pool["channels"][f"filler_{i:02d}"]
+    guests.save_pool(pool)
+
+    # reading: each channel once, filtered per person, incremental
+    client = FakeClient()
+    found, missing = asyncio.run(guests.scan_pool(client, [mama, papa], guests.load_pool(), pause=0))
+    assert sorted(r[0] for r in client.reads) == ["buh_jobs", "shared_jobs"]  # each channel read once
+    assert [j["msg_id"] for j in found[101]] == [3]  # the same BUH post in shared_jobs is deduped
+    assert [j["msg_id"] for j in found[202]] == [7]  # only the driver post; the 5-day-old one is too old
+    assert found[101][0]["link"] == "https://t.me/buh_jobs/3" and missing == []
+    assert mama.load_state()["pool_ids"] == {"buh_jobs": 3, "shared_jobs": 7}
+    posts["shared_jobs"].insert(0, SimpleNamespace(id=8, date=t0, message=DRIVER + " Срочно!"))
+    client = FakeClient()
+    found, _ = asyncio.run(guests.scan_pool(client, [mama, papa], guests.load_pool(), pause=0))
+    assert ("shared_jobs", 7) in client.reads and found[202][0]["msg_id"] == 8 and found[101] == []  # incremental
+    pool = guests.load_pool()
+    pool["channels"]["gone_channel"] = {"title": "", "added_by": 202, "added": ""}
+    papa.set_selected(["gone_channel"])
+    found, missing = asyncio.run(guests.scan_pool(FakeClient(), [papa], pool, pause=0))
+    assert missing == ["gone_channel"] and found[202] == []
+    guests.remove_from_pool(pool, "gone_channel")
+    assert papa.selected(guests.load_pool()) == []  # removed from the pool = gone from everyone's ticks
+
+    # sites: the shared list is portals.yml job_boards; edits keep the rest of the file
+    assert guests.listed_sites() == {"hh": "hh.ru", "remotive": "Remotive", "himalayas": "Himalayas"}
+    guests.add_board("jobicy")
+    guests.set_board_enabled("himalayas", True)
+    guests.set_board_enabled("remotive", False)
+    text = guests.PORTALS_PATH.read_text(encoding="utf-8")
+    assert "# my portals" in text and "# WebSearch" in text and "positive: [Analyst]" in text
+    boards_now = {b["provider"]: b["enabled"] for b in guests.read_boards()}
+    assert boards_now == {"remotive": False, "himalayas": True, "jobicy": False}, boards_now
+    guests.remove_board("remotive")
+    assert set(guests.listed_sites()) == {"hh", "himalayas", "jobicy"}
+    try:
+        guests.add_board("evil-site")
+        raise AssertionError("only catalog sites can be added")
+    except KeyError:
+        pass
+    owner_like = guests.Owner(1)
+    owner_search = {}
+    owner_like.load_search = lambda: dict(owner_search)  # don't touch the real search.yml
+    owner_like.save_search = lambda s: (owner_search.clear(), owner_search.update(s))
+    assert owner_like.sites(guests.listed_sites()) == ["himalayas"]  # yours = enabled in portals.yml
+    owner_like.set_sites(["hh", "himalayas"])
+    assert owner_like.sites(guests.listed_sites()) == ["hh", "himalayas"] and owner_search["sites"] == ["hh"]
+
+    mama.set_sites(["himalayas", "jobicy", "not_listed"])
+    assert mama.sites(guests.listed_sites()) == ["himalayas", "jobicy"]
+    feed = {"himalayas": {"jobs": [
+        {"title": "Senior Accountant", "url": "https://h.io/1", "company": "Acme", "location": "Remote", "posted": "2026-09-30"},
+        {"title": "Python Developer", "url": "https://h.io/2", "company": "B", "location": "", "posted": ""},
+    ]}, "jobicy": {"error": "timeout"}}
+    jobs = guests.match_site_jobs(feed, mama, guests.listed_sites())
+    assert [j["title"] for j in jobs] == ["Senior Accountant"] and jobs[0]["site"] == "Himalayas"
+    assert guests.match_site_jobs(feed, mama, guests.listed_sites()) == []  # seen once = not again
+    web_item = bot.to_inbox(jobs[0])
+    assert "🏢 Acme" in bot.card_screen(jobs[0]["key"], web_item, status_lines=bot.GUEST_STATUS_LINE)[0]
+
+    # screens: fit in Telegram limits, buttons carry what the handlers expect
+    pool = guests.load_pool()
+    caption, rows = bot.pool_screen(pool, mama)
+    assert "2 из 30" in caption and "У тебя отмечено: 2" in caption and bot.visible_len(caption) <= 1024
+    assert data(rows[0][0]) == "p:t:buh_jobs:0" and data(rows[0][1]) == "p:d:buh_jobs:0"
+    caption, rows = bot.pool_screen(pool, papa)
+    assert len(rows[0]) == 1  # papa can't delete mama's channel
+    caption, rows = bot.pool_screen(pool, mama, onboarding=True)
+    assert caption.startswith("<b>Шаг 2 из 2") and data(rows[-1][0]) == "skip"
+    for i in range(guests.MAX_POOL - 2):
+        pool["channels"][f"channel_number_{i:02d}_with_long_name"] = {"title": "Очень длинное название канала " * 3, "added_by": 1, "added": f"z{i}"}
+    for page in range(4):
+        caption, rows = bot.pool_screen(pool, mama, page)
+        check_buttons(rows)
+        assert bot.visible_len(caption) <= 1024
+    assert not any(data(b) == "p:a" for row in bot.pool_screen(pool, mama)[1] for b in row)  # full: no ➕
+    caption, rows = bot.sites_screen(mama)
+    assert "у тебя отмечено 2" in caption and data(rows[0][0]) == "w:t:hh" and data(rows[1][0]) == "w:t:himalayas"
+    assert len(rows[1]) == 1 and "запрос не задан" in caption  # guests can't delete; hh not ticked: no hh buttons
+    caption, rows = bot.sites_screen(owner_like)
+    assert len(rows[0]) == 1 and [data(b) for b in rows[1]] == ["w:q", "w:r"]  # hh: no 🗑, ticked: query buttons
+    assert data(rows[2][1]) == "w:d:himalayas" and data(rows[-2][0]) == "w:add"
+    check_buttons(rows)
+
+    # hh.ru RSS
+    rss = ("<?xml version='1.0' encoding='utf-8'?><rss version=\"2.0\"><channel><title>HeadHunter Vacancy</title>"
+           "<item><pubDate>2026-10-02T17:36:33.390+03:00</pubDate><title>Главный бухгалтер</title>"
+           "<link>https://hh.ru/vacancy/111?from=rss</link><description>&lt;p&gt;Вакансия компании: Ромашка&lt;/p&gt; "
+           "&lt;p&gt;Регион: Москва&lt;/p&gt; &lt;p&gt;Предполагаемый уровень месячного дохода: от 80 000 ₽&lt;/p&gt;"
+           "</description></item>"
+           "<item><pubDate>2026-10-02T17:00:00.000+03:00</pubDate><title>Менеджер по продажам</title>"
+           "<link>https://hh.ru/vacancy/222</link><description>&lt;p&gt;Вакансия компании: B&lt;/p&gt;</description></item>"
+           "<item><title>Бухгалтер на фишинге</title><link>https://evil.example/vacancy/1</link></item>"
+           "</channel></rss>").encode("utf-8")
+    raw = guests.parse_hh_rss(rss)
+    assert [j["url"] for j in raw] == ["https://hh.ru/vacancy/111", "https://hh.ru/vacancy/222"]  # foreign links dropped
+    assert (raw[0]["company"], raw[0]["location"], raw[0]["comp"]) == ("Ромашка", "Москва", "от 80 000 ₽")
+    jobs = guests.match_hh_jobs(raw, mama)
+    assert [j["title"] for j in jobs] == ["Главный бухгалтер"] and jobs[0]["site"] == "hh.ru"  # title must match words
+    assert jobs[0]["pipeline_line"].startswith("- [ ] https://hh.ru/vacancy/111 | Ромашка | Главный бухгалтер | Москва")
+    assert jobs[0]["date"].year == 2026 and guests.match_hh_jobs(raw, mama) == []  # seen once = not again
+    assert guests.default_hh_query(mama) == "бухгалт OR 1С OR accountant"
+    guests.set_hh(mama, query="  бухгалтер\n OR   главбух " + "x" * 300)
+    assert guests.hh_settings(mama)["query"].startswith("бухгалтер OR главбух") and len(guests.hh_settings(mama)["query"]) == guests.HH_QUERY_MAX
+    assert guests.hh_settings(mama)["remote"] is True
+    assert "schedule=remote" in guests.hh_url("аналитик", True) and "schedule" not in guests.hh_url("аналитик", False)
+    caption, rows = bot.catalog_screen(mama)
+    assert "Предложить" in caption and all(data(r[0]).startswith("w:p:") for r in rows[:-1])
+    check_buttons(rows)
+    caption, rows = bot.family_screen(guests.load_registry(), guests.load_pool(), "radar_bot", invite="abc")
+    assert "@mama" in caption and "Папа Петров" in caption and "t.me/radar_bot?start=abc" in caption
+    assert data(rows[0][0]) == "u:del:101" and data(rows[-1][0]) == "u:inv" and bot.visible_len(caption) <= 1024
+    caption, rows = bot.guest_settings_screen(mama)
+    assert "бухгалт, 1С" in caption and data(rows[0][0]) == "k:role"
+
+    big = {f"k{i}": dict(bot.to_inbox(dict(job, msg_id=i)), date=f"2026-01-{i % 28 + 1:02d}") for i in range(guests.INBOX_CAP + 30)}
+    big["k0"]["fav"] = True
+    assert len(guests.trim_inbox(big)) == guests.INBOX_CAP and "k0" in big
+
+    assert guests.remove(reg, 101) and guests.get(reg, 101) is None and mama.dir.exists()
+    guests.USERS_DIR, guests.REGISTRY_PATH, guests.POOL_PATH, guests.PORTALS_PATH = saved
+
 print("ok")

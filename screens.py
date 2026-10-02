@@ -56,9 +56,9 @@ def tile(img, box, number, label, accent):
     return img
 
 
-def render_dashboard(stats, out_dir):
+def render_dashboard(stats, out_dir, subtitle="Удалённые вакансии · Data & Analytics"):
     """stats: new, taken, fav, chats, boards, checked_at (datetime|None). Returns a cached PNG path."""
-    key = hashlib.sha1(repr(sorted(stats.items())).encode()).hexdigest()[:12]
+    key = hashlib.sha1((repr(sorted(stats.items())) + subtitle).encode()).hexdigest()[:12]
     path = Path(out_dir) / f"dash-{key}.png"
     if path.exists():
         return path
@@ -74,7 +74,7 @@ def render_dashboard(stats, out_dir):
     d.ellipse([64, 70, 82, 88], fill=(52, 211, 153, 255))
     d.text((96, 62), "ONLINE", font=font("bold", 24), fill=(52, 211, 153, 255))
     d.text((60, 100), "Job Radar", font=font("black", 84), fill=(*WHITE, 255))
-    d.text((64, 200), "Удалённые вакансии · Data & Analytics", font=font("regular", 32), fill=(*MUTED, 255))
+    d.text((64, 200), subtitle[:60], font=font("regular", 32), fill=(*MUTED, 255))
 
     checked = stats.get("checked_at")
     stamp = f"проверено {checked:%H:%M}" if checked else "ещё не проверял"

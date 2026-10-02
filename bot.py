@@ -9,7 +9,8 @@ Sources:
 - Job boards: career-ops scan.mjs, every `boards_interval_hours`.
 
 A job card: 👍 В работу -> data/pipeline.md for /career-ops pipeline,
-👎 Скрыть, ⭐ favourite. Answers only you (the account logged in via login.bat).
+👎 Скрыть, ⭐ favourite. Answers you (the account logged in via login.bat) and
+the people you invite in 👥 Близкие (see guests.py).
 
 Run: pyw -3 telegram/bot.py   (no console; log in data/tg-bot.log)
 """
@@ -19,11 +20,13 @@ import html
 import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 from telethon import Button, TelegramClient, events, functions, types
 
 import boards
+import guests
 import screens
 import tg_collect as tc
 
@@ -34,6 +37,7 @@ SCREENS_DIR = tc.ROOT / "data" / "tg-screens"
 BOT_SESSION = tc.TG_DIR / "bot"
 
 PAGE_SIZE = 8
+POOL_PAGE = 8
 CAPTION_LIMIT = 1024
 EXCERPT = 520
 
@@ -105,6 +109,14 @@ def show_pattern(pattern):
 
 def btn(text, data):
     return Button.inline(text, data.encode())
+
+
+def to_int(value, default=0):
+    """Button data can be forged by a modified client: never trust it to be a number."""
+    try:
+        return max(-1, min(int(value), 10_000))
+    except (TypeError, ValueError):
+        return default
 
 
 # ---------------------------------------------------------------- inbox
@@ -209,7 +221,7 @@ def add_keywords(search, group, text):
 HOME_BTN = btn("🏠 Домой", "h")
 
 
-def home_screen(inbox, next_check=None):
+def home_screen(inbox, next_check=None, owner=False):
     s = stats_of(inbox)
     if s["new"]:
         n = s["new"]
@@ -223,8 +235,11 @@ def home_screen(inbox, next_check=None):
         [btn(f"🆕 Новые · {s['new']}", "l:new:0"), btn(f"⭐ Избранное · {s['fav']}", "l:fav:0")],
         [btn(f"📋 Все вакансии · {len(inbox)}", "l:all:0")],
         [btn("🔄 Обновить за сутки", "rf:1"), btn("🔄 За 3 дня", "rf:3")],
+        [btn("📡 Каналы", "p:v:0"), btn("🌐 Сайты", "w")],
         [btn("⚙️ Настройки", "s"), btn("❓ Как это работает", "help")],
     ]
+    if owner:
+        rows.append([btn("👥 Близкие", "u")])
     return "\n".join(lines), rows
 
 
@@ -265,7 +280,7 @@ def list_screen(inbox, view, page=0):
     return caption, rows
 
 
-def card_screen(key, item, view="all", page=0):
+def card_screen(key, item, view="all", page=0, status_lines=STATUS_LINE):
     job = from_inbox(item)
     star = "⭐ " if item.get("fav") else ""
     head = [f"{star}<b>{esc(short(title_of(item), 80))}</b>", ""]
@@ -285,8 +300,8 @@ def card_screen(key, item, view="all", page=0):
         text = item["text"].strip()
         body = esc(text if len(text) <= EXCERPT else text[:EXCERPT].rsplit(" ", 1)[0] + "…")
     caption = "\n".join(head) + f"\n\n{body}"
-    if item["status"] in STATUS_LINE:
-        caption += f"\n\n{STATUS_LINE[item['status']]}"
+    if item["status"] in status_lines:
+        caption += f"\n\n{status_lines[item['status']]}"
 
     ctx = f"{key}:{view}:{page}"
     rows = []
@@ -343,7 +358,7 @@ def settings_screen(cfg):
         [btn("📏 Мин. длина", "noop")] + choice("ml", MIN_LENGTHS, min_len, ""),
         [btn("🌐 Сайты: " + ("✓ вкл" if web_on else "выкл"), "s:web:" + ("off" if web_on else "on"))]
         + (choice("wi", BOARD_HOURS, web_hours, " ч") if web_on else []),
-        [btn(f"💬 Чаты · {chats}", "c")],
+        [btn(f"🔒 Мои закрытые чаты · {chats}", "c")],
         [btn(KEYWORD_GROUPS["job"][0], "k:job"), btn(KEYWORD_GROUPS["role"][0], "k:role")],
         [btn(KEYWORD_GROUPS["negative"][0], "k:negative"), HOME_BTN],
     ]
@@ -360,10 +375,12 @@ def keywords_screen(cfg, group):
     return caption, rows
 
 
-def chats_screen():
-    chats = tc.load_channels(tc.CHANNELS_PATH)
-    caption = ("<b>💬 Чаты</b>\n\nЧитаю только их.\n\n<i>Нажми на чат, чтобы убрать.</i>" if chats
-               else "<b>💬 Чаты</b>\n\nСписок пуст — добавь первый чат.")
+def chats_screen(chats=None):
+    if chats is None:
+        chats = tc.load_channels(tc.CHANNELS_PATH)
+    caption = ("<b>🔒 Мои чаты</b>\n\nЗакрытые чаты, их вижу только я и читаю только для тебя. "
+               "Открытые каналы — в 📡 Каналы (общий пул).\n\n<i>Нажми на чат, чтобы убрать.</i>" if chats
+               else "<b>🔒 Мои чаты</b>\n\nСписок пуст. Сюда — закрытые чаты, открытые каналы добавляй в 📡 Каналы.")
     rows = [[btn(f"✖ {c}"[:60], f"c:del:{i}")] for i, c in enumerate(chats)]
     rows.append([btn("➕ Добавить", "c:add"), btn("⬅️ Назад", "s")])
     return caption, rows
@@ -373,14 +390,185 @@ def input_screen(what):
     prompts = {
         "chat": "<b>➕ Новый чат</b>\n\nПришли сообщением:\n• @username\n• ссылку t.me/…\n"
                 "• для приватного — ссылку на любое сообщение в нём\n• или точное название чата",
+        "pool": "<b>➕ Канал в общий пул</b>\n\nПришли сообщением @username или ссылку t.me/… открытого канала "
+                "или чата с вакансиями. Можно несколько — через пробел или с новой строки.\n\n"
+                f"<i>Только открытые — те, что открываются по ссылке у любого. В пуле не больше "
+                f"{guests.MAX_POOL} каналов на всех.</i>",
+        "hhq": "<b>🔎 Запрос для hh.ru</b>\n\nПришли его так же, как написал бы в поиске на hh.ru. Например:\n"
+               "• <code>аналитик данных</code>\n• <code>бухгалтер OR главбух</code>\n"
+               "• <code>\"системный аналитик\" NOT стажёр</code>\n\n"
+               f"<i>До {guests.HH_QUERY_MAX} символов. Вакансия придёт, если в её названии есть слово из «🎯 Что ищу».</i>",
     }
     if what in prompts:
         caption = prompts[what]
     else:
         caption = (f"<b>➕ {KEYWORD_GROUPS[what][0]}</b>\n\nПришли слово сообщением — можно несколько через запятую.\n\n"
                    "<i>Регистр не важен, ищу как часть слова: «аналит» найдёт и «аналитик», и «аналитика».</i>")
-    back = "c" if what == "chat" else f"k:{what}"
+    back = {"chat": "c", "pool": "p:v:0", "hhq": "w"}.get(what, f"k:{what}")
     return caption, [[btn("✖ Отмена", back)]]
+
+
+# ---------------------------------------------------------------- family mode (guests.py)
+
+GUEST_STATUS_LINE = {"taken": "✅ <b>В работе</b>", "hidden": "🙈 <b>Скрыта</b>"}
+GUEST_SUBTITLE = "Вакансии из Telegram-каналов"
+
+GUEST_HELP = """<b>❓ Как это работает</b>
+
+📡 <b>Каналы</b> — общий список открытых каналов (до 30 на всех). Отметь ✓ те, что нужны тебе: читаю их каждые 15 минут. Можно добавить свой канал.
+🌐 <b>Сайты</b> — сайты вакансий, тоже отмечаешь нужные. Проверяю раз в 2 часа, ищу твои слова в названии вакансии.
+
+<b>Вакансия из канала</b> — сообщение, где есть слово из «🔑 Признаки вакансии» (вакансия, ищем, hiring…), слово из «🎯 Что ищу» и нет слов из «🚫 Стоп-слова».
+
+👍 <b>В работу</b> — отложить к себе (отметка ✅). 👎 <b>Скрыть</b> — убрать с глаз. ⭐ — в избранное.
+
+<b>Обновить за сутки / 3 дня</b> — перечитать каналы за период (не чаще раза в 5 минут).
+
+Никому ничего не пишу и ничего не отмечаю прочитанным."""
+
+ONBOARD_ROLE = """👋 <b>Привет! Я Job Radar</b> — ищу вакансии в Telegram-каналах и присылаю только подходящие.
+
+<b>Шаг 1 из 2. Какую работу ищешь?</b>
+Пришли слова через запятую: профессию и навыки. Например: <i>бухгалтер, 1С, главбух</i> или <i>дизайнер, figma, ui</i>.
+
+<i>Регистр не важен, ищу как часть слова: «бухгалт» найдёт и «бухгалтер», и «бухгалтерия».</i>"""
+
+ONBOARD_POOL = "<b>Шаг 2 из 2. Где искать?</b>\nОтметь каналы, которые читать для тебя, или добавь свой.\n\n"
+
+SITES_FAQ = """<b>🔒 А закрытые и платные сайты?</b>
+
+Бот читает только <b>открытые</b> сайты — где вакансии видны без входа.
+
+Сайты с логином (hh.ru с откликами, LinkedIn, платные доски) почти все запрещают роботов и передачу доступа. Если бот будет заходить под чьим-то аккаунтом и читать за всех, аккаунт быстро заблокируют — иногда вместе с подпиской. И пароль пришлось бы хранить на компьютере.
+
+Поэтому платный доступ каждый использует сам, в браузере или приложении сайта. А сюда — только открытые источники."""
+
+
+def pool_screen(pool, member, page=0, onboarding=False):
+    keys = sorted(pool["channels"], key=lambda k: pool["channels"][k].get("added", ""))
+    ticked = set(member.selected(pool))
+    free = guests.MAX_POOL - len(keys)
+    lines = [ONBOARD_POOL if onboarding else "",
+             f"<b>📡 Общие каналы</b>: {len(keys)} из {guests.MAX_POOL} · свободно {free}",
+             f"У тебя отмечено: {len(ticked)}", ""]
+    lines.append("✓ — читаю для тебя. Нажми на канал, чтобы включить или выключить." if keys
+                 else "Пока пусто — добавь первый канал.")
+    if not member.is_owner:
+        left = guests.pool_adds_left(pool, member)
+        lines.append(f"<i>Новых каналов сегодня можно добавить: {left}. 🗑 — убрать канал, который добавил ты.</i>")
+    pages = max(1, (len(keys) + POOL_PAGE - 1) // POOL_PAGE)
+    page = max(0, min(page, pages - 1))
+    rows = []
+    for k in keys[page * POOL_PAGE:(page + 1) * POOL_PAGE]:
+        title = pool["channels"][k].get("title") or ""
+        label = ("✓ " if k in ticked else "◻️ ") + f"@{k}" + (f" · {title}" if title and title.lower() != k else "")
+        row = [btn(label[:48], f"p:t:{k}:{page}")]
+        if guests.can_remove(pool, k, member):
+            row.append(btn("🗑", f"p:d:{k}:{page}"))
+        rows.append(row)
+    nav = ([btn("◀️", f"p:v:{page - 1}")] if page else []) + ([btn("▶️", f"p:v:{page + 1}")] if page < pages - 1 else [])
+    if nav:
+        rows.append(nav)
+    tools = [btn("➕ Добавить", "p:a")] if free > 0 else []
+    if keys:
+        tools += [btn("✓ Все", f"p:all:{page}"), btn("◻️ Никакие", f"p:none:{page}")]
+    if tools:
+        rows.append(tools)
+    rows.append([btn("Готово →", "skip")] if onboarding else [HOME_BTN])
+    return "\n".join(lines).strip(), rows
+
+
+def pool_delete_screen(pool, key, page):
+    title = pool["channels"].get(key, {}).get("title", "")
+    return (f"<b>Убрать @{esc(key)} из общего пула?</b>\n{esc(title)}\n\n"
+            "Канал пропадёт у всех, кто его отметил. Найденные вакансии останутся."), \
+        [[btn("🗑 Да, убрать", f"p:dok:{key}:{page}")], [btn("⬅️ Назад", f"p:v:{page}")]]
+
+
+def sites_screen(member):
+    listed = guests.listed_sites()
+    mine = set(member.sites(listed))
+    lines = [f"<b>🌐 Сайты вакансий</b>: {len(listed)} · у тебя отмечено {len(mine)}", ""]
+    if member.is_owner:
+        lines.append("✓ — сайт включён в твой поиск career-ops (фильтры из portals.yml). "
+                     "Близкие отмечают сайты из этого же списка для себя.")
+    else:
+        lines += ["✓ — присылаю тебе вакансии оттуда, если в названии вакансии есть слово из «🎯 Что ищу». "
+                  "Проверяю раз в 2 часа.",
+                  "<i>Сайты в основном англоязычные: добавь слова и по-английски (accountant, designer…).</i>"]
+    hh = guests.hh_settings(member)
+    hh_line = (f"🔎 <b>hh.ru</b>: «{esc(hh['query'])}»" + (", только удалёнка" if hh["remote"] else "")
+               if hh["query"] else "🔎 <b>hh.ru</b>: запрос не задан")
+    lines += ["", hh_line + ". Проверяю раз в 30 минут, до 20 свежих вакансий за раз."]
+    rows = []
+    order = sorted(listed.items(), key=lambda kv: (kv[0] != guests.HH_ID, kv[1].lower()))
+    for pid, name in order:
+        row = [btn(("✓ " if pid in mine else "◻️ ") + name, f"w:t:{pid}")]
+        if member.is_owner and pid != guests.HH_ID:
+            row.append(btn("🗑", f"w:d:{pid}"))
+        rows.append(row)
+        if pid == guests.HH_ID and pid in mine:
+            rows.append([btn("🔎 Запрос для hh.ru", "w:q"),
+                         btn(("✓" if hh["remote"] else "◻️") + " Только удалёнка", "w:r")])
+    rows.append([btn("➕ Добавить сайт" if member.is_owner else "💡 Предложить сайт", "w:add"),
+                 btn("🔒 А платные сайты?", "w:faq")])
+    rows.append([HOME_BTN])
+    return "\n".join(lines), rows
+
+
+def catalog_screen(member):
+    listed = guests.listed_sites()
+    rest = [(pid, v) for pid, v in guests.SITE_CATALOG.items() if pid not in listed]
+    if not rest:
+        return "<b>Все сайты, которые я умею читать, уже в списке.</b>", [[btn("⬅️ Назад", "w")]]
+    head = ("<b>➕ Добавить сайт</b>\n\nСайт появится в общем списке выключенным — каждый отметит его себе сам."
+            if member.is_owner else
+            "<b>💡 Предложить сайт</b>\n\nВладелец бота получит предложение и решит, добавлять ли.\n"
+            f"<i>Можно {guests.PROPOSALS_PER_DAY} предложения в сутки.</i>")
+    head += "\n\n<i>Здесь только сайты, которые я умею читать без входа и настроек.</i>"
+    action = "a" if member.is_owner else "p"
+    rows = [[btn(f"{name} — {desc}"[:60], f"w:{action}:{pid}")] for pid, (name, desc) in rest]
+    rows.append([btn("⬅️ Назад", "w")])
+    return head, rows
+
+
+def guest_settings_screen(guest):
+    kw = guest.cfg().get("keywords", {})
+    role = ", ".join(show_pattern(p) for p in kw.get("role", [])) or "—"
+    caption = (
+        "<b>⚙️ Настройки</b>\n\n"
+        f"🎯 <b>Что ищу</b>: {esc(short(role, 300))}\n"
+        f"🚫 Стоп-слов: {len(kw.get('negative', []))} · 🔑 признаков вакансии: {len(kw.get('job', []))}\n\n"
+        "<i>Каналы и сайты — кнопками 📡 и 🌐 на главном экране.</i>"
+    )
+    rows = [
+        [btn("🎯 Что ищу", "k:role"), btn("🚫 Стоп-слова", "k:negative")],
+        [btn("🔑 Признаки вакансии", "k:job"), HOME_BTN],
+    ]
+    return caption, rows
+
+
+def family_screen(reg, pool, bot_username, invite=None, full=False):
+    people = guests.all_guests(reg)
+    lines = [f"<b>👥 Близкие</b>: {len(people)} из {guests.MAX_MEMBERS}", ""]
+    if people:
+        for g in people:
+            n = len(g.selected(pool))
+            joined = datetime.fromisoformat(g.info["joined"])
+            lines.append(f"• <b>{esc(g.name)}</b> — {n} {plural(n, 'канал', 'канала', 'каналов')}, с {joined:%d.%m}")
+    else:
+        lines.append("Пока никого. Нажми «➕ Пригласить» и отправь ссылку человеку.")
+    lines += ["", f"📡 Каналов в общем пуле: {len(pool['channels'])} из {guests.MAX_POOL}. "
+                  "Читаю их через твой аккаунт каждые 15 минут."]
+    if invite:
+        lines += ["", "🔗 <b>Приглашение</b> — на одного человека, действует 7 дней:",
+                  f"<code>https://t.me/{bot_username}?start={invite}</code>",
+                  "<i>Нажми на ссылку, чтобы скопировать, и перешли её человеку.</i>"]
+    if full:
+        lines += ["", f"⚠️ Мест нет: не больше {guests.MAX_MEMBERS} человек (считая неиспользованные приглашения)."]
+    rows = [[btn(f"✖ {g.name}"[:40], f"u:del:{g.id}")] for g in people]
+    rows.append([btn("➕ Пригласить", "u:inv"), HOME_BTN])
+    return "\n".join(lines), rows
 
 
 # ---------------------------------------------------------------- bot
@@ -397,14 +585,31 @@ class JobRadar:
         self.last_attempt = {"tg": None, "web": None}
         self.reported_missing = set()
         self.awaiting = None  # (what, screen message id): the next text you send is that input
+        self.guest_awaiting = {}  # the same, per guest id
+        self.me = None  # you as a guests.Member (pool ticks, inbox)
+        self.pool_run = None
+        self.sites_run = None
+        self.sites_busy = False
+        self.hh_run = None
+        self.hh_busy = False
+        self.last_seen = {}  # guest id -> time of the last action (anti-flood)
+        self.bot_username = None
 
     async def start(self):
         await self.user.connect()
         if not await self.user.is_user_authorized():
             raise SystemExit("Нет входа в Telegram: сначала запусти telegram\\login.bat")
         self.owner = (await self.user.get_me()).id
+        self.me = guests.Owner(self.owner)
+        try:
+            moved = await guests.migrate_owner_channels(self.user, self.me)
+            if moved:
+                log.info("moved public channels to the shared pool: %s", moved)
+        except Exception:
+            log.exception("could not move public channels to the pool")
         await self.bot.start(bot_token=self.cfg["bot_token"])
-        self.bot.add_event_handler(self.on_message, events.NewMessage(from_users=self.owner))
+        self.bot_username = (await self.bot.get_me()).username
+        self.bot.add_event_handler(self.on_any_message, events.NewMessage(incoming=True, func=lambda e: e.is_private))
         self.bot.add_event_handler(self.on_button, events.CallbackQuery())
         await self.set_profile()
         log.info("started, owner %s", self.owner)
@@ -431,7 +636,7 @@ class JobRadar:
         state = tc.load_state()
         last = state.get("last_run")
         stats = dict(stats_of(inbox),
-                     chats=len(tc.load_channels(tc.CHANNELS_PATH)),
+                     chats=len(tc.load_channels(tc.CHANNELS_PATH)) + len(self.me.selected(guests.load_pool())),
                      boards=state.get("boards_scanned", 0) if self.cfg.get("boards_enabled", True) else 0,
                      checked_at=datetime.fromisoformat(last).astimezone().replace(second=0, microsecond=0) if last else None)
         return screens.render_dashboard(stats, SCREENS_DIR)
@@ -443,24 +648,34 @@ class JobRadar:
         due = datetime.fromisoformat(last) + timedelta(minutes=self.cfg.get("interval_minutes", 15))
         return max(1, int((due - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
 
-    async def send_screen(self, caption, buttons, silent=False):
-        try:
-            return await self.bot.send_file(self.owner, self.dashboard(), caption=fit(caption), buttons=buttons, silent=silent)
-        except Exception:
-            log.exception("cannot message owner — did you press Start in the bot chat?")
+    def guest_dashboard(self, guest):
+        inbox, state = guest.load_inbox(), guest.load_state()
+        last = state.get("pool_run")
+        stats = dict(stats_of(inbox), chats=len(guest.selected(guests.load_pool())),
+                     boards=len(guest.sites(guests.listed_sites())),
+                     checked_at=datetime.fromisoformat(last).astimezone().replace(second=0, microsecond=0) if last else None)
+        return screens.render_dashboard(stats, guest.screens_dir, subtitle=GUEST_SUBTITLE)
 
-    async def edit_screen(self, target, caption, buttons, refresh_picture=False):
+    async def send_screen(self, caption, buttons, silent=False, guest=None):
+        to = guest.id if guest else self.owner
+        picture = self.guest_dashboard(guest) if guest else self.dashboard()
+        try:
+            return await self.bot.send_file(to, picture, caption=fit(caption), buttons=buttons, silent=silent)
+        except Exception:
+            log.exception("cannot message %s — did they press Start in the bot chat?", to)
+
+    async def edit_screen(self, target, caption, buttons, refresh_picture=False, guest=None):
         """target: a CallbackQuery event or a message id."""
         caption = fit(caption)
         kw = {"buttons": buttons, "link_preview": False}
         if refresh_picture:
-            kw["file"] = self.dashboard()
+            kw["file"] = self.guest_dashboard(guest) if guest else self.dashboard()
         if isinstance(target, int):
-            return await self.bot.edit_message(self.owner, target, caption, **kw)
+            return await self.bot.edit_message(guest.id if guest else self.owner, target, caption, **kw)
         return await target.edit(caption, **kw)
 
     async def show_home(self, target=None):
-        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check())
+        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True)
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True)
         state = tc.load_state()
@@ -486,6 +701,8 @@ class JobRadar:
             self.reload()
             if tg:
                 found += await self.guarded("tg", self.check_telegram(rescan_days, manual), manual)
+            if tg and manual:  # your ticked pool channels; on schedule they go with everyone's (pool_pass)
+                found += await self.guarded("tg", self.owner_pool(rescan_days), manual)
             if web and self.cfg.get("boards_enabled", True):
                 found += await self.guarded("web", self.check_boards(), manual)
         return found
@@ -568,9 +785,26 @@ class JobRadar:
                     self.last_attempt["web"] = now
                 found = await self.check(tg=tg, web=web)
                 await self.alert(found or [])
+            if not self.pool_run or now - self.pool_run >= guests.POOL_EVERY:
+                self.pool_run = now
+                try:
+                    await self.pool_pass()
+                except Exception:
+                    log.exception("pool check failed")
+            if not self.sites_run or now - self.sites_run >= guests.SITES_EVERY:
+                self.sites_run = now
+                asyncio.create_task(self.sites_task())  # slow (minutes): don't hold up the clock
+            if not self.hh_run or now - self.hh_run >= guests.HH_EVERY:
+                self.hh_run = now
+                asyncio.create_task(self.hh_task())
             await asyncio.sleep(60)
 
     # ------------------------------------------------------------ messages
+
+    async def on_any_message(self, event):
+        if event.sender_id == self.owner:
+            return await self.on_message(event)
+        await self.on_guest_message(event)
 
     async def on_message(self, event):
         text = event.raw_text.strip()
@@ -591,6 +825,10 @@ class JobRadar:
         await self.show_home()
 
     async def handle_input(self, what, text, screen_id):
+        if what == "pool" or (what == "chat" and guests.public_username(text)):
+            return await self.pool_input(self.me, text, screen_id)  # open channels go to the shared pool
+        if what == "hhq":
+            return await self.hh_query_input(self.me, text, screen_id)
         if what == "chat":
             if text:
                 add_channel(text)
@@ -617,13 +855,15 @@ class JobRadar:
 
     async def on_button(self, event):
         if event.sender_id != self.owner:
-            return await event.answer("Это личный бот.", alert=True)
+            return await self.on_guest_button(event)
         parts = event.data.decode().split(":")
         action, args = parts[0], parts[1:]
         handler = {
             "h": self.b_home, "l": self.b_list, "o": self.b_open, "full": self.b_full, "close": self.b_close,
             "rf": self.b_refresh, "help": self.b_help, "s": self.b_settings, "k": self.b_keywords,
-            "c": self.b_chats, "noop": self.b_noop,
+            "c": self.b_chats, "noop": self.b_noop, "u": self.b_family,
+            "p": lambda e, *a: self.pool_action(e, self.me, *(a or ["v"])),
+            "w": lambda e, *a: self.sites_action(e, self.me, *a),
         }.get(action)
         if handler:
             return await handler(event, *args)
@@ -755,10 +995,529 @@ class JobRadar:
             await event.answer()
         await self.edit_screen(event, *chats_screen())
 
+    # ------------------------------------------------------------ shared plumbing for you and guests
+
+    def g(self, member):
+        """send_screen/edit_screen take guest=None for you."""
+        return None if member.is_owner else member
+
+    def member_for(self, uid):
+        if uid == self.owner:
+            return self.me
+        return guests.get(guests.load_registry(), uid)
+
+    def set_awaiting(self, member, value):
+        if member.is_owner:
+            self.awaiting = value
+        elif value is None:
+            self.guest_awaiting.pop(member.id, None)
+        else:
+            self.guest_awaiting[member.id] = value
+
+    def too_fast(self, uid):
+        """Anti-flood for guests: about one action per second, extra ones are dropped."""
+        t = time.monotonic()
+        last = self.last_seen.get(uid, 0.0)
+        self.last_seen[uid] = t
+        return t - last < 0.7
+
+    def store_for(self, member, jobs):
+        return self.store(jobs) if member.is_owner else self.guest_store(member, jobs)
+
+    def guest_store(self, guest, jobs):
+        inbox = guest.load_inbox()
+        items = []
+        for job in jobs:
+            key = job_key(job)
+            if key not in inbox:
+                inbox[key] = to_inbox(job)
+                items.append(inbox[key])
+        guest.save_inbox(inbox)
+        return items
+
+    # ------------------------------------------------------------ 📡 pool and 🌐 sites: checking
+
+    async def check_pool(self, members, rescan_days=None):
+        """Read the ticked pool channels for these people. The caller holds self.lock."""
+        pool = guests.load_pool()
+        found, missing = await guests.scan_pool(self.user, members, pool, rescan_days=rescan_days)
+        gone = sorted(missing)
+        if gone != self.me.load_state().get("pool_missing", []):
+            self.me.update_state(pool_missing=gone)
+            if gone:
+                await self.send_screen("⚠️ <b>Не открываются каналы из общего пула</b>\n\n"
+                                       + "\n".join(f"• @{esc(k)}" for k in gone)
+                                       + "\n\nВозможно, канал закрыли или переименовали. Убрать — в 📡 Каналы.",
+                                       [[btn("📡 Каналы", "p:v:0")], [HOME_BTN]])
+        log.info("pool: %s", {m.name: len(found[m.id]) for m in members})
+        return {m.id: self.store_for(m, found[m.id]) for m in members}
+
+    async def owner_pool(self, rescan_days):
+        return (await self.check_pool([self.me], rescan_days))[self.me.id]
+
+    async def pool_pass(self):
+        if self.lock.locked():
+            return
+        people = [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
+        async with self.lock:
+            result = await self.check_pool([self.me] + people)
+        for m in [self.me] + people:
+            if result[m.id]:
+                await self.send_screen(*found_screen(result[m.id]), guest=self.g(m))
+
+    async def sites_pass(self):
+        listed = guests.listed_sites()
+        people = [g for g in guests.all_guests(guests.load_registry())
+                  if not g.load_state().get("step") and g.sites(listed)]
+        if not people:
+            return
+        feed = await guests.fetch_feed(sorted({s for g in people for s in g.sites(listed)}))
+        errors = {p: r["error"] for p, r in feed.items() if "error" in r}
+        if errors:
+            log.warning("site feed errors: %s", errors)
+        for g in people:
+            items = self.guest_store(g, guests.match_site_jobs(feed, g, listed))
+            log.info("sites for %s: %d new", g.name, len(items))
+            if items:
+                await self.send_screen(*found_screen(items), guest=g)
+
+    async def hh_pass(self):
+        listed = guests.listed_sites()
+        people = [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
+        for m in people:
+            settings = guests.hh_settings(m)
+            if guests.HH_ID not in m.sites(listed) or not settings["query"]:
+                continue
+            try:
+                raw = await guests.fetch_hh(settings["query"], settings["remote"])
+            except Exception as e:
+                log.warning("hh.ru for %s: %s", m.name, e)
+                continue
+            items = self.store_for(m, guests.match_hh_jobs(raw, m))
+            log.info("hh.ru for %s: %d of %d new", m.name, len(items), len(raw))
+            if items:
+                await self.send_screen(*found_screen(items), guest=self.g(m))
+            await asyncio.sleep(guests.HH_PAUSE)
+
+    async def hh_task(self):
+        if self.hh_busy:
+            return
+        self.hh_busy = True
+        try:
+            await self.hh_pass()
+        except Exception:
+            log.exception("hh.ru pass failed")
+        finally:
+            self.hh_busy = False
+
+    async def sites_task(self):
+        if self.sites_busy:
+            return
+        self.sites_busy = True
+        try:
+            await self.sites_pass()
+        except Exception:
+            log.exception("sites pass failed")
+        finally:
+            self.sites_busy = False
+
+    # ------------------------------------------------------------ 📡 pool and 🌐 sites: screens
+
+    async def pool_action(self, event, member, sub="v", *args):
+        pool = guests.load_pool()
+        onboarding = not member.is_owner and member.load_state().get("step") == "channels"
+        key = args[0] if sub in ("t", "d", "dok") and args else None
+        page = to_int(args[1] if key is not None and len(args) > 1 else (args[0] if args else 0))
+        note = None
+        if key is not None and key not in pool["channels"]:
+            note = "Этого канала уже нет в пуле"
+        elif sub == "t":
+            ticked = member.selected(pool)
+            if key in ticked:
+                ticked.remove(key)
+                note = f"Выключил @{key}"
+            else:
+                ticked.append(key)
+                note = f"✓ Читаю @{key}"
+            member.set_selected(ticked)
+        elif sub == "all":
+            member.set_selected(list(pool["channels"]))
+            note = "✓ Отметил все"
+        elif sub == "none":
+            member.set_selected([])
+            note = "Снял все отметки"
+        elif sub == "a":
+            if len(pool["channels"]) >= guests.MAX_POOL:
+                return await event.answer(f"В пуле уже {guests.MAX_POOL} каналов — это предел.", alert=True)
+            if guests.pool_adds_left(pool, member) <= 0:
+                return await event.answer(f"Сегодня уже добавлено {guests.POOL_ADDS_PER_DAY} канала. Завтра можно ещё.", alert=True)
+            self.set_awaiting(member, ("pool", event.message_id))
+            await event.answer()
+            return await self.edit_screen(event, *input_screen("pool"), guest=self.g(member))
+        elif sub == "d":
+            if not guests.can_remove(pool, key, member):
+                return await event.answer("Убрать канал может тот, кто его добавил, или владелец бота.", alert=True)
+            await event.answer()
+            return await self.edit_screen(event, *pool_delete_screen(pool, key, page), guest=self.g(member))
+        elif sub == "dok":
+            if not guests.can_remove(pool, key, member):
+                return await event.answer("Убрать канал может тот, кто его добавил, или владелец бота.", alert=True)
+            guests.remove_from_pool(pool, key)
+            log.info("pool: %s removed @%s", member.name, key)
+            note = f"Убрал @{key} из пула"
+        self.set_awaiting(member, None)
+        await event.answer(note)
+        await self.edit_screen(event, *pool_screen(guests.load_pool(), member, page, onboarding), guest=self.g(member))
+
+    async def hh_query_input(self, member, text, screen_id):
+        query = guests.clean_hh_query(text)
+        if query:
+            guests.set_hh(member, query=query)
+            if guests.HH_ID not in member.sites(guests.listed_sites()):
+                member.set_sites(member.sites(guests.listed_sites()) + [guests.HH_ID])
+        caption, rows = sites_screen(member)
+        await self.edit_screen(screen_id, ("✅ Запрос для hh.ru сохранён.\n\n" if query else "") + caption, rows,
+                               guest=self.g(member))
+
+    async def pool_input(self, member, text, screen_id):
+        pool = guests.load_pool()
+        added, refused = await guests.add_to_pool(self.user, pool, member, text)
+        if added:
+            log.info("pool: %s added %s", member.name, added)
+        onboarding = not member.is_owner and member.load_state().get("step") == "channels"
+        caption, rows = pool_screen(guests.load_pool(), member, 0, onboarding)
+        notes = ([f"✅ Отметил: {esc(', '.join('@' + k for k in added))}"] if added else [])
+        notes += [f"❌ {esc(w)} — {why}" for w, why in refused]
+        if notes:
+            caption = "\n".join(notes) + "\n\n" + caption
+        await self.edit_screen(screen_id, caption, rows, guest=self.g(member))
+
+    async def sites_action(self, event, member, sub=None, pid=None):
+        listed = guests.listed_sites()
+        note, alert = None, False
+        try:
+            if sub == "t" and pid in listed:
+                mine = member.sites(listed)
+                on = pid not in mine
+                if member.is_owner and pid != guests.HH_ID:
+                    guests.set_board_enabled(pid, on)
+                else:
+                    member.set_sites(mine + [pid] if on else [s for s in mine if s != pid])
+                note = f"✓ {listed[pid]}" if on else f"Выключил {listed[pid]}"
+                if pid == guests.HH_ID and on and not guests.hh_settings(member)["query"]:
+                    query = guests.default_hh_query(member)
+                    if not query:  # no words yet: ask for the query right away
+                        self.set_awaiting(member, ("hhq", event.message_id))
+                        await event.answer()
+                        return await self.edit_screen(event, *input_screen("hhq"), guest=self.g(member))
+                    guests.set_hh(member, query=query)
+                    note = "✓ hh.ru — запрос собрал из твоих слов, поправь при желании"
+            elif sub == "q":
+                self.set_awaiting(member, ("hhq", event.message_id))
+                await event.answer()
+                return await self.edit_screen(event, *input_screen("hhq"), guest=self.g(member))
+            elif sub == "r":
+                remote = not guests.hh_settings(member)["remote"]
+                guests.set_hh(member, remote=remote)
+                note = "✓ Только удалёнка" if remote else "Любой формат работы"
+            elif sub == "add":
+                await event.answer()
+                return await self.edit_screen(event, *catalog_screen(member), guest=self.g(member))
+            elif sub == "faq":
+                await event.answer()
+                return await self.edit_screen(event, SITES_FAQ, [[btn("⬅️ Назад", "w")]], guest=self.g(member))
+            elif sub == "a" and member.is_owner and pid in guests.SITE_CATALOG:
+                guests.add_board(pid)
+                note = f"Добавил {guests.SITE_CATALOG[pid][0]} — отметь его ✓, если нужен тебе"
+            elif sub == "p" and not member.is_owner and pid in guests.SITE_CATALOG and pid not in listed:
+                pool = guests.load_pool()
+                if guests.proposals_left(pool, member) <= 0:
+                    note, alert = f"Не больше {guests.PROPOSALS_PER_DAY} предложений в сутки.", True
+                else:
+                    guests.record_proposal(pool, member)
+                    name, desc = guests.SITE_CATALOG[pid]
+                    await self.bot.send_message(
+                        self.owner, f"💡 <b>{esc(member.name)}</b> предлагает добавить сайт <b>{esc(name)}</b> — {esc(desc)}.",
+                        buttons=[[btn("✅ Добавить", f"w:a:{pid}"), btn("✖ Не надо", "close")]])
+                    note, alert = "Отправил владельцу бота. Если он добавит сайт, он появится в списке.", True
+            elif sub == "d" and member.is_owner and pid in listed:
+                await event.answer()
+                return await self.edit_screen(event, (
+                    f"<b>Убрать {esc(listed[pid])} из списка сайтов?</b>\n\nОн пропадёт у всех, кто его отметил, "
+                    "и выключится в твоём portals.yml."), [[btn("🗑 Да, убрать", f"w:dok:{pid}")], [btn("⬅️ Назад", "w")]])
+            elif sub == "dok" and member.is_owner and pid in listed:
+                guests.remove_board(pid)
+                note = f"Убрал {listed[pid]}"
+        except Exception:
+            log.exception("sites action %s %s failed", sub, pid)
+            note, alert = "Не получилось изменить список сайтов — подробности в логе.", True
+        await event.answer(note, alert=alert)
+        await self.edit_screen(event, *sites_screen(member), guest=self.g(member))
+
+    # ------------------------------------------------------------ 👥 family: the owner's side
+
+    async def b_family(self, event, sub=None, uid=None):
+        reg = guests.load_registry()
+        invite, note, full = None, None, False
+        g = guests.get(reg, uid) if uid else None
+        if sub == "inv":
+            invite = guests.new_invite(reg)
+            guests.save_registry(reg)
+            full = invite is None
+        elif sub == "del" and g:
+            await event.answer()
+            return await self.edit_screen(event, (
+                f"<b>Отключить {esc(g.name)}?</b>\n\n"
+                "Бот перестанет отвечать этому человеку и читать для него каналы. "
+                "Его настройки останутся в папке — новое приглашение вернёт всё как было. "
+                "Каналы, которые он добавил в пул, останутся."),
+                [[btn("✖ Да, отключить", f"u:delok:{uid}")], [btn("⬅️ Назад", "u")]])
+        elif sub == "delok" and g and guests.remove(reg, uid):
+            guests.save_registry(reg)
+            log.info("guest removed: %s (%s)", g.name, uid)
+            note = f"Отключил {g.name}"
+        await event.answer(note)
+        await self.edit_screen(event, *family_screen(reg, guests.load_pool(), self.bot_username, invite, full))
+
+    # ------------------------------------------------------------ 👥 family: the guest's side
+
+    async def guest_show_home(self, guest, target=None):
+        caption, buttons = home_screen(guest.load_inbox())
+        if target is not None:
+            return await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
+        msg = await self.send_screen(caption, buttons, guest=guest)
+        old = guest.load_state().get("home_msg")
+        if msg and old:
+            try:
+                await self.bot.delete_messages(guest.id, old)
+            except Exception:
+                pass
+        if msg:
+            guest.update_state(home_msg=msg.id)
+
+    async def guest_prompt(self, guest, text, buttons=None):
+        """Onboarding questions: one message at a time, the previous one is removed."""
+        old = guest.load_state().get("prompt_msg")
+        msg = await self.bot.send_message(guest.id, text, buttons=buttons, link_preview=False)
+        if old:
+            try:
+                await self.bot.delete_messages(guest.id, old)
+            except Exception:
+                pass
+        guest.update_state(prompt_msg=msg.id)
+
+    async def guest_finish_onboarding(self, guest):
+        old = guest.load_state().get("prompt_msg")
+        guest.update_state(step=None, prompt_msg=None)
+        if old:
+            try:
+                await self.bot.delete_messages(guest.id, old)
+            except Exception:
+                pass
+        if guest.selected(guests.load_pool()):
+            msg = await self.send_screen("⏳ <b>Проверяю твои каналы за сутки…</b>\n\nЭто займёт до минуты.", None, guest=guest)
+            if msg:
+                guest.update_state(home_msg=msg.id)
+                return await self.guest_refresh(guest, msg.id, 1, cooldown=False)
+        await self.guest_show_home(guest)
+
+    async def guest_refresh(self, guest, target, days, cooldown=True):
+        last = guest.load_state().get("manual_at")
+        wait = (datetime.fromisoformat(last) + guests.REFRESH_COOLDOWN - datetime.now(timezone.utc)) if last else None
+        if cooldown and wait and wait.total_seconds() > 0:
+            mins = int(wait.total_seconds() // 60) + 1
+            caption, buttons = f"⏳ <b>Обновлять можно раз в 5 минут</b>\n\nПопробуй через {mins} мин.", [[HOME_BTN]]
+        elif self.lock.locked():
+            caption, buttons = "⏳ <b>Сейчас идёт проверка</b>\n\nЗагляни через минуту.", [[HOME_BTN]]
+        else:
+            guest.update_state(manual_at=datetime.now(timezone.utc).isoformat())
+            async with self.lock:
+                items = (await self.check_pool([guest], rescan_days=days))[guest.id]
+            caption, buttons = found_screen(items, days)
+        await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
+
+    async def on_guest_message(self, event):
+        try:
+            await self.guest_message(event)
+        except Exception:
+            log.exception("guest message from %s failed", event.sender_id)
+            try:
+                await event.respond("Что-то пошло не так 😕 Нажми /start, чтобы вернуться на главный экран.")
+            except Exception:
+                pass
+
+    async def guest_message(self, event):
+        text = (event.raw_text or "").strip()[:guests.MAX_INPUT]
+        command = text.split()[0].split("@")[0].lower() if text.startswith("/") else None
+        reg = guests.load_registry()
+        guest = guests.get(reg, event.sender_id)
+        if guest is None:
+            if self.too_fast(event.sender_id):
+                return
+            code = text.split()[1] if command == "/start" and len(text.split()) > 1 else None
+            if code and guests.use_invite(reg, code):
+                guest = guests.register(reg, await event.get_sender())
+                guests.save_registry(reg)
+                log.info("guest joined: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
+                await self.send_screen(f"👥 <b>{esc(guest.name)}</b> подключился по приглашению.",
+                                       [[btn("👥 Близкие", "u")], [HOME_BTN]], silent=True)
+                return await self.guest_prompt(guest, ONBOARD_ROLE)
+            guests.save_registry(reg)  # expired invites were dropped
+            if code:
+                return await event.respond("Ссылка-приглашение недействительна: она одноразовая и работает 7 дней. Попроси новую.")
+            return await event.respond("Это личный бот. Чтобы им пользоваться, попроси у владельца ссылку-приглашение.")
+
+        try:
+            await event.delete()
+        except Exception:
+            pass
+        if self.too_fast(guest.id):
+            return
+        step = guest.load_state().get("step")
+        if step == "role":
+            search = guest.load_search()
+            added, refused = guests.add_words(search, "role", text) if text and not command else ([], [])
+            if not added:
+                notes = "\n".join(f"❌ {esc(w)} — {why}" for w, why in refused)
+                return await self.guest_prompt(guest, (notes + "\n\n" if notes else "") + ONBOARD_ROLE)
+            guest.save_search(search)
+            guest.update_state(step="channels")
+            return await self.guest_prompt(guest, *pool_screen(guests.load_pool(), guest, 0, onboarding=True))
+
+        awaiting = self.guest_awaiting.pop(guest.id, None)
+        if awaiting and not command:
+            what, screen_id = awaiting
+            if what == "pool":
+                return await self.pool_input(guest, text, screen_id)
+            if what == "hhq":
+                return await self.hh_query_input(guest, text, screen_id)
+            search = guest.load_search()
+            added, refused = guests.add_words(search, what, text)
+            guest.save_search(search)
+            caption, buttons = keywords_screen(guest.cfg(), what)
+            if refused:
+                caption = "\n".join(f"❌ {esc(w)} — {why}" for w, why in refused) + "\n\n" + caption
+            return await self.edit_screen(screen_id, caption, buttons, guest=guest)
+        if step == "channels":
+            return await self.guest_prompt(guest, *pool_screen(guests.load_pool(), guest, 0, onboarding=True))
+        if command == "/scan":
+            msg = await self.send_screen("⏳ <b>Проверяю каналы…</b>", None, guest=guest)
+            return await self.guest_refresh(guest, msg.id, None) if msg else None
+        await self.guest_show_home(guest)
+
+    async def on_guest_button(self, event):
+        try:
+            await self.guest_button(event)
+        except Exception:
+            log.exception("guest button %r from %s failed", event.data, event.sender_id)
+            try:
+                await event.answer("Что-то пошло не так 😕 Попробуй ещё раз.", alert=True)
+            except Exception:
+                pass
+
+    async def guest_button(self, event):
+        guest = guests.get(guests.load_registry(), event.sender_id)
+        if guest is None:
+            return await event.answer("Нет доступа. Попроси у владельца ссылку-приглашение.", alert=True)
+        if self.too_fast(guest.id):
+            return await event.answer("Не так быстро 🙂")
+        parts = event.data.decode("utf-8", "replace")[:64].split(":")
+        action, args = parts[0], parts[1:]
+        step = guest.load_state().get("step")
+        if action == "skip":
+            await event.answer()
+            return await self.guest_finish_onboarding(guest)
+        if step == "role" or (step == "channels" and action != "p"):
+            return await event.answer("Сначала ответь на вопрос выше 🙂")
+        if action not in ("k", "p"):
+            self.guest_awaiting.pop(guest.id, None)
+
+        if action == "h":
+            await event.answer()
+            return await self.guest_show_home(guest, event)
+        if action == "l" and len(args) == 2 and args[0] in VIEWS:
+            await event.answer()
+            return await self.edit_screen(event, *list_screen(guest.load_inbox(), args[0], to_int(args[1])), guest=guest)
+        if action in ("o", "t", "n", "r", "f") and args:
+            return await self.guest_job(event, guest, action, *args[:3])
+        if action == "full" and args:
+            item = guest.load_inbox().get(args[0])
+            await event.answer()
+            if item:
+                text = f"<b>{esc(title_of(item))}</b>\n{esc(origin_of(item))}\n\n{esc(item.get('text', ''))}"
+                await self.bot.send_message(guest.id, text[:4000], buttons=[[btn("✖ Закрыть", "close")]], link_preview=False)
+            return
+        if action == "close":
+            await event.answer()
+            return await event.delete()
+        if action == "rf" and args and args[0] in ("1", "3"):
+            await event.answer("Проверяю…")
+            await self.edit_screen(event, f"⏳ <b>Проверяю каналы за {args[0]} дн.…</b>\n\nЭто займёт до минуты.", None, guest=guest)
+            return await self.guest_refresh(guest, event, int(args[0]))
+        if action == "help":
+            await event.answer()
+            return await self.edit_screen(event, GUEST_HELP, [[HOME_BTN]], guest=guest)
+        if action == "s":
+            await event.answer()
+            return await self.edit_screen(event, *guest_settings_screen(guest), guest=guest)
+        if action == "k" and args:
+            return await self.guest_keywords(event, guest, *args[:3])
+        if action == "p":
+            return await self.pool_action(event, guest, *(args[:3] or ["v"]))
+        if action == "w":
+            return await self.sites_action(event, guest, *args[:2])
+        await event.answer()
+
+    async def guest_job(self, event, guest, action, key, view="all", page="0"):
+        inbox = guest.load_inbox()
+        item = inbox.get(key)
+        view = view if view in VIEWS else "all"
+        if not item:
+            return await event.answer("Вакансия не найдена", alert=True)
+        note = None
+        if action in ("t", "n") and item["status"] != "new":
+            return await event.answer("Уже разобрано")
+        if action == "t":
+            item["status"], note = "taken", "👍 В работе"
+        elif action == "n":
+            item["status"], note = "hidden", "🙈 Скрыто"
+        elif action == "r":
+            item["status"], note = "new", "↩️ Вернул в новые"
+        elif action == "f":
+            item["fav"] = not item.get("fav", False)
+            note = "⭐ В избранном" if item["fav"] else "Убрал из избранного"
+        if note:
+            guest.save_inbox(inbox)
+        await event.answer(note)
+        await self.edit_screen(event, *card_screen(key, item, view, to_int(page), GUEST_STATUS_LINE), guest=guest)
+
+    async def guest_keywords(self, event, guest, sub, group=None, index=None):
+        group = sub if sub in KEYWORD_GROUPS else group
+        if group not in KEYWORD_GROUPS:
+            return await event.answer()
+        if sub == "add":
+            self.guest_awaiting[guest.id] = (group, event.message_id)
+            await event.answer()
+            return await self.edit_screen(event, *input_screen(group), guest=guest)
+        if sub == "del":
+            search = guest.load_search()
+            patterns = search.get("keywords", {}).get(group, [])
+            i = to_int(index, -1)
+            if 0 <= i < len(patterns):
+                removed = patterns.pop(i)
+                guest.save_search(search)
+                await event.answer(f"Удалил: {show_pattern(removed)}")
+            else:
+                await event.answer()
+        else:
+            self.guest_awaiting.pop(guest.id, None)
+            await event.answer()
+        await self.edit_screen(event, *keywords_screen(guest.cfg(), group), guest=guest)
 
 async def main():
+    # basicConfig(encoding=) needs Python 3.9+, so pass a handler instead.
     logging.basicConfig(
-        filename=LOG_PATH, encoding="utf-8", level=logging.INFO,
+        handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8")], level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     logging.getLogger("telethon").setLevel(logging.WARNING)
