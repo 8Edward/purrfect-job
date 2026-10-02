@@ -38,6 +38,8 @@ import tg_collect as tc
 USERS_DIR = tc.TG_DIR / "users"
 REGISTRY_PATH = USERS_DIR / "users.json"
 POOL_PATH = USERS_DIR / "pool.json"
+PRESET_PATH = tc.TG_DIR / "preset.data-analyst.yml"
+RU_TAG = "ru-company"
 PORTALS_PATH = tc.ROOT / "portals.yml"
 OWNER_INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
 FEED_SCRIPT = tc.TG_DIR / "board-feed.mjs"
@@ -295,17 +297,38 @@ def register(reg, user):
     guest = Guest(user.id, info)
     defaults = yaml.safe_load(tc.SEARCH_DEFAULT_PATH.read_text(encoding="utf-8")) or {}
     kw = defaults.get("keywords", {})
+    preset = load_preset()
     if not guest.search_path.exists():  # a returning guest keeps old settings
-        guest.save_search({
+        tags = dict(kw.get("tags", {}))
+        if preset.get("ru_companies"):
+            tags[RU_TAG] = preset["ru_companies"]
+        search = {
             "lookback_days": DEFAULTS["lookback_days"],
             "min_length": DEFAULTS["min_length"],
-            "keywords": {"job": kw.get("job", []), "role": [], "negative": kw.get("negative", []),
-                         "tags": kw.get("tags", {})},
-            "pool": [],
-            "sites": [],
-        })
+            "keywords": {"job": kw.get("job", []), "role": preset.get("role", []),
+                         "negative": preset.get("negative") or kw.get("negative", []), "tags": tags},
+            "pool": [k for k in preset.get("pool", []) if k in load_pool()["channels"]],
+            "sites": [s for s in preset.get("sites", []) if s in SITE_CATALOG],
+        }
+        if HH_ID in preset.get("sites", []) and preset.get("hh"):
+            search["sites"].append(HH_ID)
+            search["hh"] = preset["hh"]
+        guest.save_search(search)
     guest.update_state(step="role")
     return guest
+
+
+def load_preset():
+    """The starter settings newcomers get (telegram/preset.data-analyst.yml); {} if missing."""
+    if PRESET_PATH.exists():
+        return yaml.safe_load(PRESET_PATH.read_text(encoding="utf-8")) or {}
+    return {}
+
+
+def web_tags(member, text):
+    """Tags for a site vacancy (e.g. ru-company), from the person's own tag patterns."""
+    tags = member.cfg().get("keywords", {}).get("tags") or {}
+    return tc.JobFilter({"tags": tags}, 0).tags_for(text)
 
 
 def remove(reg, uid):
@@ -643,7 +666,8 @@ def match_site_jobs(feed, member, listed):
                 date = now()
             jobs.append({"source": "web", "key": key, "title": j["title"] or "Вакансия",
                          "company": j.get("company", ""), "location": j.get("location", ""), "comp": "",
-                         "site": listed.get(provider, provider), "link": j["url"], "date": date, "tags": []})
+                         "site": listed.get(provider, provider), "link": j["url"], "date": date,
+                         "tags": web_tags(member, text)})
     member.update_state(site_seen=sorted(seen)[-20000:], sites_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]
 
@@ -755,6 +779,7 @@ def match_hh_jobs(raw, member):
         line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
         jobs.append({"source": "web", "key": key, "title": j["title"], "company": j["company"],
                      "location": j["location"], "comp": j["comp"], "site": HH_NAME, "link": j["url"],
-                     "date": date, "tags": [], "pipeline_line": line})
+                     "date": date, "tags": web_tags(member, f"{j['title']} {j['company']}"),
+                     "pipeline_line": line})
     member.update_state(hh_seen=sorted(seen)[-20000:], hh_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]

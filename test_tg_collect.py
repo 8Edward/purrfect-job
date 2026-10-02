@@ -239,7 +239,8 @@ with tempfile.TemporaryDirectory() as d:
     guests.save_registry(reg)
     assert (Path(d) / "101_mama" / "search.yml").exists() and papa.dir.name == "202_Папа_Петров"
     assert guests.get(guests.load_registry(), 101).name == "@mama" and papa.name == "Папа Петров"
-    assert mama.load_state()["step"] == "role" and mama.cfg()["keywords"]["role"] == []
+    assert mama.load_state()["step"] == "role" and any("data analyst" in p for p in mama.cfg()["keywords"]["role"])
+    assert "ru-company" in mama.cfg()["keywords"]["tags"] and "hh" in mama.load_search()["sites"]
     assert "#резюме" in mama.cfg()["keywords"]["negative"]
     for g, words in ((mama, "бухгалт, 1С, accountant"), (papa, "водител")):
         s = g.load_search()
@@ -348,6 +349,9 @@ with tempfile.TemporaryDirectory() as d:
     owner_like.set_sites(["hh", "himalayas"])
     assert owner_like.sites(guests.listed_sites()) == ["hh", "himalayas"] and owner_search["sites"] == ["hh"]
 
+    _s = mama.load_search()  # start from a person with no hh (the newcomer preset ticks it)
+    _s["hh"] = {}
+    mama.save_search(_s)
     mama.set_sites(["himalayas", "jobicy", "not_listed"])
     assert mama.sites(guests.listed_sites()) == ["himalayas", "jobicy"]
     feed = {"himalayas": {"jobs": [
@@ -401,7 +405,7 @@ with tempfile.TemporaryDirectory() as d:
     assert [j["title"] for j in jobs] == ["Главный бухгалтер"] and jobs[0]["site"] == "hh.ru"  # title must match words
     assert jobs[0]["pipeline_line"].startswith("- [ ] https://hh.ru/vacancy/111 | Ромашка | Главный бухгалтер | Москва")
     assert jobs[0]["date"].year == 2026 and guests.match_hh_jobs(raw, mama) == []  # seen once = not again
-    assert guests.default_hh_query(mama) == "бухгалт OR 1С OR accountant"
+    assert guests.default_hh_query(mama).startswith('"data analyst" OR "аналитик данных" OR')  # preset words come first
     guests.set_hh(mama, query="  бухгалтер\n OR   главбух " + "x" * 300)
     assert guests.hh_settings(mama)["query"].startswith("бухгалтер OR главбух") and len(guests.hh_settings(mama)["query"]) == guests.HH_QUERY_MAX
     assert guests.hh_settings(mama)["remote"] is True

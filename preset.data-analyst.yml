@@ -1,0 +1,87 @@
+# Starter preset for every new person who joins the bot: «Data Analyst, remote worldwide».
+# It is an EXAMPLE — each person deletes / edits words in ⚙️ Настройки afterwards.
+# Edit this file to change what newcomers get (existing people are not touched).
+
+# What they look for (matched against titles / posts).
+role:
+  - 'data analyst'
+  - 'аналитик данных'
+  - 'аналитик'
+  - '\banalytics engineer\b'
+  - '\bbi analyst\b'
+  - '\bbi developer\b'
+  - 'business intelligence'
+  - 'product analyst'
+  - 'продуктовый аналитик'
+  - 'sql'
+  - '\bdwh\b'
+  - '\betl\b'
+  - 'power ?bi'
+  - 'tableau'
+
+# Never shown, even if the words above match.
+negative:
+  - '#резюме'
+  - '#ищу'
+  - '#cv\b'
+  - '\bищу работу\b'
+  - 'looking for a job'
+  - 'open to work'
+  - 'intern\b'
+  - 'стажер'
+  - 'стажёр'
+  - 'only in office'
+  - 'только офис'
+  - 'must be (located|based) in the (us|usa|united states)'
+
+# Companies from the Russian-speaking market get a #ru_company tag on the card
+# (they are the priority). Names are plain words, case-insensitive; add your own.
+ru_companies:
+  - 'plata'
+  - 'salmon'
+  - 'uzum'
+  - 'kaspi'
+  - 'яндекс'
+  - 'yandex'
+  - 'ozon'
+  - 'озон'
+  - 'wildberries'
+  - 'avito'
+  - 'авито'
+  - 'т-банк'
+  - 'тинькофф'
+  - 'tinkoff'
+  - 'сбер'
+  - 'lamoda'
+  - 'vk\b'
+  - 'aviasales'
+  - 'kolesa'
+  - 'epam'
+
+# Channels from the shared 📡 pool ticked for newcomers (only those still in the pool count).
+pool:
+  - foranalysts
+  - datajob
+  - datasciencejobs
+  - analytics_jobs
+  - remoteit
+  - relocateme
+  - geekjobs
+  - getitrussia
+  - habr_career
+  - careerspace
+
+# Job sites ticked for newcomers (from the shared 🌐 list) and hh.ru.
+sites:
+  - himalayas
+  - remoteok
+  - remotive
+  - weworkremotely
+  - workingnomads
+  - jobicy
+  - hackernews
+  - hh
+
+hh:
+  query: 'аналитик данных OR "data analyst" OR "BI аналитик" OR "продуктовый аналитик"'
+  remote: true

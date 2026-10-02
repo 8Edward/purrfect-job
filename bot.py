@@ -429,9 +429,13 @@ GUEST_HELP = """<b>❓ Как это работает</b>
 ONBOARD_ROLE = """👋 <b>Привет! Я Job Radar</b> — ищу вакансии в Telegram-каналах и присылаю только подходящие.
 
 <b>Шаг 1 из 2. Какую работу ищешь?</b>
-Пришли слова через запятую: профессию и навыки. Например: <i>бухгалтер, 1С, главбух</i> или <i>дизайнер, figma, ui</i>.
+Для примера я уже поставил <b>Data Analyst, удалёнка по миру</b>: слова про аналитику и данные, 10 хороших каналов, популярные сайты и hh.ru. Компании русскоязычного рынка (Plata, Salmon, Uzum и др.) помечаю #ru_company. Это пример: лишнее удалишь, своё добавишь в ⚙️ Настройки.
+
+Если ищешь другое — пришли слова через запятую, я <b>добавлю</b> их к примеру. Например: <i>бухгалтер, 1С, главбух</i> или <i>дизайнер, figma, ui</i>. Если подходит как есть — жми кнопку.
 
 <i>Регистр не важен, ищу как часть слова: «бухгалт» найдёт и «бухгалтер», и «бухгалтерия».</i>"""
+
+ROLE_KEEP_BUTTONS = [[Button.inline("Оставить пример →", b"rk")]]
 
 ONBOARD_POOL = "<b>Шаг 2 из 2. Где искать?</b>\nОтметь каналы, которые читать для тебя, или добавь свой.\n\n"
 
@@ -1361,7 +1365,7 @@ class JobRadar:
                 log.info("guest joined: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
                 await self.send_screen(f"👥 <b>{esc(guest.name)}</b> подключился по приглашению.",
                                        [[btn("👥 Близкие", "u")], [HOME_BTN]], silent=True)
-                return await self.guest_prompt(guest, ONBOARD_ROLE)
+                return await self.guest_prompt(guest, ONBOARD_ROLE, ROLE_KEEP_BUTTONS)
             guests.save_registry(reg)  # expired invites were dropped
             if code:
                 return await event.respond("Ссылка-приглашение недействительна: она одноразовая и работает 7 дней. Попроси новую.")
@@ -1379,7 +1383,7 @@ class JobRadar:
             added, refused = guests.add_words(search, "role", text) if text and not command else ([], [])
             if not added:
                 notes = "\n".join(f"❌ {esc(w)} — {why}" for w, why in refused)
-                return await self.guest_prompt(guest, (notes + "\n\n" if notes else "") + ONBOARD_ROLE)
+                return await self.guest_prompt(guest, (notes + "\n\n" if notes else "") + ONBOARD_ROLE, ROLE_KEEP_BUTTONS)
             guest.save_search(search)
             guest.update_state(step="channels")
             return await self.guest_prompt(guest, *pool_screen(guests.load_pool(), guest, 0, onboarding=True))
@@ -1427,6 +1431,10 @@ class JobRadar:
         if action == "skip":
             await event.answer()
             return await self.guest_finish_onboarding(guest)
+        if action == "rk" and step == "role":
+            await event.answer()
+            guest.update_state(step="channels")
+            return await self.guest_prompt(guest, *pool_screen(guests.load_pool(), guest, 0, onboarding=True))
         if step == "role" or (step == "channels" and action != "p"):
             return await event.answer("Сначала ответь на вопрос выше 🙂")
         if action not in ("k", "p"):

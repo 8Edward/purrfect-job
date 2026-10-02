@@ -91,7 +91,8 @@ def board_job(url, line):
         "link": url,
         "date": date,
         "pipeline_line": line,
-        "tags": [],
+        "tags": tc.JobFilter({"tags": tc.load_search().get("keywords", {}).get("tags")}, 0).tags_for(
+            f"{info['title']} {info['company']}"),
     }
 
 
