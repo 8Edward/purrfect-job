@@ -67,6 +67,13 @@
     <div id="results"></div>
   </section>
 
+  <!-- РЕЗЮМЕ -->
+  <section class="screen" id="s-resume" hidden>
+    <h2 class="h2">Резюме</h2>
+    <div class="chips" id="rs-versions"></div>
+    <div id="rs-body"><div class="skeleton"></div><div class="skeleton"></div></div>
+  </section>
+
   <!-- СОХРАНЁННОЕ -->
   <section class="screen" id="s-saved" hidden>
     <h2 class="h2">Мои вакансии</h2>
@@ -81,7 +88,6 @@
   <!-- ЕЩЁ -->
   <section class="screen" id="s-more" hidden>
     <h2 class="h2">Настройки</h2>
-    <div class="group" id="g-cv"><h4>📄 Резюме → настройка поиска</h4><div id="cv-box"></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
     <div class="group" id="g-words"><h4>🎯 Что ищу</h4><div class="words" id="w-role"></div>
       <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></div>
@@ -103,6 +109,7 @@
 <nav class="nav">
   <button data-s="feed" aria-current="page"><span>◉</span>Лента<i class="badge" id="badge" hidden></i></button>
   <button data-s="search"><span>⌕</span>Поиск</button>
+  <button data-s="resume"><span>▤</span>Резюме</button>
   <button data-s="saved"><span>★</span>Мои</button>
   <button data-s="more"><span>⚙</span>Ещё</button>
 </nav>
@@ -120,5 +127,6 @@
 <div class="gate" id="gate" hidden><b>Откройте через бота</b><span id="gate-text">Это приложение работает внутри Telegram: нажмите кнопку «Радар» в чате с ботом.</span></div>
 
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/resume.js?v={{v}}"></script>
 </body>
 </html>

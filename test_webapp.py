@@ -120,8 +120,29 @@ class FakeUser:
             yield m
 
 
+class FakeBot:
+    def __init__(self):
+        self.sent = []
+
+    async def send_file(self, to, path, **kw):
+        self.sent.append((to, path))
+
+
+class FakeClaude:
+    def __init__(self, answers, fail=None):
+        self.answers, self.fail = answers, fail
+        self.lock = asyncio.Lock()
+        self.checked = (time.monotonic(), None)
+
+    async def ask(self, system, prompt, timeout=0):
+        if self.fail:
+            raise RuntimeError(self.fail)
+        return self.answers.pop(0)
+
+
 class FakeRadar:
     def __init__(self, reg):
+        self.bot = FakeBot()
         self.cfg = {"bot_token": TOKEN}
         self.user = FakeUser()
         self.lock = asyncio.Lock()
@@ -274,6 +295,88 @@ async def main():
                 assert pdf_cv["file"] == "cv.pdf" and pdf_cv["roles"][0]["id"] == "data-analyst", pdf_cv["roles"]
                 assert (await (await c.post("/api/cv/delete", headers=auth)).json()) == {"cv": None}
                 assert not (g.dir / "cv.txt").exists()
+
+                # ▤ résumé workshop
+                rs = await (await c.get("/api/resume", headers=auth)).json()
+                # the three uploads above (docx, txt, pdf) each became a version
+                assert [v["name"] for v in rs["versions"]] == ["Основное", "Загруженное", "Загруженное 2"], rs["versions"]
+                assert rs["active"]["name"] == "Загруженное 2"
+                assert rs["ai"]["allowed"] is False  # a guest without the owner's switch
+                vid = rs["active"]["id"]
+                blocks = rs["blocks"]
+                blocks[0]["x"] = "Анна П. Петрова"
+                rs = await (await c.post("/api/resume/save", headers=auth, json={"vid": vid, "blocks": blocks})).json()
+                assert rs["blocks"][0] == {"t": "h1", "x": "Анна П. Петрова"} and "doctor" in rs
+                assert (await c.post("/api/resume/save", headers=auth, json={"vid": vid, "markdown": "  "})).status == 400
+                rs = await (await c.post("/api/resume/version", headers=auth, json={"action": "duplicate", "vid": vid})).json()
+                assert rs["active"]["name"] == "Загруженное 2 (копия)" and len(rs["versions"]) == 4
+                rs = await (await c.post("/api/resume/version", headers=auth, json={"action": "delete", "vid": rs["active"]["id"]})).json()
+                assert len(rs["versions"]) == 3
+                rs = await (await c.post("/api/resume/version", headers=auth, json={"action": "select", "vid": vid})).json()
+                assert rs["active"]["id"] == vid
+                assert (await c.post("/api/resume/version", headers=auth, json={"action": "select", "vid": "../../etc"})).status == 400
+                assert (await c.post("/api/resume/new", headers=auth, json={"mode": "text", "text": "коротко"})).status == 400
+                # builder: draft is kept between steps, then built into a new version
+                d = await (await c.post("/api/resume/draft", headers=auth, json={"draft": {"lang": "ru", "name": "Анна", "title": "Бизнес-аналитик"}})).json()
+                assert d["ok"] and "BPMN" in d["skills"] and d["summary"].startswith("Бизнес-аналитик")
+                assert (await (await c.get("/api/resume/draft", headers=auth)).json())["draft"]["name"] == "Анна"
+                rs = await (await c.post("/api/resume/build", headers=auth, json={"name": "С нуля", "draft": {
+                    "lang": "ru", "name": "Анна", "title": "Бизнес-аналитик", "email": "a@x.io",
+                    "jobs": [{"role": "Бизнес-аналитик", "company": "Банк", "from": "2022", "to": "наст. время",
+                              "bullets": [{"action": "Описала 40 процессов", "how": "в BPMN", "result": ""}]}]}})).json()
+                assert rs["active"]["name"] == "С нуля" and rs["blocks"][0]["x"] == "Анна"
+                assert (await (await c.get("/api/resume/draft", headers=auth)).json())["draft"] == {}
+                built_vid = rs["active"]["id"]
+                # vacancy match: pasted text, and a Telegram vacancy by key
+                mt = await (await c.post("/api/resume/match", headers=auth, json={"vid": built_vid, "vacancy": "Ищем бизнес-аналитика: BPMN, SQL, Jira, Confluence. " * 3})).json()
+                assert "bpmn" in {x["term"].lower() for x in mt["present"]} and "sql" in {x["term"].lower() for x in mt["missing"]}
+                assert (await c.post("/api/resume/match", headers=auth, json={"vid": built_vid, "vacancy": "мало"})).status == 400
+                # AI: refused until the owner switches it on for this guest
+                assert (await c.post("/api/resume/ai", headers=auth, json={"op": "improve", "vid": built_vid})).status == 403
+                reg = guests.load_registry()
+                reg["users"]["5"]["ai"] = True
+                guests.save_registry(reg)
+                app.ai = FakeClaude([json.dumps({"changes": [{"before": "Описала 40 процессов в BPMN", "after": "Описала в BPMN 40 бизнес-процессов банка",
+                                                              "why": "конкретнее"}], "questions": ["Какой результат?"]}, ensure_ascii=False)])
+                job = await (await c.post("/api/resume/ai", headers=auth, json={"op": "improve", "vid": built_vid})).json()
+                for _ in range(50):
+                    j = await (await c.get(f"/api/resume/ai/{job['job']}", headers=auth)).json()
+                    if j["status"] != "running":
+                        break
+                    await asyncio.sleep(0.05)
+                assert j["status"] == "done", j
+                ch = j["result"]["changes"]
+                assert ch[0]["after"].startswith("Описала в BPMN 40") and j["result"]["questions"] == ["Какой результат?"]
+                assert (await c.get(f"/api/resume/ai/{job['job']}", headers={"Authorization": "tma " + sign({"id": 1})})).status in (403, 404)
+                rs = await (await c.post("/api/resume/apply", headers=auth, json={"vid": built_vid, "changes": ch, "summary": "Бизнес-аналитик, BPMN."})).json()
+                assert rs["applied"] == 2 and any(b["x"].startswith("Описала в BPMN 40") for b in rs["blocks"])
+                assert any(b["x"] == "Бизнес-аналитик, BPMN." for b in rs["blocks"])
+                app.ai = FakeClaude(["# Anna\n\n**Business Analyst**\n\na@x.io\n\n## Summary\n\nBusiness analyst, BPMN.\n\n## Work Experience\n\n"
+                                     "### Business Analyst — Bank\n\n2022 — Present\n\n- Described 40 bank business processes in BPMN\n"])
+                job = await (await c.post("/api/resume/ai", headers=auth, json={"op": "translate", "vid": built_vid, "lang": "en"})).json()
+                for _ in range(50):
+                    j = await (await c.get(f"/api/resume/ai/{job['job']}", headers=auth)).json()
+                    if j["status"] != "running":
+                        break
+                    await asyncio.sleep(0.05)
+                assert j["status"] == "done" and j["result"]["name"] == "English", j
+                rs = await (await c.get("/api/resume", headers=auth)).json()
+                assert any(v["name"] == "English" and v["lang"] == "en" for v in rs["versions"]) and rs["active"]["id"] == built_vid
+                app.ai = FakeClaude([], fail="login")
+                job = await (await c.post("/api/resume/ai", headers=auth, json={"op": "summary", "vid": built_vid})).json()
+                await asyncio.sleep(0.1)
+                j = await (await c.get(f"/api/resume/ai/{job['job']}", headers=auth)).json()
+                assert j["status"] == "error" and "войти в Claude Code" in j["error"]
+                # export: files go to the person's chat with the bot
+                for fmt in ("md", "html", "pdf"):
+                    r = await (await c.post("/api/resume/export", headers=auth, json={"vid": built_vid, "format": fmt})).json()
+                    assert r == {"ok": True, "format": fmt}, r
+                sent = app.radar.bot.sent
+                assert [Path(p).suffix for _, p in sent] == [".md", ".html", ".pdf"] and all(to == 5 for to, _ in sent)
+                assert Path(sent[2][1]).stat().st_size > 5000
+                # search preset from a version without a file
+                cvp = await (await c.post("/api/cv/from-resume", headers=auth, json={"vid": built_vid})).json()
+                assert cvp["cv"]["roles"][0]["id"] == "business-analyst"
 
                 # start over
                 form = aiohttp.FormData()

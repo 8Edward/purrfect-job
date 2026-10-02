@@ -566,14 +566,17 @@ def family_screen(reg, pool, bot_username, invite=None, full=False):
     else:
         lines.append("Пока никого. Нажми «➕ Пригласить» и отправь ссылку человеку.")
     lines += ["", f"📡 Каналов в общем пуле: {len(pool['channels'])} из {guests.MAX_POOL}. "
-                  "Читаю их через твой аккаунт каждые 15 минут."]
+                  "Читаю их через твой аккаунт каждые 15 минут.",
+              "🤖 ИИ для резюме работает через твою подписку Claude, и текст резюме уходит в Claude. "
+              "Включай его тем, кому доверяешь (до 12 запросов в день на человека)."]
     if invite:
         lines += ["", "🔗 <b>Приглашение</b> — на одного человека, действует 7 дней:",
                   f"<code>https://t.me/{bot_username}?start={invite}</code>",
                   "<i>Нажми на ссылку, чтобы скопировать, и перешли её человеку.</i>"]
     if full:
         lines += ["", f"⚠️ Мест нет: не больше {guests.MAX_MEMBERS} человек (считая неиспользованные приглашения)."]
-    rows = [[btn(f"✖ {g.name}"[:40], f"u:del:{g.id}")] for g in people]
+    rows = [[btn(f"🤖 ИИ {'✓' if g.info.get('ai') else '—'}", f"u:ai:{g.id}"), btn(f"✖ {g.name}"[:40], f"u:del:{g.id}")]
+            for g in people]
     rows.append([btn("➕ Пригласить", "u:inv"), HOME_BTN])
     return "\n".join(lines), rows
 
@@ -1350,6 +1353,11 @@ class JobRadar:
                 "Его настройки останутся в папке — новое приглашение вернёт всё как было. "
                 "Каналы, которые он добавил в пул, останутся."),
                 [[btn("✖ Да, отключить", f"u:delok:{uid}")], [btn("⬅️ Назад", "u")]])
+        elif sub == "ai" and g:
+            reg["users"][str(g.id)]["ai"] = not g.info.get("ai")
+            guests.save_registry(reg)
+            note = f"ИИ для {g.name}: {'включён' if reg['users'][str(g.id)]['ai'] else 'выключен'}"
+            log.info("guest %s ai=%s", g.id, reg["users"][str(g.id)]["ai"])
         elif sub == "delok" and g and guests.remove(reg, uid):
             guests.save_registry(reg)
             log.info("guest removed: %s (%s)", g.name, uid)

@@ -415,7 +415,8 @@ with tempfile.TemporaryDirectory() as d:
     check_buttons(rows)
     caption, rows = bot.family_screen(guests.load_registry(), guests.load_pool(), "radar_bot", invite="abc")
     assert "@mama" in caption and "Папа Петров" in caption and "t.me/radar_bot?start=abc" in caption
-    assert data(rows[0][0]) == "u:del:101" and data(rows[-1][0]) == "u:inv" and bot.visible_len(caption) <= 1024
+    assert data(rows[0][0]) == "u:ai:101" and data(rows[0][1]) == "u:del:101" and data(rows[-1][0]) == "u:inv"
+    assert bot.visible_len(caption) <= 1024 and "ИИ" in rows[0][0].text
     caption, rows = bot.guest_settings_screen(mama)
     assert "бухгалт, 1С" in caption and data(rows[0][0]) == "k:role"
 

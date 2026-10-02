@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
@@ -26,6 +27,8 @@ from telethon import utils
 
 import cv_reader
 import guests
+import resume
+import resume_ai
 import tg_collect as tc
 
 log = logging.getLogger("job-radar.app")
@@ -182,6 +185,10 @@ class WebApp:
         self.last_search = {}
         self.warming = False
         self.runner = None
+        self.ai = resume_ai.Claude(radar.cfg.get("claude_exe"))
+        log.info("ai: claude at %s", self.ai.exe or "— not found")
+        self.ai_jobs = {}            # job id -> {"member", "op", "status", "result"|"error"}
+        self.ai_checking = False
 
     # -- plumbing
 
@@ -223,7 +230,20 @@ class WebApp:
         r.add_post("/api/cv", self.api_cv_upload)
         r.add_post("/api/cv/apply", self.api_cv_apply)
         r.add_post("/api/cv/delete", self.api_cv_delete)
+        r.add_post("/api/cv/from-resume", self.api_cv_from_resume)
         r.add_post("/api/reset", self.api_reset)
+        r.add_get("/api/resume", self.api_resume)
+        r.add_post("/api/resume/version", self.api_resume_version)
+        r.add_post("/api/resume/save", self.api_resume_save)
+        r.add_post("/api/resume/new", self.api_resume_new)
+        r.add_get("/api/resume/draft", self.api_resume_draft)
+        r.add_post("/api/resume/draft", self.api_resume_draft_save)
+        r.add_post("/api/resume/build", self.api_resume_build)
+        r.add_post("/api/resume/match", self.api_resume_match)
+        r.add_post("/api/resume/ai", self.api_resume_ai)
+        r.add_get("/api/resume/ai/{job}", self.api_resume_ai_job)
+        r.add_post("/api/resume/apply", self.api_resume_apply)
+        r.add_post("/api/resume/export", self.api_resume_export)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -581,6 +601,11 @@ class WebApp:
             return web.json_response({"error": str(e)}, status=400)
         analysis = cv_reader.analyze(text, load_graph(), guests.load_pool())
         cv_reader.save(m, field.filename, text, analysis)
+        try:  # the uploaded résumé also becomes an editable version in the «Резюме» tab
+            first = not resume.load_index(m)["list"]
+            resume.save_version(m, resume.from_text(text), name=resume.unique_name(m, "Основное" if first else "Загруженное"))
+        except ValueError as e:
+            log.info("cv for %s: not kept as a version: %s", m.name, e)
         log.info("cv for %s: %d chars, roles %s", m.name, len(text), [r["id"] for r in analysis["roles"] if r["primary"]])
         return web.json_response(self.cv_payload(m))
 
@@ -599,10 +624,274 @@ class WebApp:
         log.info("cv preset applied for %s: %s", m.name, result)
         return web.json_response({"ok": True, **result})
 
+    async def api_cv_from_resume(self, request):
+        """Search-preset analysis of a résumé version (built or pasted in the app, no file)."""
+        m = self.member(request)
+        data = await self.body(request)
+        try:
+            meta, md = resume.get_version(m, data.get("vid"))
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        text = re.sub(r"^#+\s*|\*\*", "", md, flags=re.MULTILINE)
+        cv_reader.save(m, meta["name"], text, cv_reader.analyze(text, load_graph(), guests.load_pool()))
+        return web.json_response(self.cv_payload(m))
+
     async def api_cv_delete(self, request):
         m = self.member(request)
         cv_reader.forget(m)
         return web.json_response({"cv": None})
+
+    # -- résumé workshop (resume.py rules, resume_ai.py proposals)
+
+    def ai_state(self):
+        """The cached AI status right away; a stale one is re-checked in the background."""
+        at, value = self.ai.checked
+        if (not at or time.monotonic() - at > resume_ai.STATUS_TTL) and not self.ai_checking:
+            self.ai_checking = True
+
+            async def check():
+                try:
+                    self.ai.checked = (0.0, value)
+                    await self.ai.status()
+                except Exception:
+                    log.exception("ai status check failed")
+                finally:
+                    self.ai_checking = False
+            asyncio.create_task(check())
+        return value
+
+    def resume_payload(self, m):
+        data = resume.overview(m)
+        status = self.ai_state()
+        data["ai"] = {"allowed": resume_ai.allowed(m), "ready": status is None, "status": status or "ready",
+                      "left": resume_ai.uses_left(m), "owner": m.is_owner,
+                      "why": None if status is None else resume_ai.ERRORS.get(status, "Проверяю, подключён ли ИИ…")}
+        data["cv"] = self.cv_payload(m)["cv"]
+        return data
+
+    async def api_resume(self, request):
+        return web.json_response(self.resume_payload(self.member(request)))
+
+    @staticmethod
+    def bad(text, status=400):
+        return web.json_response({"error": text}, status=status)
+
+    async def api_resume_version(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        action, vid = data.get("action"), str(data.get("vid") or "")
+        try:
+            if action == "select":
+                resume.set_active(m, vid)
+            elif action == "rename":
+                resume.rename_version(m, vid, str(data.get("name") or ""))
+            elif action == "delete":
+                resume.delete_version(m, vid)
+            elif action == "duplicate":
+                meta, md = resume.get_version(m, vid)
+                resume.save_version(m, md, name=resume.unique_name(m, meta["name"] + " (копия)"))
+            else:
+                return self.bad("Не понял, что сделать с версией")
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response(self.resume_payload(m))
+
+    async def api_resume_save(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        md = data.get("markdown")
+        if md is None and isinstance(data.get("blocks"), list):
+            md = resume.markdown_of(data["blocks"][:600])
+        if not isinstance(md, str) or not md.strip():
+            return self.bad("Пустое резюме не сохраняю")
+        try:
+            resume.get_version(m, data.get("vid"))
+            resume.save_version(m, md, vid=data.get("vid"))
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response(self.resume_payload(m))
+
+    async def api_resume_new(self, request):
+        """A new version from pasted text (or an empty template)."""
+        m = self.member(request)
+        data = await self.body(request)
+        text = str(data.get("text") or "")[:resume.MAX_MD]
+        if data.get("mode") == "text" and len(text.strip()) < 100:
+            return self.bad("Вставьте текст резюме целиком: сейчас слишком мало текста.")
+        md = resume.from_text(text) if text.strip() else resume.build({"lang": data.get("lang", "ru")})
+        try:
+            resume.save_version(m, md, name=resume.unique_name(m, str(data.get("name") or "Основное")[:40]))
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response(self.resume_payload(m))
+
+    async def api_resume_draft(self, request):
+        m = self.member(request)
+        draft = m.load_state().get("resume_draft") or {}
+        title = request.query.get("title") or draft.get("title") or ""
+        return web.json_response({"draft": draft, "skills": resume.skill_suggestions(title),
+                                  "summary": resume.suggest_summary(draft) if draft else ""})
+
+    async def api_resume_draft_save(self, request):
+        m = self.member(request)
+        draft = (await self.body(request)).get("draft")
+        if not isinstance(draft, dict) or len(json.dumps(draft, ensure_ascii=False)) > 40000:
+            return self.bad("Черновик не сохранился")
+        m.update_state(resume_draft=draft)
+        return web.json_response({"ok": True, "summary": resume.suggest_summary(draft),
+                                  "skills": resume.skill_suggestions(draft.get("title") or "")})
+
+    async def api_resume_build(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        draft = data.get("draft") if isinstance(data.get("draft"), dict) else m.load_state().get("resume_draft") or {}
+        md = resume.build(draft)
+        try:
+            meta = resume.save_version(m, md, name=resume.unique_name(m, str(data.get("name") or "Основное")[:40]),
+                                       lang="en" if draft.get("lang") == "en" else "ru")
+        except ValueError as e:
+            return self.bad(str(e))
+        m.update_state(resume_draft=None)
+        log.info("resume built for %s: %s", m.name, meta["id"])
+        return web.json_response(self.resume_payload(m))
+
+    async def vacancy_text(self, m, data):
+        """The vacancy to match or tailor to: pasted text, or one of the person's vacancies by key
+        (a Telegram post's text; for a site, the full text from the ATS when career-ops can fetch it)."""
+        text = str(data.get("vacancy") or "").strip()
+        if len(text) >= 80:
+            return text[:12000]
+        key = str(data.get("job_key") or "")
+        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        if not item:
+            raise ValueError("Вставьте текст вакансии (хотя бы пару абзацев) или выберите вакансию из своих.")
+        if item.get("source") == "tg" and len(item.get("text") or "") >= 80:
+            return item["text"][:12000]
+        if item.get("link"):
+            try:
+                proc = await asyncio.create_subprocess_exec("node", "fetch-jd.mjs", item["link"], cwd=str(tc.ROOT),
+                                                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                out, _ = await asyncio.wait_for(proc.communicate(), 40)
+                if proc.returncode == 0 and len(out.strip()) >= 80:
+                    return out.decode("utf-8", "replace")[:12000]
+            except Exception:
+                pass
+        raise ValueError("Текст этой вакансии не подтянулся. Откройте её по ссылке, скопируйте описание и вставьте сюда.")
+
+    async def api_resume_match(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        try:
+            _, md = resume.get_version(m, data.get("vid"))
+            vacancy = await self.vacancy_text(m, data)
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response({**resume.match(md, vacancy), "vacancy": vacancy[:3000]})
+
+    async def api_resume_ai(self, request):
+        m = self.member(request)
+        data = await self.body(request)
+        op = data.get("op")
+        if op not in resume_ai.OPS:
+            return self.bad("Не знаю такой помощи")
+        if not resume_ai.allowed(m):
+            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+        if resume_ai.uses_left(m) <= 0:
+            return self.bad("ИИ на сегодня всё: дневной лимит исчерпан. Завтра снова можно.", 429)
+        if any(j["member"] == m.id and j["status"] == "running" for j in self.ai_jobs.values()):
+            return self.bad("ИИ ещё работает над прошлым запросом — подождите его.", 409)
+        try:
+            meta, md = resume.get_version(m, data.get("vid"))
+            vacancy = await self.vacancy_text(m, data) if op in ("tailor", "cover") else ""
+        except ValueError as e:
+            return self.bad(str(e))
+        for jid in [j for j, v in self.ai_jobs.items() if time.time() - v["started"] > 3600]:
+            del self.ai_jobs[jid]
+        jid = secrets.token_hex(6)
+        self.ai_jobs[jid] = {"member": m.id, "op": op, "vid": meta["id"], "status": "running", "started": time.time()}
+        asyncio.create_task(self.ai_job(jid, m, op, md, vacancy, data))
+        log.info("ai %s for %s started (%s)", op, m.name, jid)
+        return web.json_response({"job": jid, "queued": self.ai.lock.locked()})
+
+    async def ai_job(self, jid, m, op, md, vacancy, data):
+        job = self.ai_jobs[jid]
+        try:
+            result = await resume_ai.run(self.ai, op, md, vacancy, data.get("lang") if data.get("lang") in ("ru", "en") else None,
+                                         str(data.get("focus") or "")[:300])
+            if op == "translate":
+                name = resume.unique_name(m, "English" if result["lang"] == "en" else "Русский")
+                new = resume.save_version(m, result["markdown"], name=name, lang=result["lang"], make_active=False)
+                result = {"vid": new["id"], "name": new["name"], "problems": result["problems"]}
+            resume_ai.count_use(m)
+            job.update(status="done", result=result)
+            self.ai.checked = (time.monotonic(), None)
+        except RuntimeError as e:
+            if str(e) in ("login", "missing"):
+                self.ai.checked = (time.monotonic(), str(e))
+            job.update(status="error", error=resume_ai.human_error(e))
+            log.warning("ai %s for %s failed: %s", op, m.name, e)
+        except ValueError as e:
+            job.update(status="error", error=str(e))
+        except Exception:
+            log.exception("ai %s for %s crashed", op, m.name)
+            job.update(status="error", error="Что-то пошло не так. Подробности в логе бота.")
+
+    async def api_resume_ai_job(self, request):
+        m = self.member(request)
+        job = self.ai_jobs.get(request.match_info["job"])
+        if not job or job["member"] != m.id:
+            return self.bad("Задача не найдена", 404)
+        return web.json_response({k: v for k, v in job.items() if k != "member"})
+
+    async def api_resume_apply(self, request):
+        """Accepted proposals: line rewrites by index (checked against the text they replace)
+        and/or a new «О себе»."""
+        m = self.member(request)
+        data = await self.body(request)
+        try:
+            meta, md = resume.get_version(m, data.get("vid"))
+        except ValueError as e:
+            return self.bad(str(e))
+        bl = resume.blocks(md)
+        applied = 0
+        for c in (data.get("changes") or [])[:40]:
+            i, before, after = c.get("index"), str(c.get("before", "")), str(c.get("after", "")).strip()
+            if not after:
+                continue
+            if not (isinstance(i, int) and 0 <= i < len(bl) and resume_ai.norm_line(bl[i]["x"]) == resume_ai.norm_line(before)):
+                i = next((k for k, b in enumerate(bl) if resume_ai.norm_line(b["x"]) == resume_ai.norm_line(before)), None)
+            if i is not None:
+                bl[i]["x"] = after
+                applied += 1
+        summary = str(data.get("summary") or "").strip()
+        if summary:
+            bl = resume.with_summary(bl, summary)
+            applied += 1
+        resume.save_version(m, resume.markdown_of(bl), vid=meta["id"])
+        return web.json_response({"applied": applied, **self.resume_payload(m)})
+
+    async def api_resume_export(self, request):
+        """PDF / HTML / Markdown of a version, sent as a file into the person's chat with the bot."""
+        m = self.member(request)
+        data = await self.body(request)
+        fmt = data.get("format") if data.get("format") in ("pdf", "html", "md") else "pdf"
+        try:
+            meta, _ = resume.get_version(m, data.get("vid"))
+            work = guests.resume_dir(m) / "export"
+            path = resume.export_file(m, meta["id"], fmt, work)
+            if fmt == "pdf":
+                path = await resume.to_pdf(path)
+        except (ValueError, RuntimeError) as e:
+            return self.bad(str(e))
+        caption = {"pdf": "📄 Резюме в PDF — можно сразу отправлять работодателю.",
+                   "html": "🌐 Резюме в HTML: откройте в браузере, можно править и печатать в PDF.",
+                   "md": "📝 Резюме текстом (Markdown)."}[fmt]
+        try:
+            await self.radar.bot.send_file(m.id, str(path), caption=f"{caption}\n«{meta['name']}»", force_document=True)
+        except Exception:
+            log.exception("export to %s failed", m.id)
+            return self.bad("Не получилось отправить файл в чат. Откройте чат с ботом и нажмите Start.", 500)
+        return web.json_response({"ok": True, "format": fmt})
 
     async def api_reset(self, request):
         """«Начать заново». The page asks first; the word "reset" here is a second guard

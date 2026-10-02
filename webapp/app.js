@@ -439,6 +439,7 @@ async function uploadCv(file) {
     cvState.busy = false;
     setCv(data.cv);
     haptic("ok");
+    if (typeof loadResume === "function" && !$("#s-resume").hidden) loadResume(true);
     toast(data.cv.roles.some((r) => r.primary) ? "Готово! Проверьте роли и нажмите «Применить»" : "Резюме прочитал, но роли не распознал");
   } catch (e) { cvState.busy = false; renderCv(); fail(e); }
 }
@@ -502,7 +503,16 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 <li><b>#ru_company:</b> метка на вакансиях русскоязычных компаний: Plata, Salmon, Uzum, Kaspi, Яндекс, Ozon, Avito и др.</li>
 <li><b>Стоп-слова:</b> стажировки, «только офис», «только для США», резюме соискателей.</li>
 </ul>
-<p>Это <b>пример</b>. Если вы ищете другое, проще всего загрузить резюме: «Ещё → 📄 Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или поменяйте всё вручную там же: слова, каналы, сайты, запрос для hh.ru.</p>
+<p>Это <b>пример</b>. Если вы ищете другое, проще всего загрузить резюме во вкладке «▤ Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или поменяйте всё вручную во вкладке «Ещё»: слова, каналы, сайты, запрос для hh.ru.</p>
+<h4>Резюме</h4>
+<ul>
+<li><b>Загрузить</b> готовое (PDF, DOCX, TXT), <b>вставить текстом</b> или <b>собрать с нуля</b> по шагам с подсказками.</li>
+<li><b>Проверка:</b> оценка и конкретные замечания: нет цифр, слабые глаголы, нет контактов, пустые слова.</li>
+<li><b>Точная правка:</b> резюме показано так, как будет в PDF. Нажмите на любую строку и поправьте её.</li>
+<li><b>Под вакансию:</b> вставьте текст вакансии и увидите, каких слов из неё нет в резюме.</li>
+<li><b>✨ ИИ</b> (если включён): улучшить формулировки, написать «О себе», подогнать под вакансию, перевести на английский, написать сопроводительное. Все правки — предложения: вы принимаете каждую сами. Новые факты и цифры ИИ не придумывает.</li>
+<li><b>Скачать:</b> PDF, HTML или текст — файл придёт в чат с ботом.</li>
+</ul>
 <h4>Как пользоваться</h4>
 <ul>
 <li><b>Лента:</b> свайп вправо — в работу, влево — скрыть, ★ — в избранное, тап — полный текст и ссылка.</li>
@@ -555,7 +565,7 @@ function renderSlide() {
   $("#onb-skip").style.visibility = slide === SLIDES.length - 1 ? "hidden" : "visible";
   if ($("#onb-skins")) bindSkins($("#onb-skins"));
   if ($("#onb-memo")) $("#onb-memo").onclick = () => { finishOnboarding(); showMemo(); };
-  if ($("#onb-cv")) $("#onb-cv").onclick = () => { finishOnboarding(); show("more"); };
+  if ($("#onb-cv")) $("#onb-cv").onclick = () => { finishOnboarding(); show("resume"); };
 }
 function finishOnboarding() {
   $("#onb").hidden = true;
@@ -581,7 +591,8 @@ function show(name) {
   $$(".screen").forEach((s) => (s.hidden = s.id !== "s-" + name));
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
-  if (name === "more") { loadSources().catch(fail); loadCv(); }
+  if (name === "more") loadSources().catch(fail);
+  if (name === "resume") loadResume(true);
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
 }
 $$(".nav button").forEach((b) => (b.onclick = () => { haptic(); show(b.dataset.s); }));

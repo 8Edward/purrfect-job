@@ -338,14 +338,23 @@ def reset_member(member, wipe_jobs=False):
     else:
         member.save_search(fresh)
     state = member.load_state()
-    for k in ("skin", "app_onboarded", "cv", "manual_at"):
+    for k in ("skin", "app_onboarded", "cv", "manual_at", "resumes", "resume_draft"):
         state.pop(k, None)
     member.save_state(state)
     cv = (tc.ROOT / "data" / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
     if cv.exists():
         cv.unlink()
+    rdir = resume_dir(member)
+    if rdir.exists():
+        for f in rdir.glob("*.md"):
+            f.unlink()
     if wipe_jobs:
         member.save_inbox({})
+
+
+def resume_dir(member):
+    """Where a person's résumé versions live (Markdown files)."""
+    return (tc.ROOT / "data" / "tg-resumes") if member.is_owner else member.dir / "resumes"
 
 
 def load_preset():
