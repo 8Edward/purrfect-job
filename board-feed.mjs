@@ -145,6 +145,90 @@ const FETCHERS = {
     }
     return out;
   },
+  async pinpoint(c) {  // https://<slug>.pinpointhq.com/postings.json
+    const j = await getJson(`https://${c.slug}.pinpointhq.com/postings.json`);
+    return (j.data || []).map((x) => ({
+      title: x.title, url: x.url,
+      location: [x.location?.city, x.location?.name].filter(Boolean).join(', ') + (x.workplace_type_text ? ` · ${x.workplace_type_text}` : ''),
+      posted: '',
+    }));
+  },
+  async aviasales() {
+    const j = await getJson('https://vacancies-app.aviasales.ru/api/vacancies?language=ru');
+    return j.map((x) => ({ title: String(x.position).trim(), url: `https://www.aviasales.ru/about/vacancies/${x.id}`, location: (x.workPlace || '') + (x.team?.name ? ` · ${x.team.name}` : ''), posted: '' }));
+  },
+  async nexters() {
+    const j = await getJson('https://www.nexters.com/back/api/vacancies');
+    return (j.data || []).map((x) => ({ title: x.attributes.title, url: `https://www.nexters.com/en/about/alljobs/?vacancy=${x.attributes.slug}`, location: x.attributes.category_name || '', posted: '' }));
+  },
+  async playrix() {
+    const r = await fetch('https://playrix.com/api/v1/index.php?action=job%2FgetList', {
+      method: 'POST', headers: { ...UA, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ action: 'job/getList', options: { lang: 'en' } }), signal: AbortSignal.timeout(25_000),
+    });
+    if (!r.ok) throw new Error(`playrix: HTTP ${r.status}`);
+    const j = await r.json();
+    return (j.items || []).filter((x) => !x.isHidden).map((x) => ({ title: x.titleMsg || x.name, url: `https://playrix.com/job/open/${x.code}`, location: x.previewText || '', posted: x.dateUpdate ? x.dateUpdate.replace(' ', 'T') : '' }));
+  },
+  async avito() {  // server-rendered lists per department; data-vacancy-remote says «Да» for remote
+    const base = 'https://career.avito.com';
+    const home = await getText(`${base}/vacancies/`);
+    const depts = [...new Set([...home.matchAll(/href="\/vacancies\/([a-z0-9-]+)\/"/g)].map((m) => m[1]))];
+    const out = new Map();
+    for (const d of depts) {
+      const html = await getText(`${base}/vacancies/${d}/`);
+      for (const b of html.split('data-vacancy-geo=').slice(1)) {
+        const geo = b.match(/^"([^"]*)"/)?.[1] || '';
+        const remote = b.match(/data-vacancy-remote="([^"]*)"/)?.[1] === 'Да';
+        const href = b.match(/href="(\/vacancies\/[a-z0-9-]+\/[0-9]+\/)"/)?.[1];
+        const name = b.match(/vacancies-section__item-name">([^<]+)</)?.[1];
+        if (href && name && !out.has(href)) out.set(href, { title: name.trim(), url: base + href, location: (remote ? 'Удалённо' : geo) + (remote && geo ? ` · ${geo}` : ''), posted: '' });
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return [...out.values()];
+  },
+  async ostrovok() {
+    const html = await getText('https://career.ostrovok.ru/vacancy');
+    return [...html.matchAll(/data-tm-name="([^"]+)"\s+href="(\/vacancy\/[0-9]+)"/g)].map((m) => ({ title: m[1].replace(/&amp;/g, '&'), url: `https://career.ostrovok.ru${m[2]}`, location: '', posted: '' }));
+  },
+  async twogis() {  // job.2gis.ru: ?page=N returns the first N pages at once, so one big page gets everything
+    const html = await getText('https://job.2gis.ru/vacancies?page=80');
+    const out = [];
+    for (const b of html.split('<li><a href="/vacancies/').slice(1)) {
+      const path = b.match(/^([a-z_]+\/[0-9]+)"/)?.[1];
+      const title = b.match(/<h4[^>]*>([^<]+)</)?.[1];
+      if (!path || !title) continue;
+      const chips = [...b.slice(0, 1500).matchAll(/chipLabel[^>]*>([^<]+)</g)].map((m) => m[1]);
+      out.push({ title: title.replace(/&amp;/g, '&').trim(), url: `https://job.2gis.ru/vacancies/${path}`, location: chips.includes('Удалённо') ? 'Удалённо' : '', posted: '' });
+    }
+    return out;
+  },
+  async kontur() {
+    const html = await getText('https://kontur.ru/career/vacancies');
+    const out = new Map();
+    for (const b of html.split('<a class="vacancy" href="').slice(1)) {
+      const path = b.match(/^(\/career\/vacancies\/[0-9]+)"/)?.[1];
+      const title = b.match(/vacancy__title">([^<]+)</)?.[1];
+      if (!path || !title || out.has(path)) continue;
+      const spans = [...b.slice(0, 900).matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1].replace(/&nbsp;|&#xA0;/g, ' '));
+      out.set(path, { title: title.replace(/&nbsp;|&#xA0;/g, ' ').replace(/&#x2B;/g, '+').replace(/&amp;/g, '&').trim(), url: `https://kontur.ru${path}`, location: spans.join(' · '), posted: '' });
+    }
+    return [...out.values()];
+  },
+  async habr(c) {  // Habr Career's open JSON list: every remote vacancy, newest first
+    const out = [];
+    for (let page = 1; page <= 12; page++) {
+      const j = await getJson(`https://career.habr.com/api/frontend/vacancies?type=all&sort=date&per_page=50&remote=true&page=${page}`);
+      for (const v of j.list || []) {
+        const sal = v.salary?.formatted ? ` · ${v.salary.formatted}` : '';
+        out.push({ title: v.title, url: `https://career.habr.com${v.href}`, company: v.company?.title || c.name, location: `Удалённо${v.location?.title ? ' · ' + v.location.title : ''}${sal}`, posted: v.publishedDate?.date || '' });
+      }
+      if (page >= (j.meta?.totalPages || 1)) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return out;
+  },
   async hh(c) {
     const out = [];
     const seen = new Set();

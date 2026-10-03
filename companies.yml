@@ -16,27 +16,28 @@ companies:
   - {id: co-salmon, name: Salmon, kind: hcareers, slug: salmon, ru: true}
   - {id: co-semrush, name: Semrush, kind: workday, host: semrush.wd5, tenant: semrush, site: semrushcareers, ru: true}
   - {id: co-tripleten, name: TripleTen, kind: comeet, url: "https://www.comeet.com/jobs/tripleten/98.008", ru: true}
+  - {id: co-aviasales, name: Aviasales, kind: aviasales, ru: true}
+  - {id: co-nexters, name: Nexters, kind: nexters, ru: true}
+  - {id: co-playrix, name: Playrix, kind: playrix, ru: true}
+  - {id: co-indrive, name: inDrive, kind: pinpoint, slug: indrive, ru: true}
+  - {id: co-avito, name: Авито, kind: avito, ru: true}
+  - {id: co-ostrovok-own, name: Островок, kind: ostrovok, ru: true}
+  - {id: co-2gis, name: 2ГИС, kind: twogis, ru: true}
+  - {id: co-kontur, name: Контур, kind: kontur, ru: true}
+  - {id: co-habr, name: Хабр Карьера (удалёнка), kind: habr}
 
-# NOT connected: no own public feed found, only hh.ru (employer ids below) or nothing. Not read by the bot;
-# to be connected another way (their own career page). hh employer ids are kept for reference.
+# NOT connected: no public vacancy list on their own site that a script may read. Not read by the bot;
+# hh employer ids kept for reference (hh.ru is the only place that lists their vacancies).
 pending:
-  - {name: Авито, hh: 84585}
-  - {name: Ozon, hh: 2180}
-  - {name: Точка Банк, hh: 2324020}
-  - {name: Островок, hh: 697715}
-  - {name: Aviasales, hh: 588914}
-  - {name: Dodo Brands, hh: 1520838}
-  - {name: Flowwow, hh: 10256320}
-  - {name: Twinby, hh: 5775055}
-  - {name: Ясно, hh: 4841748}
-  - {name: 2ГИС, hh: 64174}
-  - {name: hh.ru, hh: 1455}
-  - {name: Uzum, hh: 9173883}
-  - {name: Playrix, hh: 9056925}
-  - {name: inDrive, hh: 9506652}
-  - {name: Nexters, hh: 9058498}
-  - {name: Freedom Holding, hh: 11319821}
-  - {name: Контур, hh: 41862}
-  - {name: Techwill}  # techwill.ru does not answer from here
-  - {name: Отелло}  # otello.ru redirects to Sber ID login; vacancies only on Habr Career/hh
-  - {name: Garage8}  # page opens in a browser but shows no vacancy list (none open?)
+  - {name: Ozon, hh: 2180}              # job.ozon.ru answers 403 (anti-bot), not bypassed
+  - {name: Точка Банк, hh: 2324020}     # tochka.com has no careers page; only hh.ru / Habr (0 open there)
+  - {name: Flowwow, hh: 10256320}       # flowwow.com shows a captcha, not bypassed; Habr has 0 open
+  - {name: Dodo Brands, hh: 1520838}    # no careers page, Habr company page has 0 open
+  - {name: Twinby, hh: 5775055}         # no careers page on twinby.com
+  - {name: Ясно, hh: 4841748}           # no careers page on yasno.live
+  - {name: hh.ru, hh: 1455}             # career.hh.ru is a courses site, vacancies only on hh.ru
+  - {name: Uzum, hh: 9173883}           # career.uzum.com is an education project, vacancies only on hh.ru
+  - {name: Freedom Holding, hh: 11319821}  # ffin sites answer 403, vacancies only on hh.ru
+  - {name: Techwill}                    # techwill.ru does not answer from here
+  - {name: Отелло}                      # otello.ru redirects to Sber ID login; vacancies only on Habr/hh
+  - {name: Garage8}                     # garage8.ru/vacancies opens but lists no vacancies
