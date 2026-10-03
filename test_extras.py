@@ -204,6 +204,8 @@ async def main():
                 # ☀️ digest: top of the last day, filtered and merged
                 top, total = extras.digest_items(g, g.load_inbox())
                 assert [k for k, _ in top] == ["b"] and total == 1
+                assert not extras.digest_due(g, {"digest_date": None})  # switched off for now
+                extras.DIGEST_ENABLED = True
                 assert extras.digest_due(g, {"digest_date": None}) == (9 <= extras.local_now(g).hour < 23)
                 assert not extras.digest_due(g, {"digest_off": True})
                 await c.post("/api/settings", headers=auth, json={"digest": False})

@@ -274,6 +274,7 @@ def due_reminders(inbox):
 
 DIGEST_HOUR = 9     # local time of the person (their «мой часовой пояс», UTC+7 for the owner)
 DIGEST_SIZE = 5
+DIGEST_ENABLED = False  # in the backlog for now (2026-10-03): the code stays, nothing is sent
 
 
 def local_now(member):
@@ -281,7 +282,7 @@ def local_now(member):
 
 
 def digest_due(member, state):
-    if state.get("digest_off"):
+    if not DIGEST_ENABLED or state.get("digest_off"):
         return False
     local = local_now(member)
     return DIGEST_HOUR <= local.hour < 23 and state.get("digest_date") != local.date().isoformat()
