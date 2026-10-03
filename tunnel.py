@@ -9,7 +9,10 @@ So cloudflared runs as its OWN process, detached from the bot: restarting the bo
 WATCH_EVERY seconds it asks cloudflared's local metrics page for the current address
 (/quicktunnel) and starts cloudflared if nothing answers. The address changes only
 when the computer reboots or cloudflared dies; then the bot re-points its buttons.
-While the computer sleeps or is off, the app is offline.
+While the computer sleeps or is off, the app is offline. After a long sleep Cloudflare
+may forget the tunnel («Tunnel not found»): cloudflared keeps running and reports the
+old address, but it no longer exists. So the bot also checks /ready, and if the tunnel
+has had no connection for DEAD_AFTER seconds it stops cloudflared and starts a new one.
 """
 
 import asyncio
@@ -25,6 +28,7 @@ log = logging.getLogger("job-radar.tunnel")
 DEFAULT_EXE = Path(r"D:\tools\cloudflared\cloudflared.exe")
 METRICS = "127.0.0.1:20241"
 WATCH_EVERY = 30
+DEAD_AFTER = 120
 LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "tunnel.log"
 
 # Windows: no console window, own process group, and out of the bot's job object, so
@@ -50,6 +54,24 @@ def current_host():
         return None
 
 
+def is_ready():
+    """True if cloudflared has a live connection to Cloudflare (/ready answers 200)."""
+    try:
+        with urlopen(f"http://{METRICS}/ready", timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def stop_all():
+    """Stop a cloudflared that runs but whose tunnel is gone."""
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):  # Windows
+        cmd = ["taskkill", "/F", "/IM", "cloudflared.exe"]
+    else:
+        cmd = ["pkill", "-x", "cloudflared"]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def start(exe, port):
     LOG_PATH.parent.mkdir(exist_ok=True)
     args = [exe, "tunnel", "--no-autoupdate", "--metrics", METRICS, "--url", f"http://127.0.0.1:{port}"]
@@ -71,9 +93,18 @@ async def run(port, on_url, exe=None):
         log.warning("cloudflared not found: the app works only on this computer (no public link)")
         return
     loop = asyncio.get_running_loop()
-    url, started_at = None, None
+    url, started_at, dead_since = None, None, None
     while True:
         host = await loop.run_in_executor(None, current_host)
+        if host is not None and not await loop.run_in_executor(None, is_ready):
+            dead_since = dead_since or loop.time()
+            if loop.time() - dead_since > DEAD_AFTER:
+                log.warning("tunnel %s has no connection to Cloudflare, restarting cloudflared", host or "?")
+                await loop.run_in_executor(None, stop_all)
+                await asyncio.sleep(2)
+                host, started_at, dead_since = None, None, None
+        else:
+            dead_since = None
         if host is None and (started_at is None or loop.time() - started_at > 60):
             log.info("no tunnel running, starting cloudflared")
             await loop.run_in_executor(None, start, exe, port)
@@ -83,4 +114,4 @@ async def run(port, on_url, exe=None):
             url = new
             log.info("tunnel %s", f"up: {url}" if url else "down")
             await on_url(url)
-        await asyncio.sleep(WATCH_EVERY if url else 5)
+        await asyncio.sleep(WATCH_EVERY if url and not dead_since else 5)
