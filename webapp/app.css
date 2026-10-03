@@ -441,3 +441,5 @@ html[data-skin="tropic"] .lrow { border-radius: 18px; }
 .screen > .hero { max-width: none; }  /* full bleed: the hero's negative margins need room, or its right side falls short */
 #view-toggle { font-variant-emoji: text; font-family: "Segoe UI Symbol", system-ui, sans-serif; }
 .icon-btn { display: grid; place-items: center; padding: 0; line-height: 1; transform-origin: 50% 50%; color: var(--fg); }
+/* «Тропики» rounds controls into pills (--r-sm: 999px); blocks of several lines must stay cards, not ovals */
+html[data-skin="tropic"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big, #be-text, .card .ai, .aibox, .skeleton, .stat, .lrow, .verdict) { border-radius: 18px; }
