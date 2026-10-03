@@ -98,6 +98,7 @@
     <h2 class="h2">Резюме</h2>
     <div class="chips" id="rs-versions"></div>
     <div id="rs-body"><div class="skeleton"></div><div class="skeleton"></div></div>
+    <div id="rs-orig"></div>
     <div id="rs-plan"></div>
   </section>
 
@@ -118,8 +119,11 @@
       <button class="link block" id="track-add">＋ Добавить отклик вручную</button></div>
     <div class="group" hidden><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
-    <button class="row" id="memo"><b>📖 Памятка</b><span class="m">что это и как работает</span><span class="s">Что уже настроено, как пользоваться, что важно знать</span></button>
-    <button class="link block" id="again">Показать обучение снова</button>
+    <div class="group" id="g-radar"><h4>📡 Радар</h4>
+      <div class="tg"><span>Как часто искать<small id="int-note"></small></span><select class="inp sm" id="interval" aria-label="Как часто искать"></select></div>
+      <div class="tg"><span>Сообщения в Telegram о новых вакансиях<small>короткое саммари в чат с ботом, когда что-то нашлось</small></span><button class="sw" id="alerts" aria-pressed="true" aria-label="Сообщения о новых вакансиях"></button></div></div>
+    <button class="row" id="memo"><b>❓ Вопросы и ответы</b><span class="m">FAQ</span><span class="s">Как всё устроено и как пользоваться</span></button>
+    <button class="link block" id="again">Показать обучение</button>
     <button class="danger-btn" id="reset">♻️ Начать заново</button>
   </section>
 </main>

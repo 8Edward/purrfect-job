@@ -314,6 +314,15 @@ async def main():
                 assert (await c.post("/api/score/new", headers=auth, json={})).status == 400  # nothing left: no tokens spent
                 assert extras.summary({"title": "Data Analyst", "text": "Удалёнка. Задачи: строить отчёты в Power BI; SQL"})[0] == "🛠 SQL, Power BI"
 
+                # 📎 original file, 📡 radar settings
+                assert (await (await c.get("/api/resume/original", headers=auth)).json())["original"] is None
+                extras.save_original(g, "cv.pdf", b"%PDF-1.4 fake", "Иван Иванов\nАналитик")
+                o = await (await c.get("/api/resume/original", headers=auth)).json()
+                assert o["original"]["file"] == "cv.pdf" and o["text"].startswith("Иван")
+                await c.post("/api/settings", headers=auth, json={"alerts": False, "interval": 60})
+                me = await (await c.get("/api/me", headers=auth)).json()
+                assert me["alerts"] is False and me["interval"] == 15  # a guest can't change how often the radar looks
+
                 # 🧭 career plan
                 assert (await c.post("/api/plan", headers=auth, json={"goal": "role"})).status == 400   # no target
                 app.ai = FakeClaude([json.dumps({"now": "Аналитик в банке, пишет SQL-запросы к PostgreSQL", "target": "Product Analyst",

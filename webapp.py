@@ -46,7 +46,7 @@ POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this of
 POSTS_PER_CHANNEL = 300
 QUERY_MAX = 80
 RESULTS_MAX = 80
-SEARCH_COOLDOWN = 2.0             # seconds between one person's searches
+SEARCH_COOLDOWN = 0.5             # seconds between one person's searches (graph taps come fast)
 ACTIONS = ("take", "hide", "restore", "fav")
 VIEWS = {
     "new": lambda i: i["status"] == "new",
@@ -233,6 +233,7 @@ SORTS = {  # feed order: newest first, or by pay / AI score / starred, newest fi
     "fav": lambda g: -int(any(v.get("fav") for _, v in g)),
 }
 PAGE_MAX = 100
+INTERVALS = [15, 30, 60, 120, 240]  # «Как часто искать», minutes
 FILTERS = {  # the feed's chips
     "ru": lambda v: "ru-company" in (v.get("tags") or []),
     "pt": lambda v: "part-time" in (v.get("tags") or []),
@@ -332,6 +333,8 @@ class WebApp:
         r.add_post("/api/refresh", self.api_refresh)
         r.add_post("/api/score", self.api_score)
         r.add_post("/api/score/new", self.api_score_new)
+        r.add_get("/api/resume/original", self.api_original)
+        r.add_post("/api/resume/original/send", self.api_original_send)
         r.add_get("/api/track", self.api_track)
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
@@ -426,6 +429,9 @@ class WebApp:
             "skin": state.get("skin") if state.get("skin") in SKINS else None,
             "onboarded": bool(state.get("app_onboarded")),
             "digest": not state.get("digest_off"),
+            "alerts": not state.get("alerts_off"),
+            "interval": int(self.radar.cfg.get("interval_minutes", 15)),
+            "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
             "funnel": extras.funnel(inbox),
             "stats": {
@@ -563,8 +569,15 @@ class WebApp:
         counts = {}
         for key, item in m.load_inbox().items():
             add(dict(item, key=key, date=datetime.fromisoformat(item["date"])), "inbox")
-        for key in m.selected(guests.load_pool()):
-            for post in await self.channel_posts(key, m):
+        gate = asyncio.Semaphore(4)  # channels are read side by side, a few at a time
+
+        async def read(key):
+            async with gate:
+                return await self.channel_posts(key, m)
+        hh_task = asyncio.create_task(self.hh_search(m, query, terms))  # hh.ru and Himalayas go meanwhile
+        hima_task = asyncio.create_task(self.himalayas_search(m, query)) if "himalayas" in m.sites(guests.listed_sites()) else None
+        for posts in await asyncio.gather(*(read(k) for k in m.selected(guests.load_pool()))):
+            for post in posts:
                 add(post, "channels")
         listed = guests.listed_sites()
         feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
@@ -572,23 +585,31 @@ class WebApp:
             for j in (feed.get(provider) or {}).get("jobs", []):
                 if j.get("url"):
                     add(guests.web_job(j, listed.get(provider, provider), m), "sites")
-        if "himalayas" in m.sites(listed):  # its cached feed is only the newest few hundred of ~100k
-            try:
-                for j in await guests.fetch_himalayas(hh_variants(query)):
-                    add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m), "sites")
-            except Exception as e:
-                log.warning("search himalayas: %s", e)
+        if hima_task:  # its cached feed is only the newest few hundred of ~100k
+            for j in await hima_task:
+                add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m), "sites")
+        for j in await hh_task:
+            add(guests.web_job(j, guests.HH_NAME, m), "hh")
+        return jobs, counts
+
+    async def himalayas_search(self, m, query):
+        try:
+            return await guests.fetch_himalayas(hh_variants(query))
+        except Exception as e:
+            log.warning("search himalayas: %s", e)
+            return []
+
+    async def hh_search(self, m, query, terms):
         try:
             hh = guests.hh_settings(m)
             # hh.ru gets the phrase (words in any order, in the title) and its English twin, plus
             # synonyms (and close roles in «similar»); one request per variant, 20 hits each
             names = hh_variants(query) + [label.split(": ", 1)[1] for kind, label, _ in terms[1:] if kind in ("syn", "adj")]
             q = " OR ".join(dict.fromkeys(n for n in names if n.strip()))[:guests.HH_QUERY_MAX]
-            for j in await guests.fetch_hh(q, hh["remote"]):
-                add(guests.web_job(j, guests.HH_NAME, m), "hh")
+            return await guests.fetch_hh(q, hh["remote"])
         except Exception as e:
             log.warning("search hh.ru: %s", e)
-        return jobs, counts
+            return []
 
     async def channel_posts(self, key, member):
         """Job posts of one public channel for the last SEARCH_DAYS days (cached a while)."""
@@ -720,6 +741,13 @@ class WebApp:
             fields["app_onboarded"] = True
         if "digest" in data:
             fields["digest_off"] = not data["digest"]
+        if "alerts" in data:
+            fields["alerts_off"] = not data["alerts"]
+        if m.is_owner and data.get("interval") in INTERVALS:  # how often the radar looks: the owner's call, for everyone
+            search = m.load_search()
+            search["interval_minutes"] = data["interval"]
+            m.save_search(search)
+            self.radar.reload()
         if fields:
             m.update_state(**fields)
         return web.json_response({"ok": True, **fields})
@@ -754,6 +782,7 @@ class WebApp:
         data = field.file.read(cv_reader.MAX_BYTES + 1)
         try:
             text = await asyncio.get_running_loop().run_in_executor(None, cv_reader.extract_text, field.filename, data)
+            extras.save_original(m, field.filename, data, text)
         except ValueError as e:
             return web.json_response({"error": str(e)}, status=400)
         analysis = cv_reader.analyze(text, load_graph(), guests.load_pool())
@@ -1045,6 +1074,11 @@ class WebApp:
             return self.bad("Файл больше 5 МБ. Для LinkedIn выберите в архиве только профиль (быстрый вариант).")
         try:
             md, source = await asyncio.get_running_loop().run_in_executor(None, resume.import_file, field.filename, data)
+            try:
+                text = await asyncio.get_running_loop().run_in_executor(None, cv_reader.extract_text, field.filename, data)
+            except ValueError:
+                text = md  # a LinkedIn archive: its text is what the version was built from
+            extras.save_original(m, field.filename, data, text)
             first = not resume.load_index(m)["list"]
             base = {"hh.ru": "С hh.ru", "LinkedIn": "С LinkedIn", "архив LinkedIn": "С LinkedIn"}.get(source, "Загруженное")
             resume.save_version(m, md, name=resume.unique_name(m, "Основное" if first else base))
@@ -1211,6 +1245,26 @@ class WebApp:
             return {"scored": done, "failed": failed, "left": extras.scores_left(m)}
         asyncio.create_task(self.run_ai_job(jid, m, work))
         return web.json_response({"job": jid, "total": len(todo), "queued": self.ai.lock.locked()})
+
+    async def api_original(self, request):
+        """📎 The résumé file as it was uploaded: its name, date and text."""
+        info, _, text = extras.original_info(self.member(request))
+        return web.json_response({"original": info, "text": text[:30000] if info else ""})
+
+    async def api_original_send(self, request):
+        m = self.member(request)
+        info, path, _ = extras.original_info(m)
+        if not info:
+            return self.bad("Загруженного файла нет")
+        try:
+            await self.radar.bot.send_file(m.id, str(path), caption=f"📎 Резюме, как вы его загрузили: {info['file']}",
+                                           force_document=True, file_name=info["file"])
+        except TypeError:
+            await self.radar.bot.send_file(m.id, str(path), caption=f"📎 Резюме, как вы его загрузили: {info['file']}", force_document=True)
+        except Exception:
+            log.exception("original to %s failed", m.id)
+            return self.bad("Не получилось отправить файл в чат. Откройте чат с ботом и нажмите Start.", 500)
+        return web.json_response({"ok": True})
 
     async def api_track(self, request):
         m = self.member(request)

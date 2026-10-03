@@ -466,3 +466,15 @@ details.fold[open] > summary::after { transform: rotate(180deg); }
 details.fold > summary small { color: var(--muted); font-weight: 400; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details.fold .words { padding: 0 14px 8px; }
 .stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 495px), 420px); }  /* room for the sort bar */
+
+/* FAQ, radar settings, original file */
+.faq details { border-bottom: 1px solid var(--line); padding: 10px 0; }
+.faq summary { font-weight: 700; cursor: pointer; list-style: none; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "＋ "; color: var(--accent); }
+.faq details[open] summary::before { content: "－ "; }
+.faq p { margin: 6px 0 0; color: var(--muted); line-height: 1.5; }
+#g-radar .inp.sm { width: auto; padding: 6px 8px; font-size: 13px; }
+.ghost.sm { padding: 6px 10px; font-size: 12.5px; }
+#rs-orig .ctl { display: flex; gap: 6px; flex: none; }
+.orig-text { white-space: pre-wrap; max-height: 55vh; overflow: auto; font-size: 12.5px; }

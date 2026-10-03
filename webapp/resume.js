@@ -164,6 +164,7 @@ async function importFile(file) {
     rs.data = data; rs.blocks = data.blocks; haptic("ok");
     toast(`Готово: заполнил из ${data.source}. Проверьте строки — нажмите на любую, чтобы поправить`);
     go("main");
+    if (typeof offerPreset === "function") { loadOriginal(); offerPreset(); }  // app.js: fill the feed from it?
   } catch (e) { fail(e); renderImport(); }
 }
 

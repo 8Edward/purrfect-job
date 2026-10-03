@@ -860,9 +860,12 @@ class JobRadar:
         return caption, rows
 
     async def alert(self, items):
-        if items:
-            caption, buttons = self.found(items)
-            await self.send_screen(caption, buttons)
+        await self.notify(self.me, items)
+
+    async def notify(self, member, items):
+        """«N новых вакансий» in the chat, unless the person switched these off in the app («Ещё»)."""
+        if items and not member.load_state().get("alerts_off"):
+            await self.send_screen(*self.found(items), guest=self.g(member))
 
     async def scheduler(self):
         """Checks the wall clock once a minute instead of one long sleep, so a laptop
@@ -884,7 +887,7 @@ class JobRadar:
                     self.last_attempt["web"] = now
                 found = await self.check(tg=tg, web=web)
                 await self.alert(found or [])
-            if not self.pool_run or now - self.pool_run >= guests.POOL_EVERY:
+            if not self.pool_run or now - self.pool_run >= timedelta(minutes=self.cfg.get("interval_minutes", 15)):
                 self.pool_run = now
                 try:
                     await self.pool_pass()
@@ -1147,7 +1150,7 @@ class JobRadar:
             result = await self.check_pool([self.me] + people)
         for m in [self.me] + people:
             if result[m.id]:
-                await self.send_screen(*self.found(result[m.id]), guest=self.g(m))
+                await self.notify(m, result[m.id])
 
     async def sites_pass(self):
         listed = guests.listed_sites()
@@ -1165,7 +1168,7 @@ class JobRadar:
             items = self.guest_store(g, guests.match_site_jobs(feed, g, listed))
             log.info("sites for %s: %d new", g.name, len(items))
             if items:
-                await self.send_screen(*self.found(items), guest=g)
+                await self.notify(g, items)
 
     async def hh_pass(self):
         listed = guests.listed_sites()
@@ -1182,7 +1185,7 @@ class JobRadar:
             items = self.store_for(m, guests.match_hh_jobs(raw, m))
             log.info("hh.ru for %s: %d of %d new", m.name, len(items), len(raw))
             if items:
-                await self.send_screen(*self.found(items), guest=self.g(m))
+                await self.notify(m, items)
             await asyncio.sleep(guests.HH_PAUSE)
 
     async def hh_task(self):

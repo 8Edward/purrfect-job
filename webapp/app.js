@@ -471,8 +471,10 @@ async function runSearch() {
   $("#q").blur();
   $("#res-head").textContent = "Ищу в ленте, каналах за неделю, на сайтах и hh.ru…";
   $("#results").innerHTML = '<div class="skeleton"></div>'.repeat(4);
+  const seq = (st.searchSeq = (st.searchSeq || 0) + 1);
   try {
     const d = await api(`/api/search?q=${encodeURIComponent(q)}&mode=${st.mode}&off=${encodeURIComponent([...st.off].join(","))}`);
+    if (seq !== st.searchSeq) return;  // a newer search is on its way: drop this answer
     st.results = d.items;
     renderGraph(d.graph);
     const src = d.sources || {};
@@ -509,7 +511,9 @@ function renderGraph(g) {
     const id = b.dataset.id;
     st.off.has(id) ? st.off.delete(id) : st.off.add(id);
     haptic();
-    runSearch();
+    b.classList.toggle("off", st.off.has(id));  // shown at once; the search waits for a pause in tapping
+    clearTimeout(st.graphTimer);
+    st.graphTimer = setTimeout(runSearch, 600);
   }));
 }
 
@@ -645,7 +649,9 @@ async function uploadCv(file) {
     setCv(data.cv);
     haptic("ok");
     if (typeof loadResume === "function" && !$("#s-resume").hidden) loadResume(true);
-    toast(data.cv.roles.some((r) => r.primary) ? "Готово! Проверьте роли и нажмите «Применить»" : "Резюме прочитал, но роли не распознал");
+    loadOriginal();
+    if (data.cv.roles.some((r) => r.primary)) offerPreset(data.cv);
+    else toast("Резюме прочитал, но роли не распознал");
   } catch (e) { cvState.busy = false; renderCv(); fail(e); }
 }
 async function applyCv(mode) {
@@ -662,6 +668,76 @@ async function deleteCv() {
   const b = $("#cv-delete");
   if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Точно удалить? Нажмите ещё раз"; return; }
   try { await api("/api/cv/delete", {}); setCv(null); toast("Резюме удалено"); } catch (e) { fail(e); }
+}
+
+/* ---------------------------------------------------------------- 📡 radar settings («Ещё») */
+
+function renderRadar() {
+  const m = st.me;
+  if (!m) return;
+  $("#alerts").setAttribute("aria-pressed", !!m.alerts);
+  const sel = $("#interval");
+  sel.innerHTML = m.intervals.map((n) => `<option value="${n}" ${n === m.interval ? "selected" : ""}>${n < 60 ? n + " мин" : n / 60 + " ч"}</option>`).join("");
+  sel.disabled = !m.owner;
+  $("#int-note").textContent = m.owner ? "для всех, кто пользуется Радаром" : "меняет владелец бота";
+}
+
+/* ---------------------------------------------------------------- after a résumé upload: fill the feed? */
+
+async function offerPreset(cv) {
+  try { if (!cv) cv = (await api("/api/cv/from-resume", { vid: rs.data.active.id })).cv; } catch (e) { return; }
+  const roles = (cv && cv.roles || []).filter((r) => r.primary);
+  if (!roles.length) return;
+  const words = [...new Set(roles.flatMap((r) => r.words).concat(cv.skill_words || []))];
+  const hh = [...new Set(roles.map((r) => r.hh).filter(Boolean))].join(" OR ");
+  const chans = (cv.channels || []).filter((c) => c.suggested);
+  st.sheet = { preset: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>📥 Заполнить ленту по резюме?</h3>
+    <p class="hint" style="font-size:14px">Похоже, вы ищете: <b>${esc(roles.map((r) => r.label).join(", "))}</b>. Предлагаю такие настройки ленты:</p>
+    <div class="cv"><div class="preview"><b>Слова для поиска</b>${esc(words.join(", ") || "—")}</div>
+      <div class="preview"><b>Запрос на hh.ru</b>${esc(hh || "—")}</div>
+      ${chans.length ? `<div class="preview"><b>Каналы</b>${esc(chans.map((c) => "@" + c.key).join(", "))}</div>` : ""}</div>
+    <p class="hint">Ничего не поменяется, пока не нажмёте «Да». Потом всё можно поправить в «Поиск» → «Что попадает в ленту».</p>
+    <div class="btns"><button class="yes" id="pr-yes">Да, заполнить</button><button id="pr-no">Не сейчас</button></div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  $("#pr-no").onclick = closeSheet;
+  $("#pr-yes").onclick = async () => {
+    try {
+      const mine = st.sources ? st.sources.words.role.length : 0;
+      const d = await api("/api/cv/apply", { roles: roles.map((r) => r.id), channels: chans.map((c) => c.key), mode: mine ? "merge" : "replace", skill_words: true });
+      haptic("ok"); closeSheet();
+      toast(`Готово: ${d.words} ${plural(d.words, "слово", "слова", "слов")} для поиска, hh.ru и каналы настроены`);
+      loadSources().catch(() => {}); loadMe().catch(() => {});
+    } catch (e) { fail(e); }
+  };
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+}
+
+/* ---------------------------------------------------------------- 📎 the uploaded résumé file */
+
+async function loadOriginal() {
+  const box = $("#rs-orig");
+  if (!box) return;
+  let d;
+  try { d = await api("/api/resume/original"); } catch (e) { return; }
+  if (!d.original) { box.innerHTML = ""; return; }
+  const o = d.original;
+  box.innerHTML = `<div class="group"><div class="tg" style="border-top:0"><span>📎 Оригинал: ${esc(o.file)}<small>загружен ${esc(when(o.at))}</small></span>
+    <span class="ctl"><button class="ghost sm" id="orig-view">Текст</button><button class="ghost sm" id="orig-send">В чат</button></span></div></div>`;
+  $("#orig-view").onclick = () => {
+    st.sheet = { orig: true };
+    $("#sheet").innerHTML = `<div class="grip"></div><h3>📎 ${esc(o.file)}</h3><p class="hint">Так файл прочитался при загрузке, без правок. Сам файл можно прислать в чат с ботом.</p>
+      <div class="body orig-text">${esc(d.text || "Текст не извлёкся.")}</div>
+      <div class="btns"><button class="yes" id="orig-send2">Прислать файл в чат</button><button id="orig-close">Закрыть</button></div>`;
+    $("#sheet").hidden = $("#sheet-bg").hidden = false;
+    $("#orig-close").onclick = closeSheet;
+    $("#orig-send2").onclick = sendOriginal;
+    try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+  };
+  $("#orig-send").onclick = sendOriginal;
+}
+async function sendOriginal() {
+  try { await api("/api/resume/original/send", {}); haptic("ok"); toast("Файл отправлен в чат с ботом"); } catch (e) { fail(e); }
 }
 
 /* ---------------------------------------------------------------- start over */
@@ -697,49 +773,33 @@ function showReset() {
 
 /* ---------------------------------------------------------------- memo */
 
-const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div class="memo">
-<p><b>Что это.</b> Радар — личный помощник по поиску удалённой работы. Он сам читает каналы с вакансиями, сайты удалёнки и hh.ru и собирает подходящее в одну ленту. Не нужно листать десяток каналов: открыл, разобрал карточки, готово.</p>
-<h4>С чего начать</h4>
-<p>Сначала лента пустая: Радар ещё не знает, что вы ищете. Проще всего загрузить резюме во вкладке «▤ Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или настройте всё вручную во вкладке «Поиск», в блоке «Что попадает в ленту»: слова, стоп-слова, каналы, сайты, запрос для hh.ru.</p>
-<p><b>#ru_company</b> — метка на вакансиях русскоязычных компаний (Plata, Salmon, Uzum, Kaspi, Яндекс, Ozon, Avito и др.).</p>
-<h4>Резюме</h4>
-<ul>
-<li><b>Загрузить</b> готовое (PDF, DOCX, TXT) или <b>собрать с нуля</b> по шагам с подсказками.</li>
-<li><b>🎨 Оформление:</b> 4 шаблона (Классика ATS, Современный, Компактный, Минимал), 6 цветов и фото по желанию. Текст при смене шаблона не меняется.</li>
-<li><b>Проверка:</b> оценка и конкретные замечания: нет цифр, слабые глаголы, нет контактов, пустые слова.</li>
-<li><b>Точная правка:</b> резюме показано так, как будет в PDF. Нажмите на любую строку и поправьте её; ＋ Раздел добавит новый, стрелки ↑ ↓ на заголовке двигают раздел целиком.</li>
-<li><b>Под вакансию:</b> вставьте текст вакансии и увидите, каких слов из неё нет в резюме.</li>
-<li><b>✨ ИИ</b>: улучшить формулировки, написать «О себе», подогнать под вакансию, перевести на английский, написать сопроводительное. Все правки — предложения: вы принимаете каждую сами. Новые факты и цифры ИИ не придумывает.</li>
-<li><b>Скачать:</b> PDF, HTML или текст — файл придёт в чат с ботом.</li>
-</ul>
-<h4>Как пользоваться</h4>
-<ul>
-<li><b>Лента:</b> свайп вправо или ★ — в избранное, влево — скрыть, тап — полный текст и ссылка. Сверху: сортировка (новые, зарплата, оценка ИИ) и «✨ Оценить новые ИИ» — оценит только те, что ещё без оценки.</li>
-<li><b>Шапка:</b> ваша воронка — сколько вакансий найдено (без дублей), откликов, собеседований и офферов. Отклики считаются по этапам в «📋 Мои отклики».</li>
-<li><b>Поиск 🎯 Точно:</b> ищет фразу один в один, например «бизнес аналитик».</li>
-<li><b>Поиск 🕸 Похожие:</b> добавляет синонимы и смежные роли по графу. Лишнюю роль можно выключить нажатием.</li>
-<li><b>Мои:</b> избранное и скрытое (скрытое можно вернуть).</li>
-<li><b>↻</b> на главной: проверить каналы прямо сейчас. <b>☰</b> рядом: вся лента списком, а не карточками.</li>
-<li><b>✨ Оценить ИИ</b> на карточке: насколько вакансия подходит именно вам (1–5) и почему. Сравнивает с вашим резюме.</li>
-<li><b>💰 и 🕒</b> на карточке: зарплата и часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну.</li>
-<li><b>📋 Мои отклики</b> во «Ещё»: отмечайте этапы (откликнулся, тестовое, собеседование, оффер, отказ). Если неделю тишина, бот напомнит.</li>
-<li><b>🕒 Часовой пояс</b> в «Поиск → Что попадает в ленту»: скрывать вакансии, которым нужен далёкий от вас пояс.</li>
-<li><b>🧭 Карьерный план</b> в «Резюме»: цель (грейд, роль, направление), и ИИ по резюме распишет шаги.</li>
-</ul>
-<h4>Важно знать</h4>
-<ul>
-<li>Радар только <b>читает</b> открытые каналы и сайты. Он никому не пишет и никуда не откликается: откликаетесь вы сами.</li>
-<li>Ваш список видите только вы. Каналы и сайты общие на всех (до 60 каналов), а отметки у каждого свои.</li>
-<li>Радар живёт на компьютере владельца. Если приложение не открывается, компьютер выключен или спит: загляните позже, новые вакансии он догонит.</li>
-<li>Канал можно добавить свой (до 3 в день), сайт можно предложить владельцу.</li>
-<li>Запутались в настройках? «Ещё → ♻️ Начать заново» очистит их, и можно настроить с нуля. Перед сбросом приложение переспросит.</li>
-</ul></div>
+const FAQ = [
+  ["Что такое Радар?", "Личный помощник по поиску удалённой работы. Он сам читает каналы с вакансиями, сайты удалёнки и hh.ru и собирает подходящее в одну ленту. Он только <b>читает</b>: никому не пишет и никуда не откликается, откликаетесь вы сами."],
+  ["С чего начать? Лента пустая", "Сначала Радар не знает, что вы ищете. Проще всего загрузить резюме во вкладке «▤ Резюме»: я найду в нём роли и навыки и предложу слова, запрос для hh.ru и каналы. Заполню, только когда вы нажмёте «Да». Или настройте вручную: «Поиск» → блоки «Что попадает в ленту» наверху."],
+  ["Как разбирать ленту?", "Свайп вправо или ★ — в избранное, влево — скрыть, тап — полный текст и ссылка. Кнопка ☰ вверху показывает всю ленту списком, ↻ — проверить источники прямо сейчас. Лента подгружается порциями, по мере прокрутки."],
+  ["Что за цифры в шапке?", "Ваша воронка: сколько вакансий найдено (одинаковые из разных источников считаются один раз), сколько откликов, собеседований и офферов. Отклики и этапы считаются по «📋 Мои отклики»."],
+  ["Как отмечать отклики?", "Откройте вакансию и внизу выберите этап: «Откликнулся», «Тестовое», «Собеседование», «Оффер» или «Отказ». Все отклики — во «Ещё» → «📋 Мои отклики», там же можно добавить отклик вручную. Если по отклику неделю тишина, бот напомнит в чате."],
+  ["Как работает оценка ИИ?", "«✨ Оценить ИИ» на карточке сравнивает вакансию с вашим резюме и ставит 1–5 с причинами. «✨ Оценить ИИ (N)» над лентой оценивает сразу все новые без оценки — уже оценённые второй раз не отправляются. В день есть лимит оценок."],
+  ["Как сортировать и фильтровать?", "Над лентой: сначала новые, по зарплате, по оценке ИИ или избранное сначала. Чипы: #ru_company (русскоязычные компании: Plata, Uzum, Kaspi, Яндекс и др.), каналы, сайты, hh.ru, part-time."],
+  ["Что за строки 🛠 🏠 📌 на карточке?", "Короткое саммари из текста вакансии, без ИИ: стек, формат работы и первые задачи. 💰 — зарплата, 🕒 — часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну."],
+  ["Можно скрыть вакансии не под мой пояс?", "Да: «Поиск» → «🕒 Часовой пояс». Включите, выберите свой пояс и допустимую разницу. Вакансии, где пояс не указан, остаются."],
+  ["Чем отличаются «Точно» и «Похожие роли» в поиске?", "«Точно» ищет фразу в названиях вакансий, слова в любом порядке. «Похожие роли» добавляет синонимы и смежные профессии по графу; лишнюю роль можно выключить нажатием на неё."],
+  ["Что умеет вкладка «Резюме»?", "Загрузить файл (PDF, DOCX, выгрузка hh.ru или LinkedIn) или собрать с нуля; 4 шаблона и 6 цветов; проверка с замечаниями — у каждого кнопка «Поправить вручную»; сравнение с вакансией; ✨ ИИ: улучшить формулировки, «О себе», подогнать под вакансию, перевести, сопроводительное; 🧭 карьерный план; скачать PDF. Оригинал загруженного файла тоже там. Новых фактов ИИ не придумывает."],
+  ["Как часто Радар ищет?", "Это видно и меняется во «Ещё» → «📡 Радар». Там же можно выключить сообщения о новых вакансиях в чате Telegram."],
+  ["Кто видит мои вакансии?", "Только вы. Каналы и сайты общие на всех (до 60 каналов), а отметки, избранное и отклики у каждого свои. Канал можно добавить свой (до 3 в день), сайт — предложить владельцу."],
+  ["Приложение не открывается", "Радар живёт на компьютере владельца. Если компьютер выключен или спит, загляните позже: новые вакансии он догонит."],
+  ["Запутался в настройках", "«Ещё» → «♻️ Начать заново» очистит настройки, и можно настроить с нуля. Перед сбросом приложение переспросит."],
+];
+const MEMO = () => `<div class="grip"></div><h3>❓ Вопросы и ответы</h3><div class="memo faq">
+${FAQ.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join("")}
+<button class="link block" id="faq-onb">🎓 Показать обучение</button></div>
 <div class="btns"><button class="yes wide" id="memo-ok">Понятно</button></div>`;
 function showMemo() {
   st.sheet = { memo: true };
   $("#sheet").innerHTML = MEMO();
   $("#sheet").hidden = $("#sheet-bg").hidden = false;
   $("#memo-ok").onclick = closeSheet;
+  $("#faq-onb").onclick = () => { closeSheet(); showOnboarding(); };
   try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
 }
 
@@ -755,7 +815,7 @@ const SLIDES = [
   () => `<div class="pic" style="height:auto"><div class="skins" id="onb-skins">${skinsHtml()}</div></div><h2>Выбери стиль</h2>
     <p>Каналы, сайты и слова для ленты — во вкладке «Поиск», внизу. Стиль меняется во вкладке «Ещё» в любой момент.</p>
     <button class="cta" id="onb-cv">📄 Настроить поиск по моему резюме</button>
-    <button class="link" id="onb-memo">📖 Памятка: как всё устроено</button>`,
+    <button class="link" id="onb-memo">❓ Вопросы и ответы: как всё устроено</button>`,
 ];
 let slide = 0;
 function showOnboarding() {
@@ -797,7 +857,8 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); }
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); }
+  if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
@@ -851,6 +912,13 @@ $("#digest").onclick = async () => {
   } catch (e) { fail(e); }
 };
 $("#again").onclick = showOnboarding;
+$("#alerts").onclick = async () => {
+  const on = $("#alerts").getAttribute("aria-pressed") !== "true";
+  try { await api("/api/settings", { alerts: on }); st.me.alerts = on; renderRadar(); haptic(); toast(on ? "Сообщения о новых вакансиях включены" : "Сообщения выключены: новые вакансии будут только в ленте"); } catch (e) { fail(e); }
+};
+$("#interval").onchange = async () => {
+  try { await api("/api/settings", { interval: +$("#interval").value }); st.me.interval = +$("#interval").value; haptic(); toast("Сохранил"); renderRadar(); } catch (e) { fail(e); }
+};
 $("#memo").onclick = showMemo;
 $("#reset").onclick = showReset;
 

@@ -6,6 +6,7 @@ subscription, with their own daily caps).
 """
 
 import json
+import os
 import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
@@ -525,3 +526,36 @@ def funnel(inbox):
         if "offer" in log:
             reached["offer"] += 1
     return {"jobs": len(groups(list(inbox.items()))), **reached}
+
+
+# ---------------------------------------------------------------- 📎 the résumé file as it was uploaded
+
+ORIGINAL_EXT = (".pdf", ".docx", ".doc", ".rtf", ".txt", ".md", ".zip")
+
+
+def original_paths(member):
+    import guests
+    folder = guests.resume_dir(member)
+    return folder, folder / "original.txt"
+
+
+def save_original(member, filename, data, text):
+    """Keep the last uploaded résumé file byte for byte (to send back or read), plus its text."""
+    folder, txt = original_paths(member)
+    folder.mkdir(parents=True, exist_ok=True)
+    ext = os.path.splitext(filename or "")[1].lower()
+    ext = ext if ext in ORIGINAL_EXT else ".bin"
+    for old in folder.glob("original.*"):
+        old.unlink()
+    (folder / ("original" + ext)).write_bytes(data)
+    txt.write_text(text or "", encoding="utf-8")
+    member.update_state(cv_original={"file": os.path.basename(filename or "резюме")[:120], "ext": ext,
+                                     "at": now().isoformat(timespec="seconds"), "size": len(data)})
+
+
+def original_info(member):
+    info = member.load_state().get("cv_original")
+    folder, txt = original_paths(member)
+    if not info or not (folder / ("original" + info["ext"])).exists():
+        return None, None, ""
+    return info, folder / ("original" + info["ext"]), txt.read_text(encoding="utf-8") if txt.exists() else ""
