@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Job Radar</title>
+<title>Purrfect Job</title>
 <link rel="icon" href="/static/icon.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,9 +24,9 @@
       </div>
       <div class="brand">
         <img class="mark" src="/static/icon.png?v={{v}}" alt="" width="30" height="30">
-        <span>Job Radar</span>
-        <button class="icon-btn" id="view-toggle" aria-label="Показать списком">☰</button>
-        <button class="icon-btn" id="refresh" aria-label="Обновить сейчас">↻</button>
+        <span>Purrfect Job</span>
+        <button class="icon-btn" id="view-toggle" aria-label="Показать списком"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn" id="refresh" aria-label="Обновить сейчас"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
       <div class="hello" id="hello">Загружаю…</div>
       <div class="sub" id="checked"></div>
@@ -125,7 +125,7 @@
       <button class="link block" id="track-add">＋ Добавить отклик вручную</button></div>
     <div class="group" hidden><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
-    <div class="group" id="g-radar"><h4>📡 Радар</h4>
+    <div class="group" id="g-radar"><h4>📡 Поиск вакансий</h4>
       <div class="tg"><span>Как часто искать<small id="int-note"></small></span><select class="inp sm" id="interval" aria-label="Как часто искать"></select></div>
       <div class="tg"><span>Сообщения в Telegram о новых вакансиях<small>короткое саммари в чат с ботом, когда что-то нашлось</small></span><button class="sw" id="alerts" aria-pressed="true" aria-label="Сообщения о новых вакансиях"></button></div></div>
     <button class="row" id="memo"><b>❓ Вопросы и ответы</b><span class="m">FAQ</span><span class="s">Как всё устроено и как пользоваться</span></button>
@@ -152,7 +152,7 @@
   <div class="onb-bar"><button class="link" id="onb-skip">Пропустить</button><button class="cta" id="onb-next">Дальше</button></div>
 </div>
 
-<div class="gate" id="gate" hidden><b>Откройте через бота</b><span id="gate-text">Это приложение работает внутри Telegram: нажмите кнопку «Радар» в чате с ботом.</span></div>
+<div class="gate" id="gate" hidden><b>Откройте через бота</b><span id="gate-text">Это приложение работает внутри Telegram: нажмите кнопку «Purrfect Job» в чате с ботом.</span></div>
 
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/resume.js?v={{v}}"></script>

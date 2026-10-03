@@ -272,7 +272,7 @@ async def main():
                 await c.post("/api/settings", headers=auth, json={"skin": "<script>"})
                 me = await (await c.get("/api/me", headers=auth)).json()
                 assert me["skin"] == "remote" and me["onboarded"]
-                assert (await (await c.post("/api/refresh", headers=auth)).json()) == {"busy": False, "new": 0}
+                assert (await (await c.post("/api/refresh", headers=auth)).json()) == {"busy": False, "new": 0, "more": False}
 
                 # résumé -> preset
                 assert (await (await c.get("/api/cv", headers=auth)).json()) == {"cv": None}

@@ -488,3 +488,8 @@ html[data-skin="hybrid"] .mascot .m-hybrid, html[data-skin="remote"] .mascot .m-
 html[data-skin="hybrid"] .sweep, html[data-skin="remote"] .blob { opacity: .35; }
 html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not belong in the office */
 .brand img.mark { border-radius: 50%; }
+
+/* header buttons: drawn icons, exactly centred; while refreshing only the arrow turns, not the button */
+.icon-btn svg { display: block; }
+.icon-btn.spin { animation: none; }
+.icon-btn.spin svg { animation: spin 1s linear infinite; transform-origin: 50% 50%; }

@@ -232,10 +232,10 @@ def home_screen(inbox, next_check=None, owner=False, app_url=None):
         hello = f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя"
     else:
         hello = "✨ Всё разобрано — новых вакансий пока нет"
-    lines = ["🐾 <b>Job Radar</b>", hello]
+    lines = ["🐾 <b>Purrfect Job</b>", hello]
     if next_check:
         lines.append(f"⏱ Следующая проверка через {next_check} мин")
-    rows = [[app_button(app_url, "📱 Открыть Радар")]] if app_url else \
+    rows = [[app_button(app_url, "📱 Открыть Purrfect Job")]] if app_url else \
         [[btn("🔄 Проверить сейчас", "rf:1")]]
     if not app_url:
         lines.append("<i>Приложение сейчас подключается — кнопка появится через минуту.</i>")
@@ -427,12 +427,12 @@ GUEST_HELP = """<b>❓ Как это работает</b>
 
 Никому ничего не пишу и ничего не отмечаю прочитанным."""
 
-ONBOARD_ROLE = """👋 <b>Привет! Я Job Radar</b> — ищу вакансии в Telegram-каналах и присылаю только подходящие.
+ONBOARD_ROLE = """👋 <b>Привет! Я Purrfect Job</b> — ищу вакансии в Telegram-каналах и присылаю только подходящие.
 
 <b>Шаг 1 из 2. Какую работу ищешь?</b>
 Пришли слова через запятую: профессию и главные навыки. Например: <i>бухгалтер, 1С, главбух</i> или <i>дизайнер, figma, ui</i>.
 
-Проще всего — загрузить резюме в приложении (кнопка «Радар» → «▤ Резюме»): я сам предложу слова, каналы и запрос для hh.ru. Тогда жми «Настрою потом».
+Проще всего — загрузить резюме в приложении (кнопка «Purrfect Job» → «▤ Резюме»): я сам предложу слова, каналы и запрос для hh.ru. Тогда жми «Настрою потом».
 
 <i>Регистр не важен, ищу как часть слова: «бухгалт» найдёт и «бухгалтер», и «бухгалтерия».</i>"""
 
@@ -639,7 +639,7 @@ class JobRadar:
         the default menu button, each person's own one (clients cache the default), and
         the app buttons in messages already sent."""
         self.app_url = url
-        button = types.BotMenuButton("Радар", url) if url else types.BotMenuButtonCommands()
+        button = types.BotMenuButton("Purrfect Job", url) if url else types.BotMenuButtonCommands()
         people = [self.owner] + [g.id for g in guests.all_guests(guests.load_registry())]
         for user in [None] + people:
             try:
@@ -664,10 +664,10 @@ class JobRadar:
         try:
             await self.bot(functions.bots.SetBotCommandsRequest(
                 scope=types.BotCommandScopeDefault(), lang_code="",
-                commands=[types.BotCommand("start", "🐾 Радар")]))
+                commands=[types.BotCommand("start", "🐾 Purrfect Job")]))
             await self.bot(functions.bots.SetBotInfoRequest(
-                lang_code="", about="Радар удалённых вакансий: чаты Telegram + сайты",
-                description="Job Radar находит вакансии в твоих Telegram-чатах и на сайтах удалённой работы "
+                lang_code="", about="Purrfect Job: удалённые вакансии из чатов Telegram и с сайтов",
+                description="Purrfect Job находит вакансии в твоих Telegram-чатах и на сайтах удалённой работы "
                             "и показывает их как приложение: новые, избранное, в работе."))
         except Exception:
             log.warning("could not set bot commands/description", exc_info=True)

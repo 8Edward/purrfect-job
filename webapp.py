@@ -1366,11 +1366,22 @@ class WebApp:
     async def api_refresh(self, request):
         """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""
         m = self.member(request)
-        if self.radar.lock.locked():
-            return web.json_response({"busy": True, "new": 0})
+        if self.radar.lock.locked():  # a scheduled check is running: wait for it, its results are as fresh as ours
+            try:
+                await asyncio.wait_for(self.radar.lock.acquire(), 150)
+                self.radar.lock.release()
+            except asyncio.TimeoutError:
+                return web.json_response({"busy": True, "new": 0})
+            return web.json_response({"busy": False, "new": 0, "waited": True, "more": False})
         if m.is_owner:
             found = await self.radar.check(tg=True, web=False, rescan_days=1, manual=True) or []
         else:
             async with self.radar.lock:
                 found = (await self.radar.check_pool([m], rescan_days=1))[m.id]
-        return web.json_response({"busy": False, "new": len(found)})
+        more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
+        for task in ("hh_task", "sites_task"):
+            if hasattr(self.radar, task):
+                asyncio.create_task(getattr(self.radar, task)())
+                more = True
+        log.info("manual refresh by %s: %d new from channels", m.name, len(found))
+        return web.json_response({"busy": False, "new": len(found), "more": more})
