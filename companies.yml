@@ -25,18 +25,20 @@ companies:
   - {id: co-2gis, name: 2ГИС, kind: twogis, ru: true}
   - {id: co-kontur, name: Контур, kind: kontur, ru: true}
   - {id: co-habr, name: Хабр Карьера (удалёнка), kind: habr}
+  - {id: co-tochka, name: Точка Банк, kind: tochka, ru: true}
+  - {id: co-uzum, name: Uzum, kind: uzum, ru: true}
+  - {id: co-twinby, name: Twinby, kind: twinby, ru: true}
+  - {id: co-yasno, name: Ясно, kind: yasno, ru: true}
+  - {id: co-agilefluent, name: AgileFluent (работа за рубежом, удалёнка), kind: agilefluent}
+  - {id: co-finder, name: Finder.work (удалёнка), kind: finder, ru: true}
 
 # NOT connected: no public vacancy list on their own site that a script may read. Not read by the bot;
 # hh employer ids kept for reference (hh.ru is the only place that lists their vacancies).
 pending:
   - {name: Ozon, hh: 2180}              # job.ozon.ru answers 403 (anti-bot), not bypassed
-  - {name: Точка Банк, hh: 2324020}     # tochka.com has no careers page; only hh.ru / Habr (0 open there)
   - {name: Flowwow, hh: 10256320}       # flowwow.com shows a captcha, not bypassed; Habr has 0 open
   - {name: Dodo Brands, hh: 1520838}    # no careers page, Habr company page has 0 open
-  - {name: Twinby, hh: 5775055}         # no careers page on twinby.com
-  - {name: Ясно, hh: 4841748}           # no careers page on yasno.live
   - {name: hh.ru, hh: 1455}             # career.hh.ru is a courses site, vacancies only on hh.ru
-  - {name: Uzum, hh: 9173883}           # career.uzum.com is an education project, vacancies only on hh.ru
   - {name: Freedom Holding, hh: 11319821}  # ffin sites answer 403, vacancies only on hh.ru
   - {name: Techwill}                    # techwill.ru does not answer from here
   - {name: Отелло}                      # otello.ru redirects to Sber ID login; vacancies only on Habr/hh

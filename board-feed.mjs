@@ -229,6 +229,92 @@ const FETCHERS = {
     }
     return out;
   },
+  async uzum() {  // people.uzum.com (Next.js, server-rendered): ?page=N, 15 cards each
+    const base = 'https://people.uzum.com';
+    const out = new Map();
+    for (let page = 1; page <= 10; page++) {
+      const html = await getText(`${base}/career/ru/vacancies${page > 1 ? `?page=${page}` : ''}`);
+      let added = 0;
+      for (const b of html.split('<h3 class="vacancy-card_title').slice(1)) {
+        const title = b.match(/^[^>]*>([^<]+)</)?.[1];
+        const before = html.slice(0, html.indexOf(b));
+        const href = [...before.matchAll(/href="(\/career\/ru\/vacancies\/[0-9]+)"/g)].pop()?.[1];
+        const descr = b.match(/vacancy-card_description[^>]*>([^<]+)</)?.[1] || '';
+        if (title && href && !out.has(href)) { out.set(href, { title: title.replace(/&quot;/g, '"').replace(/&amp;/g, '&'), url: base + href, location: descr, posted: '' }); added++; }
+      }
+      if (!added) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return [...out.values()];
+  },
+  async twinby() {  // vacancies are the titles in the page's carousel (no per-vacancy pages)
+    const html = await getText('https://twinby.ru/career');
+    const titles = [...new Set([...html.matchAll(/images-carousel-item"[^>]*>.*?<span[^>]*>([^<]+)<\/span>/g)].map((m) => m[1].trim()))];
+    return titles.map((t) => ({ title: t, url: `https://twinby.ru/career?vacancy=${encodeURIComponent(t.toLowerCase().replace(/[^a-zа-я0-9]+/g, '-'))}`, location: '', posted: '' }));
+  },
+  async yasno() {  // work.yasno.live: Tilda cards, link = /<slug>, description = «удаленно» / «гибрид»
+    const html = await getText('https://work.yasno.live/');
+    const out = new Map();
+    for (const b of html.split('<a class="js-product-link" href="').slice(1)) {
+      const slug = b.match(/^(\/[a-z0-9_-]+)"/)?.[1];
+      const title = b.match(/js-product-name"[^>]*>\s*([^<]+?)\s*</)?.[1];
+      const descr = b.match(/t-descr[^>]*>\s*([^<]*?)\s*</)?.[1] || '';
+      if (slug && title && !out.has(slug)) out.set(slug, { title, url: `https://work.yasno.live${slug}`, location: descr, posted: '' });
+    }
+    return [...out.values()];
+  },
+  async agilefluent() {  // job board for jobs abroad: open JSON API, remote only
+    const out = [];
+    for (let page = 1; page <= 8; page++) {
+      const r = await fetch('https://jobboard.agilefluent.ru/api/jobs/search', {
+        method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters: { formats: ['remote'] }, pagination: { limit: 50, page } }), signal: AbortSignal.timeout(25_000),
+      });
+      if (!r.ok) throw new Error(`agilefluent: HTTP ${r.status}`);
+      const j = await r.json();
+      for (const x of j.data || []) {
+        out.push({ title: x.title, url: `https://jobboard.agilefluent.ru/jobs/${x.id}`, company: x.companyName, location: ['Удалённо', x.country, x.salaryLabel && x.salaryLabel !== 'Не указана' ? x.salaryLabel : ''].filter(Boolean).join(' · '), posted: x.createdAtIso || '' });
+      }
+      if (!j.hasMore) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return out;
+  },
+  async finder() {  // finder.work remote list: schema.org ItemList in every page, 25 per page
+    const out = new Map();
+    for (let page = 1; page <= 10; page++) {
+      const html = await getText(`https://finder.work/vacancies/remote${page > 1 ? `?page=${page}` : ''}`);
+      let added = 0;
+      for (const m of html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)) {
+        let j; try { j = JSON.parse(m[1]); } catch { continue; }
+        for (const it of j.itemListElement || []) {
+          if (it.url && it.name && !out.has(it.url)) { out.set(it.url, { title: it.name, url: it.url, location: 'Удалённо', posted: '' }); added++; }
+        }
+      }
+      if (!added) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return [...out.values()];
+  },
+  async tochka() {  // hr.tochka.com loads 20 at a time behind «Показать ещё»: a real browser clicks through
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36' });
+      await page.goto('https://hr.tochka.com/vacancies/', { waitUntil: 'domcontentloaded', timeout: 40_000 });
+      await page.waitForTimeout(4000);
+      for (let i = 0; i < 12; i++) {
+        const more = page.getByText('Показать ещё', { exact: true }).first();
+        if (!(await more.count())) break;
+        await more.click();
+        await page.waitForTimeout(1500);
+      }
+      const items = await page.$$eval('a[href*="/vacancies/catalog/"]', (as) => [...new Map(as.map((a) => [a.href, a.innerText.trim().replace(/\s+/g, ' ')])).entries()]);
+      return items.map(([url, text]) => ({ title: text.replace(/\s*(Удалённо|Офис|Гибрид)$/i, ''), url, location: /Удалённо$/i.test(text) ? 'Удалённо' : '', posted: '' }));
+    } finally {
+      await browser.close();
+    }
+  },
   async hh(c) {
     const out = [];
     const seen = new Set();
