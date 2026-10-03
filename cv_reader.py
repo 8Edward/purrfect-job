@@ -326,10 +326,16 @@ def apply(member, graph, rids, channels, mode, skill_words=True):
     kw = search.setdefault("keywords", {})
     preset = guests.load_preset()
     untouched = {p.lower() for p in kw.get("role", [])} == {p.lower() for p in preset.get("role", [])}
+    state = member.load_state()
     if mode == "replace" or untouched:  # still the newcomer example (Data Analyst): their own résumé replaces it
         kw["role"] = []
+    elif mode == "sync":  # live from the role chips: swap what the résumé added last time, keep typed words
+        mine = {w.lower() for w in state.get("cv_words") or []}
+        kw["role"] = [w for w in kw.get("role", []) if w.lower() not in mine]
+    before = {w.lower() for w in kw.get("role", [])}
     added, _ = guests.add_words(search, "role", ", ".join(words))
     member.save_search(search)
+    member.update_state(cv_words=[w for w in kw.get("role", []) if w.lower() not in before])
     query = hh_query(graph, rids)
     if query:
         guests.set_hh(member, query=query)
@@ -341,5 +347,10 @@ def apply(member, graph, rids, channels, mode, skill_words=True):
         ticked = member.selected(pool)
         if untouched and set(ticked) == set(preset.get("pool", [])) & set(pool["channels"]):
             ticked = []  # the example's channels were never changed: keep only what fits this résumé
-        member.set_selected(ticked + [k for k in channels if k in pool["channels"] and k not in ticked])
+        if mode == "sync":  # channels the résumé ticked before and the person unticked now go away
+            gone = set(state.get("cv_channels") or []) - set(channels)
+            ticked = [k for k in ticked if k not in gone]
+        new = [k for k in channels if k in pool["channels"] and k not in ticked]
+        member.set_selected(ticked + new)
+        member.update_state(cv_channels=list(dict.fromkeys((state.get("cv_channels") or []) + new)) if mode == "sync" else new)
     return {"words": len(kw.get("role", [])), "added": len(added), "hh_query": query}

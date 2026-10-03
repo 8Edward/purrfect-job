@@ -807,7 +807,7 @@ class WebApp:
         roles = [str(r) for r in data.get("roles") or []][:10]
         channels = [str(c) for c in data.get("channels") or []][:guests.MAX_POOL] if "channels" in data else None
         try:
-            result = cv_reader.apply(m, load_graph(), roles, channels, "replace" if data.get("mode") == "replace" else "merge",
+            result = cv_reader.apply(m, load_graph(), roles, channels, data.get("mode") if data.get("mode") in ("replace", "sync") else "merge",
                                      skill_words=bool(data.get("skill_words", True)))
         except ValueError as e:
             return web.json_response({"error": str(e)}, status=400)

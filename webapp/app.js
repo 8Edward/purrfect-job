@@ -697,14 +697,12 @@ function renderCv() {
       <div class="preview"><b>Слова для поиска</b>${esc(words.join(", ") || "—")}</div>
       <div class="preview"><b>Запрос на hh.ru</b>${esc(hh || "—")}</div>
       ${cv.channels.length ? `<div class="lbl">Каналы</div>${cv.channels.map((c) => `<div class="tg" style="padding:8px 0"><span>${esc(c.title)}<small>@${esc(c.key)}${c.suggested ? " · подходит" : ""}</small></span><button class="sw" data-cvch="${esc(c.key)}" aria-pressed="${cvState.channels.has(c.key)}" aria-label="${esc(c.title)}"></button></div>`).join("")}` : ""}
-      <div class="twobtn"><button class="cta" id="cv-replace">Заменить мои слова</button><button class="ghost" id="cv-merge">Добавить к моим</button></div>
+      <p class="muted" id="cv-sync">${cvState.synced || "Отметки сразу меняют ленту: слова поиска, запрос hh.ru и каналы. Слова, которые вы вписали сами, остаются."}</p>
       ${uploadHtml(true)}
       <button class="link" id="cv-delete">Удалить резюме</button></div>`;
-    $$("[data-role]", box).forEach((b) => (b.onclick = () => { const id = b.dataset.role; cvState.roles.has(id) ? cvState.roles.delete(id) : cvState.roles.add(id); haptic(); renderCv(); }));
-    $$("[data-cvch]", box).forEach((b) => (b.onclick = () => { const k = b.dataset.cvch; cvState.channels.has(k) ? cvState.channels.delete(k) : cvState.channels.add(k); haptic(); renderCv(); }));
-    $("#cv-skills").onchange = (e) => { cvState.skills = e.target.checked; renderCv(); };
-    $("#cv-replace").onclick = () => applyCv("replace");
-    $("#cv-merge").onclick = () => applyCv("merge");
+    $$("[data-role]", box).forEach((b) => (b.onclick = () => { const id = b.dataset.role; cvState.roles.has(id) ? cvState.roles.delete(id) : cvState.roles.add(id); haptic(); renderCv(); syncCv(); }));
+    $$("[data-cvch]", box).forEach((b) => (b.onclick = () => { const k = b.dataset.cvch; cvState.channels.has(k) ? cvState.channels.delete(k) : cvState.channels.add(k); haptic(); renderCv(); syncCv(); }));
+    $("#cv-skills").onchange = (e) => { cvState.skills = e.target.checked; renderCv(); syncCv(); };
     $("#cv-delete").onclick = deleteCv;
   }
   const file = $("#cv-file");
@@ -728,6 +726,20 @@ async function uploadCv(file) {
     if (data.cv.roles.some((r) => r.primary)) offerPreset(data.cv);
     else toast("Резюме прочитал, но роли не распознал");
   } catch (e) { cvState.busy = false; renderCv(); fail(e); }
+}
+/* the role chips change the feed at once («sync»: the résumé's words are swapped, typed words stay) */
+function syncCv() {
+  clearTimeout(cvState.syncT);
+  cvState.syncT = setTimeout(async () => {
+    if (!cvState.roles.size) { cvState.synced = "Отметьте хотя бы одну роль — тогда лента подстроится."; return renderCv(); }
+    try {
+      const d = await api("/api/cv/apply", { roles: [...cvState.roles], channels: [...cvState.channels], mode: "sync", skill_words: cvState.skills });
+      cvState.synced = `✓ Лента обновлена: ${d.words} ${plural(d.words, "слово", "слова", "слов")} для поиска${d.hh_query ? ", запрос hh.ru" : ""}. Новые вакансии подтянутся при следующей проверке (или нажмите ↻ в ленте).`;
+      renderCv();
+      loadSources().catch(() => {});
+      loadMe().catch(() => {});
+    } catch (e) { fail(e); }
+  }, 700);
 }
 async function applyCv(mode) {
   if (!cvState.roles.size) return fail(new Error("Отметьте хотя бы одну роль."));

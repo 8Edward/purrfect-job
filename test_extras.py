@@ -336,6 +336,17 @@ async def main():
                 saved_plan = (await (await c.get("/api/plan", headers=auth)).json())["plan"]
                 assert saved_plan["goal"] == "role" and saved_plan["steps"][0]["weeks"] == "3–4 нед."
 
+                # 🔁 résumé role chips sync the feed: their words swap, typed words stay
+                s = g.load_search()
+                s.setdefault("keywords", {})["role"] = ["моё слово"]
+                g.save_search(s)
+                r1 = await (await c.post("/api/cv/apply", headers=auth, json={"roles": ["data-analyst"], "channels": [], "mode": "sync", "skill_words": False})).json()
+                words1 = g.load_search()["keywords"]["role"]
+                assert "моё слово" in words1 and any("analyst" in w for w in words1) and r1["hh_query"]
+                await c.post("/api/cv/apply", headers=auth, json={"roles": ["data-engineer"], "channels": [], "mode": "sync", "skill_words": False})
+                words2 = g.load_search()["keywords"]["role"]
+                assert "моё слово" in words2 and not any("analyst" in w for w in words2) and any("engineer" in w for w in words2), words2
+
                 # ✉️ «Откликнуться» in dry mode: draft, «send» (nothing leaves), tracker marked
                 import apply
                 os.environ["JR_APPLY_DRY"] = "1"
