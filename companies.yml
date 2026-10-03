@@ -1,31 +1,41 @@
-# Company career pages for the «🏢 Компании» site (read by telegram/board-feed.mjs).
-# kind: greenhouse | ashby | lever | workable | personio | teamtailor (slug) or hh (employer ids on hh.ru,
-# remote-only RSS; q: extra search words, one request each, title only, for big employers whose 20 newest
-# remote vacancies would hide analytics ones). ru: true -> every vacancy gets the #ru_company tag. Free public feeds only, no logins.
+# Company career pages, each is its own site in «Сайты» (read by telegram/board-feed.mjs).
+# kind: greenhouse | ashby | lever | workable | personio | teamtailor (slug) = the company's own public feed.
+# ru: true -> every vacancy gets the #ru_company tag. Free public feeds only, no logins.
 companies:
-  - {name: Plata, kind: greenhouse, slug: platacard, ru: true}
-  - {name: Toloka, kind: greenhouse, slug: toloka, ru: true}
-  - {name: Flo Health, kind: greenhouse, slug: flohealth, ru: true}
-  - {name: Trivago, kind: greenhouse, slug: trivago}
-  - {name: Miro, kind: ashby, slug: miro, ru: true}
-  - {name: Adapty, kind: ashby, slug: adapty-io, ru: true}
-  - {name: Joom, kind: workable, slug: joom, ru: true}
-  - {name: Vivid Money, kind: personio, slug: vivid, ru: true}
-  - {name: Praktika, kind: teamtailor, slug: praktika, ru: true}
-  - {name: Ostrovok (ETG), kind: personio, slug: etg, ru: true}
-  - {name: Авито, kind: hh, ids: [84585], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
-  - {name: Ozon, kind: hh, ids: [2180], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
-  - {name: Точка Банк, kind: hh, ids: [2324020], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
-  - {name: Островок, kind: hh, ids: [697715], ru: true}
-  - {name: Aviasales, kind: hh, ids: [588914], ru: true}
-  - {name: Dodo Brands, kind: hh, ids: [1520838], q: [аналитик, analyst, данных, BI], ru: true}
-  - {name: Flowwow, kind: hh, ids: [10256320], ru: true}
-  - {name: Twinby, kind: hh, ids: [5775055], ru: true}
-  - {name: Ясно, kind: hh, ids: [4841748], ru: true}
-  - {name: 2ГИС, kind: hh, ids: [64174], q: [аналитик, analyst, данных, BI], ru: true}
-  - {name: hh.ru, kind: hh, ids: [1455], q: [аналитик, analyst, данных], ru: true}
-  - {name: Uzum, kind: hh, ids: [9173883], q: [аналитик, analyst, данных, BI], ru: true}
-  - {name: Playrix, kind: hh, ids: [9056925], ru: true}
-  - {name: inDrive, kind: hh, ids: [9506652], ru: true}
-  - {name: Nexters, kind: hh, ids: [9058498], ru: true}
-  - {name: Freedom Holding, kind: hh, ids: [11319821], q: [аналитик, analyst, данных, BI], ru: true}
+  - {id: co-plata, name: Plata, kind: greenhouse, slug: platacard, ru: true}
+  - {id: co-toloka, name: Toloka, kind: greenhouse, slug: toloka, ru: true}
+  - {id: co-flo, name: Flo Health, kind: greenhouse, slug: flohealth, ru: true}
+  - {id: co-trivago, name: Trivago, kind: greenhouse, slug: trivago}
+  - {id: co-miro, name: Miro, kind: ashby, slug: miro, ru: true}
+  - {id: co-adapty, name: Adapty, kind: ashby, slug: adapty-io, ru: true}
+  - {id: co-joom, name: Joom, kind: workable, slug: joom, ru: true}
+  - {id: co-vivid, name: Vivid Money, kind: personio, slug: vivid, ru: true}
+  - {id: co-praktika, name: Praktika, kind: teamtailor, slug: praktika, ru: true}
+  - {id: co-ostrovok, name: Ostrovok (ETG), kind: personio, slug: etg, ru: true}
+
+# NOT connected: no own public feed found, only hh.ru (employer ids below) or nothing. Not read by the bot;
+# to be connected another way (their own career page). hh employer ids are kept for reference.
+pending:
+  - {name: Авито, hh: 84585}
+  - {name: Ozon, hh: 2180}
+  - {name: Точка Банк, hh: 2324020}
+  - {name: Островок, hh: 697715}
+  - {name: Aviasales, hh: 588914}
+  - {name: Dodo Brands, hh: 1520838}
+  - {name: Flowwow, hh: 10256320}
+  - {name: Twinby, hh: 5775055}
+  - {name: Ясно, hh: 4841748}
+  - {name: 2ГИС, hh: 64174}
+  - {name: hh.ru, hh: 1455}
+  - {name: Uzum, hh: 9173883}
+  - {name: Playrix, hh: 9056925}
+  - {name: inDrive, hh: 9506652}
+  - {name: Nexters, hh: 9058498}
+  - {name: Freedom Holding, hh: 11319821}
+  - {name: Контур, hh: 41862}
+  - {name: Salmon}
+  - {name: Semrush}
+  - {name: TripleTen}
+  - {name: Techwill}
+  - {name: Отелло}
+  - {name: Garage8}

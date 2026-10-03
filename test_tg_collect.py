@@ -329,7 +329,7 @@ with tempfile.TemporaryDirectory() as d:
     assert papa.selected(guests.load_pool()) == []  # removed from the pool = gone from everyone's ticks
 
     # sites: the shared list is portals.yml job_boards; edits keep the rest of the file
-    assert guests.listed_sites() == {"hh": "hh.ru", "companies": "Компании", "remotive": "Remotive", "himalayas": "Himalayas"}
+    assert {k: v for k, v in guests.listed_sites().items() if not k.startswith("co-")} == {"hh": "hh.ru", "remotive": "Remotive", "himalayas": "Himalayas"}
     guests.add_board("jobicy")
     guests.set_board_enabled("himalayas", True)
     guests.set_board_enabled("remotive", False)
@@ -338,7 +338,7 @@ with tempfile.TemporaryDirectory() as d:
     boards_now = {b["provider"]: b["enabled"] for b in guests.read_boards()}
     assert boards_now == {"remotive": False, "himalayas": True, "jobicy": False}, boards_now
     guests.remove_board("remotive")
-    assert set(guests.listed_sites()) == {"hh", "companies", "himalayas", "jobicy"}
+    assert {k for k in guests.listed_sites() if not k.startswith("co-")} == {"hh", "himalayas", "jobicy"}
     try:
         guests.add_board("evil-site")
         raise AssertionError("only catalog sites can be added")

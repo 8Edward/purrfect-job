@@ -98,9 +98,8 @@ SITE_CATALOG = {
     "agentic-jobs": ("Agentic Jobs", "AI / ML"),
     "flowxtra": ("Flowxtra", "Европа, разные профессии"),
 }
-COMPANIES_ID = "companies"  # not a board: career pages listed in companies.yml (board-feed.mjs)
-COMPANIES_NAME = "Компании"
-SITE_CATALOG[COMPANIES_ID] = (COMPANIES_NAME, "Plata, Авито, Ozon, Точка, Miro, Toloka… (список в companies.yml)")
+CO_PREFIX = "co-"  # a company's own career page from companies.yml (read by board-feed.mjs)
+COMPANIES_PATH = tc.TG_DIR / "companies.yml"
 
 log = logging.getLogger("job-radar.guests")
 
@@ -260,12 +259,11 @@ class Owner(Member):
 
     def sites(self, listed):
         mine = [b["provider"] for b in read_boards() if b.get("enabled", True) and b["provider"] in listed]
-        own = [s for s in (HH_ID, COMPANIES_ID) if s in self.load_search().get("sites", [])]
-        return own + mine
+        return [s for s in self.load_search().get("sites", []) if is_own_site(s) and s in listed] + mine
 
     def set_sites(self, ids):  # only hh.ru lives here; job boards are `enabled:` in portals.yml
         search = self.load_search()
-        search["sites"] = [s for s in (HH_ID, COMPANIES_ID) if s in ids]
+        search["sites"] = [s for s in dict.fromkeys(ids) if is_own_site(s)]
         self.save_search(search)
 
 
@@ -346,7 +344,7 @@ def reset_member(member, wipe_jobs=False):
         search = member.load_search()
         search["keywords"] = fresh["keywords"]
         search["pool"] = fresh["pool"]
-        search["sites"] = [s for s in (HH_ID, COMPANIES_ID) if s in fresh["sites"]]  # job boards = portals.yml, untouched
+        search["sites"] = [s for s in fresh["sites"] if is_own_site(s)]  # job boards = portals.yml, untouched
         search["hh"] = fresh.get("hh", {})
         member.save_search(search)
     else:
@@ -662,10 +660,21 @@ def read_boards():
     return [b for b in (data or {}).get("job_boards") or [] if isinstance(b, dict) and b.get("provider")]
 
 
+def read_companies():
+    """Companies with their own feed: {id: {name, ru, ...}} from companies.yml."""
+    data = yaml.safe_load(COMPANIES_PATH.read_text(encoding="utf-8")) if COMPANIES_PATH.exists() else {}
+    return {c["id"]: c for c in (data or {}).get("companies") or [] if isinstance(c, dict) and str(c.get("id", "")).startswith(CO_PREFIX)}
+
+
+def is_own_site(pid):
+    """Sites that live in the person's own search.yml (not portals.yml): hh.ru and the companies."""
+    return pid == HH_ID or str(pid).startswith(CO_PREFIX)
+
+
 def listed_sites():
     """Sites in the shared list that the bot can serve: {id: name}. hh.ru is always there."""
     boards_ = {b["provider"]: SITE_CATALOG[b["provider"]][0] for b in read_boards() if b["provider"] in SITE_CATALOG}
-    return {HH_ID: HH_NAME, COMPANIES_ID: COMPANIES_NAME, **boards_}
+    return {HH_ID: HH_NAME, **{k: "🏢 " + c["name"] for k, c in read_companies().items()}, **boards_}
 
 
 def _board_block(lines):
@@ -747,7 +756,7 @@ def record_proposal(pool, member):
 
 async def fetch_feed(providers, timeout=900):
     """Run board-feed.mjs for these providers: {provider: {"jobs": [...]} | {"error": "..."}}."""
-    ids = [p for p in providers if p in SITE_CATALOG]
+    ids = [p for p in providers if p in SITE_CATALOG or p in read_companies()]
     if not ids:
         return {}
     proc = await asyncio.create_subprocess_exec(

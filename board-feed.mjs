@@ -58,7 +58,7 @@ async function fetchPaged(spec) {
 }
 
 
-// «companies»: career pages of chosen companies (telegram/companies.yml): free public ATS feeds
+// «co-<name>»: one company's career page of chosen companies (telegram/companies.yml): free public ATS feeds
 // and hh.ru employer RSS. Every job carries ru:true for Russian-speaking companies.
 const UA = { 'User-Agent': 'Mozilla/5.0 (JobRadar personal job alerts)' };
 const xmlText = (block, tag) => {
@@ -125,11 +125,11 @@ const FETCHERS = {
     return out;
   },
 };
-async function fetchCompanies() {
+async function fetchCompanies(id) {
   const cfg = yaml.load(fs.readFileSync(path.join(ROOT, 'telegram', 'companies.yml'), 'utf8')) || {};
   const jobs = [];
   const errors = [];
-  for (const c of cfg.companies || []) {
+  for (const c of (cfg.companies || []).filter((x) => x.id === id)) {
     try {
       const got = await FETCHERS[c.kind](c);
       for (const j of got) {
@@ -146,13 +146,13 @@ async function fetchCompanies() {
 
 const out = {};
 for (const id of ids) {
-  const provider = id === 'companies' ? {} : providers.get(id);
+  const provider = id.startsWith('co-') ? {} : providers.get(id);
   if (!provider) {
     out[id] = { error: 'unknown provider' };
     continue;
   }
   try {
-    const jobs = await withTimeout(id === 'companies' ? fetchCompanies() : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
+    const jobs = await withTimeout(id.startsWith('co-') ? fetchCompanies(id) : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
       PER_BOARD_TIMEOUT_MS);
     if (!Array.isArray(jobs)) throw new Error('fetch() did not return an array');
     out[id] = {
