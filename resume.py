@@ -272,6 +272,119 @@ def from_text(text):
     return markdown_of(out)
 
 
+# ---------------------------------------------------------------- import from hh.ru / LinkedIn files
+
+def _csv_rows(z, basename, must):
+    """Rows (dicts, lower-case keys) of a CSV anywhere in the LinkedIn archive. Some files start
+    with a few «Notes:» lines, so the header is the first line that has the `must` column."""
+    import csv
+    import io
+    name = next((n for n in z.namelist() if n.rsplit("/", 1)[-1].lower() == basename.lower()), None)
+    if not name:
+        return []
+    lines = z.read(name).decode("utf-8-sig", "replace").splitlines()
+    start = next((i for i, l in enumerate(lines) if must.lower() in [c.strip().strip('"').lower() for c in l.split(",")]), None)
+    if start is None:
+        return []
+    rows = csv.DictReader(io.StringIO("\n".join(lines[start:])))  # one text: quoted cells may span lines
+    return [{(k or "").strip().lower(): (v or "").strip() for k, v in row.items() if isinstance(v, str) or v is None} for row in rows]
+
+
+def _bullets(description):
+    """A LinkedIn position description -> bullet lines (one per line, bullet marks dropped)."""
+    out = []
+    for line in (description or "").replace("\r", "").split("\n"):
+        line = BULLET.sub("", line.strip(), count=1).strip()
+        if line:
+            out.append(line)
+    return out[:15]
+
+
+def from_linkedin_archive(data):
+    """LinkedIn «Get a copy of your data» ZIP -> builder answers -> Markdown. Only what is in the files."""
+    import io
+    import zipfile
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        raise ValueError("Не получилось открыть архив. Нужен ZIP, который прислал LinkedIn.")
+    with z:
+        profile = (_csv_rows(z, "Profile.csv", "first name") or [{}])[0]
+        positions = _csv_rows(z, "Positions.csv", "company name")
+        if not profile and not positions:
+            raise ValueError("В архиве нет Profile.csv и Positions.csv. Это точно архив данных LinkedIn?")
+        emails = _csv_rows(z, "Email Addresses.csv", "email address")
+        phones = _csv_rows(z, "PhoneNumbers.csv", "number")
+        schools = _csv_rows(z, "Education.csv", "school name")
+        skills = [r.get("name", "") for r in _csv_rows(z, "Skills.csv", "name")]
+        langs = _csv_rows(z, "Languages.csv", "name")
+        certs = _csv_rows(z, "Certifications.csv", "name")
+        projects = _csv_rows(z, "Projects.csv", "title")
+    sample = " ".join([profile.get("headline", ""), profile.get("summary", "")] + [p.get("title", "") + " " + p.get("description", "") for p in positions])
+    lang = detect_lang(sample) if sample.strip() else "en"
+    primary = next((e for e in emails if e.get("primary", "").lower() == "yes"), emails[0] if emails else {})
+    d = {
+        "lang": lang,
+        "name": " ".join(x for x in (profile.get("first name", ""), profile.get("last name", "")) if x),
+        "title": profile.get("headline", ""),
+        "location": profile.get("geo location", ""),
+        "email": primary.get("email address", ""),
+        "phone": phones[0].get("number", "") if phones else "",
+        "summary": profile.get("summary", ""),
+        "jobs": [{"role": p.get("title", ""), "company": p.get("company name", ""), "place": p.get("location", ""),
+                  "from": p.get("started on", ""), "to": p.get("finished on", "") or ("Present" if lang == "en" else "наст. время"),
+                  "bullets": _bullets(p.get("description"))} for p in positions],
+        "education": [{"school": s.get("school name", ""), "degree": s.get("degree name", ""),
+                       "year": " — ".join(x for x in (s.get("start date", ""), s.get("end date", "")) if x)} for s in schools],
+        "skills": [s for s in skills if s],
+        "languages": [{"name": x.get("name", ""), "level": x.get("proficiency", "")} for x in langs],
+        "projects": [{"name": p.get("title", ""), "text": p.get("description", "").replace("\n", " ")} for p in projects],
+        "courses": [" · ".join(x for x in (c.get("name", ""), c.get("authority", ""), c.get("started on", "")) if x) for c in certs],
+    }
+    return build(d, keep_empty_summary=True)
+
+
+HH_JUNK = re.compile(r"(резюме обновлено|предпочитаемый способ связи|желательное время в пути|^page \d+ of \d+$|"
+                     r"^\d+\s*/\s*\d+$|^стр\.? \d+|^\d{1,2}$|навыки и опыт подтвержден)", re.IGNORECASE)
+HEADING_TAIL = re.compile(r"^(опыт работы|work experience|experience)\s*[—–-]\s*\d.*$", re.IGNORECASE)
+LINKEDIN_HEADINGS = {"top skills": "Skills", "contact": None, "honors-awards": "Achievements", "publications": "Publications",
+                     "certifications": "Certifications"}
+
+
+def clean_export(text):
+    """Tidy the text of a résumé exported from hh.ru or LinkedIn before from_text():
+    page footers and numbers go, «Опыт работы —5 лет 2 месяца» becomes a plain heading,
+    LinkedIn's «Top Skills» becomes «Skills». Returns (text, source or None)."""
+    low = text.lower()
+    source = "hh" if ("резюме обновлено" in low or "желаемая должность" in low) else \
+        "linkedin" if ("top skills" in low or re.search(r"page \d+ of \d+", low)) else None
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if HH_JUNK.search(s):
+            continue
+        m = HEADING_TAIL.match(s)
+        if m:
+            s = m.group(1)
+        if source == "linkedin" and s.lower() in LINKEDIN_HEADINGS:
+            if LINKEDIN_HEADINGS[s.lower()] is None:
+                continue
+            s = LINKEDIN_HEADINGS[s.lower()]
+        out.append(s)
+    return "\n".join(out), source
+
+
+def import_file(filename, data):
+    """A résumé exported from hh.ru (PDF / RTF «Word» / TXT) or LinkedIn (profile PDF or the data
+    archive ZIP), or any PDF/DOCX/TXT -> (Markdown, source name)."""
+    name = (filename or "").lower()
+    if name.endswith(".zip") or (data[:2] == b"PK" and b"word/document.xml" not in data[:4000] and not name.endswith(".docx")):
+        return from_linkedin_archive(data), "архив LinkedIn"
+    text = cv_reader.extract_text(filename, data)
+    text, source = clean_export(text)
+    return from_text(text), {"hh": "hh.ru", "linkedin": "LinkedIn"}.get(source, "файл")
+
+
 def inline_html(text):
     """**bold**, *italic*, [text](url) on top of escaped text."""
     s = html.escape(text, quote=True)
@@ -716,8 +829,9 @@ def suggest_summary(d):
     return " ".join(parts)
 
 
-def build(d):
-    """Builder answers -> Markdown résumé."""
+def build(d, keep_empty_summary=False):
+    """Builder answers -> Markdown résumé. keep_empty_summary: no «О себе» if there is none
+    (an import shouldn't get a made-up one)."""
     lang = "en" if d.get("lang") == "en" else "ru"
     h = HEADINGS[lang]
     out = []
@@ -728,8 +842,9 @@ def build(d):
     contact = [d.get(k, "").strip() for k in ("location", "email", "telegram", "phone", "linkedin", "github") if (d.get(k) or "").strip()]
     if contact:
         out.append({"t": "p", "x": " · ".join(contact)})
-    summary = (d.get("summary") or "").strip() or suggest_summary(d)
-    out += [{"t": "h2", "x": h["summary"]}, {"t": "p", "x": summary}]
+    summary = (d.get("summary") or "").strip() or ("" if keep_empty_summary else suggest_summary(d))
+    if summary:
+        out += [{"t": "h2", "x": h["summary"]}] + [{"t": "p", "x": x} for x in summary.replace("\r", "").split("\n") if x.strip()]
     jobs = [j for j in d.get("jobs") or [] if (j.get("role") or j.get("company"))]
     if jobs:
         out.append({"t": "h2", "x": h["experience"]})
@@ -765,6 +880,10 @@ def build(d):
         out.append({"t": "h2", "x": h["projects"]})
         for p in projects:
             out.append({"t": "li", "x": f"**{p['name'].strip()}**" + (f" — {p['text'].strip()}" if (p.get("text") or "").strip() else "")})
+    courses = [c.strip() for c in d.get("courses") or [] if c and c.strip()]
+    if courses:
+        out.append({"t": "h2", "x": h["courses"]})
+        out += [{"t": "li", "x": c} for c in courses]
     return markdown_of(out)
 
 

@@ -22,7 +22,7 @@ import webapp
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_CHARS = 60000
-TYPES = (".pdf", ".docx", ".txt", ".md")
+TYPES = (".pdf", ".docx", ".txt", ".md", ".rtf", ".doc")
 
 # (label shown to the person, pattern, roles it points to, its words go into «Что ищу»)
 SKILLS = [
@@ -87,12 +87,14 @@ def extract_text(filename, data):
         raise ValueError("Файл больше 5 МБ. Загрузите резюме поменьше (обычно оно весит до 1 МБ).")
     if name.endswith(".pdf") or data[:5] == b"%PDF-":
         text = _pdf_text(data)
+    elif data[:5] == b"{\\rtf":  # hh.ru's «Word» download is RTF, whatever the extension
+        text = _rtf_text(data)
     elif name.endswith(".docx") or (data[:2] == b"PK" and not name.endswith((".txt", ".md"))):
         text = _docx_text(data)
     elif name.endswith((".txt", ".md")):
         text = data.decode("utf-8", "replace") if _looks_utf8(data) else data.decode("cp1251", "replace")
     else:
-        raise ValueError("Подойдёт PDF, DOCX или TXT. Старый .doc сохраните из Word как .docx.")
+        raise ValueError("Подойдёт PDF, DOCX, RTF или TXT. Старый .doc сохраните из Word как .docx.")
     text = re.sub(r"[ \t ]+", " ", text)
     text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
     if len(text) < 200:
@@ -132,6 +134,63 @@ def _docx_text(data):
     for p in root.iter(ns + "p"):
         paragraphs.append("".join(t.text or "" for t in p.iter(ns + "t")))
     return "\n".join(paragraphs)
+
+
+RTF_SKIP = {"fonttbl", "colortbl", "stylesheet", "info", "pict", "header", "footer", "listtable", "listoverridetable",
+            "rsidtbl", "generator", "xmlnstbl", "themedata", "colorschememapping", "latentstyles", "datastore"}
+RTF_TOKEN = re.compile(r"\\([a-z]+)(-?\d+)? ?|\\'([0-9a-f]{2})|\\(.)|([{}])|([^\\{}\r\n]+)|[\r\n]", re.IGNORECASE | re.DOTALL)
+
+
+def _rtf_text(data):
+    """Plain text of an RTF file: skips font/colour/picture groups, decodes \\'xx bytes in the
+    file's code page and \\uN characters."""
+    raw = data.decode("latin-1")
+    cp = re.search(r"\\ansicpg(\d+)", raw)
+    codepage = f"cp{cp.group(1)}" if cp else "cp1251"
+    out, stack, skip, pending, eat_fallback = [], [], False, bytearray(), False
+
+    def flush():
+        if pending:
+            out.append(pending.decode(codepage, "replace"))
+            pending.clear()
+    for m in RTF_TOKEN.finditer(raw):
+        word, arg, hexa, sym, brace, text = m.groups()
+        if hexa:
+            if eat_fallback:
+                eat_fallback = False
+            elif not skip:
+                pending.append(int(hexa, 16))
+            continue
+        flush()
+        if brace == "{":
+            stack.append(skip)
+        elif brace == "}":
+            skip = stack.pop() if stack else False
+        elif sym:
+            if sym == "*":
+                skip = True
+            elif not skip and sym in "\\{}":
+                out.append(sym)
+        elif word:
+            if word in RTF_SKIP:
+                skip = True
+            elif skip:
+                continue
+            elif word in ("par", "line", "row"):
+                out.append("\n")
+            elif word in ("tab", "cell"):
+                out.append(" ")
+            elif word == "u" and arg:
+                out.append(chr(int(arg) % 65536))
+                eat_fallback = True  # the one ANSI character that follows \uN is its fallback
+                continue
+        elif text and not skip:
+            if eat_fallback:
+                text = text[1:]
+            out.append(text)
+        eat_fallback = False
+    flush()
+    return "".join(out)
 
 
 # ---------------------------------------------------------------- analysis

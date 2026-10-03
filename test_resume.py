@@ -150,4 +150,48 @@ async def ai_ops():
 
 asyncio.run(ai_ops())
 assert resume_ai.human_error(RuntimeError("login")).startswith("ИИ не подключён")
+
+# import: LinkedIn data archive (CSV tables; some start with «Notes:» lines)
+import io  # noqa: E402
+import zipfile  # noqa: E402
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, "w") as z:
+    z.writestr("Profile.csv", "First Name,Last Name,Maiden Name,Headline,Summary,Geo Location\n"
+               'Anna,Petrova,,Business Analyst,"Business analyst, 3 years in banking.",Bangkok\n')
+    z.writestr("Positions.csv", "Company Name,Title,Description,Location,Started On,Finished On\n"
+               'Bank,Business Analyst,"- Described 40 processes in BPMN\n- Wrote 25 specifications",Moscow,Mar 2022,\n'
+               "Shop,Analyst,,Remote,Jan 2020,Feb 2022\n")
+    z.writestr("Email Addresses.csv", "Email Address,Confirmed,Primary,Updated On\nold@x.io,Yes,No,\nanna@x.io,Yes,Yes,\n")
+    z.writestr("Education.csv", "School Name,Start Date,End Date,Notes,Degree Name,Activities\nHSE,2015,2019,,Bachelor,\n")
+    z.writestr("Skills.csv", "Name\nBPMN\nSQL\n")
+    z.writestr("Languages.csv", "Name,Proficiency\nEnglish,Professional working proficiency\n")
+    z.writestr("Certifications.csv", "Notes:\n\"Exported\"\n\nName,Url,Authority,Started On,Finished On,License Number\nCBAP,,IIBA,Jan 2023,,\n")
+md, src = resume.import_file("Basic_LinkedInDataExport.zip", buf.getvalue())
+bl = resume.blocks(md)
+assert src == "архив LinkedIn" and bl[0] == {"t": "h1", "x": "Anna Petrova"}, bl[:3]
+assert "anna@x.io" in md and "old@x.io" not in md and "Bangkok" in md
+assert {"t": "h3", "x": "Business Analyst — Bank"} in bl and {"t": "li", "x": "Wrote 25 specifications"} in bl
+assert "Mar 2022 — Present" in md and "Jan 2020 — Feb 2022" in md
+assert "## Summary" in md and "## Courses & Certifications" in md and "CBAP · IIBA · Jan 2023" in md
+assert "BPMN, SQL" in md and "English (Professional working proficiency)" in md
+buf2 = io.BytesIO()
+with zipfile.ZipFile(buf2, "w") as z:
+    z.writestr("Positions.csv", "Company Name,Title,Description,Location,Started On,Finished On\nBank,Analyst,,,2022,\n")
+md2, _ = resume.import_file("export.zip", buf2.getvalue())
+assert "## Summary" not in md2  # no summary in the archive -> none made up
+try:
+    resume.import_file("x.zip", b"PK\x03\x04junk")
+    raise AssertionError("broken zip must fail")
+except ValueError:
+    pass
+# import: hh.ru export text (footer, «Опыт работы —N лет» heading) and RTF
+hh = ("Петрова Анна\nЖенщина, 30 лет\nanna@x.io\nЖелаемая должность и зарплата\nБизнес-аналитик\n"
+      "Опыт работы —3 года 2 месяца\nБизнес-аналитик\n- Описала 40 процессов в BPMN\n"
+      "Петрова Анна • Резюме обновлено 1 октября 2026 в 12:00\nНавыки\nBPMN, SQL\n") * 2
+text, source = resume.clean_export(hh)
+assert source == "hh" and "Резюме обновлено" not in text and "\nОпыт работы\n" in text
+rtf = (rb"{\rtf1\ansi\ansicpg1251{\fonttbl{\f0 Arial;}}\f0 \'cf\'e5\'f2\'f0\'ee\'e2\'e0 \'c0\'ed\'ed\'e0\par "
+       + (r"\'ce\'ef\'fb\'f2 \'f0\'e0\'e1\'ee\'f2\'fb\par - " + "".join(f"\\u{ord(c)}?" for c in "Описала") + " 40 BPMN\\par ").encode() * 12 + b"}")
+md3, src3 = resume.import_file("resume.doc", rtf)
+assert resume.blocks(md3)[0] == {"t": "h1", "x": "Петрова Анна"} and "Описала 40 BPMN" in md3, md3[:200]
 print("ok")

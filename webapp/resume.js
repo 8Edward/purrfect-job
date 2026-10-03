@@ -14,7 +14,7 @@ const OP_LABEL = { improve: "Улучшаю формулировки", summary: 
 async function loadResume(keepView) {
   try { rs.data = await api("/api/resume"); } catch (e) { return fail(e); }
   rs.blocks = rs.data.blocks || [];
-  if (!rs.data.active) rs.view = rs.view === "wizard" ? rs.view : "start";
+  if (!rs.data.active) rs.view = ["wizard", "import"].includes(rs.view) ? rs.view : "start";
   else if (!keepView || rs.view === "start") rs.view = "main";
   renderResume();
 }
@@ -27,6 +27,7 @@ function renderResume() {
   else if (v === "main") renderMain();
   else if (v === "raw") renderRaw();
   else if (v === "wizard") renderWizard();
+  else if (v === "import") renderImport();
   else if (v === "match") renderMatch();
   else if (v === "review") renderReview();
   $("#screens").scrollTop = v === "main" ? $("#screens").scrollTop : 0;
@@ -99,12 +100,64 @@ function renderStart() {
     <div class="rs-start">
       <label class="rs-card"><b>📄 Загрузить файл</b><span>PDF, DOCX или TXT. Разберу, оценю и подскажу, что поправить.</span>
         <input type="file" id="rs-file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></label>
+      <button class="rs-card" data-go="import"><b>📥 Из hh.ru или LinkedIn</b><span>Нет файла? Скачайте резюме с сайта — покажу, где нажать, — и я заполню всё сам.</span></button>
       <button class="rs-card" data-go="wizard"><b>✍️ Собрать с нуля</b><span>По шагам с подсказками: контакты, опыт, навыки. Минут 10–15.</span></button>
     </div>
     <p class="muted">Резюме хранится на компьютере владельца бота. Удалить можно в любой момент.</p>`;
   bindCommon();
   $("#rs-file").onchange = (e) => e.target.files[0] && uploadFile(e.target.files[0]);
 }
+/* ---------------------------------------------------------------- import: hh.ru / LinkedIn exports */
+
+const IMPORT_HOW = {
+  hh: { name: "hh.ru", steps: [
+    "Откройте hh.ru → «Мои резюме» и нажмите на нужное резюме.",
+    "Справа (на телефоне — внизу или в меню ⋯) нажмите «Скачать».",
+    "Выберите <b>PDF</b> (или «Word» — тоже подойдёт).",
+    "Вернитесь сюда и нажмите «Выбрать файл» ниже.",
+  ], note: "Лучше всего читается PDF. После загрузки проверьте места работы: на hh даты стоят перед компанией, иногда их надо поправить." },
+  li: { name: "LinkedIn (PDF)", steps: [
+    "Откройте свой профиль LinkedIn в браузере (в приложении этой кнопки нет).",
+    "Под фото нажмите «Ещё» (More) → «Сохранить в PDF» (Save to PDF).",
+    "Вернитесь сюда и нажмите «Выбрать файл» ниже.",
+  ], note: "Быстро, но PDF у LinkedIn в две колонки — что-то может встать не туда. Самый точный способ — архив данных." },
+  zip: { name: "LinkedIn (архив)", steps: [
+    "LinkedIn → «Я» (Me) → «Настройки» → «Конфиденциальность данных» (Data privacy).",
+    "«Получить копию данных» (Get a copy of your data) → отметьте «Профиль», «Опыт», «Образование», «Навыки» или всё сразу.",
+    "Нажмите «Запросить архив». Письмо со ссылкой придёт на почту — от 10 минут до суток.",
+    "Скачайте ZIP по ссылке из письма и выберите его здесь, распаковывать не нужно.",
+  ], note: "Самый точный способ: должности, даты, описания, навыки и языки берутся из таблиц как есть." },
+};
+function renderImport() {
+  const k = rs.importTab || "hh", how = IMPORT_HOW[k];
+  $("#rs-body").innerHTML = `${backBtn(rs.data && rs.data.active ? "main" : "start")}
+    <div class="group pad"><h4>📥 Заполнить из hh.ru или LinkedIn</h4>
+    <p class="muted">По ссылке на профиль данные забрать нельзя: hh.ru закрыл доступ для соискателей, LinkedIn без входа ничего не отдаёт. Но оба сайта дают скачать своё резюме — а его я разберу.</p>
+    <div class="seg three" role="group">${Object.entries(IMPORT_HOW).map(([id, x]) => `<button data-itab="${id}" aria-pressed="${id === k}">${x.name}</button>`).join("")}</div>
+    <ol class="steps">${how.steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+    <p class="muted">${how.note}</p>
+    <label class="rs-card"><b>📎 Выбрать файл</b><span>${k === "zip" ? "ZIP из письма LinkedIn" : "PDF, RTF/DOC (Word), DOCX или TXT"}</span>
+      <input type="file" id="imp-file" accept="${k === "zip" ? ".zip,application/zip" : ".pdf,.rtf,.doc,.docx,.txt,application/pdf"}"></label>
+    <p class="muted">Ничего не придумываю: в резюме попадёт только то, что есть в файле. Потом покажу оценку и подскажу, что поправить.</p></div>`;
+  bindCommon();
+  $$("[data-itab]").forEach((b) => (b.onclick = () => { rs.importTab = b.dataset.itab; haptic(); renderImport(); }));
+  $("#imp-file").onchange = (e) => e.target.files[0] && importFile(e.target.files[0]);
+}
+async function importFile(file) {
+  if (file.size > 5 * 1024 * 1024) return fail(new Error("Файл больше 5 МБ."));
+  $("#rs-body").innerHTML = '<div class="empty"><b>Разбираю файл…</b>Раскладываю по разделам и проверяю.</div>';
+  try {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const res = await fetch("/api/resume/import", { method: "POST", headers: { Authorization: "tma " + INIT }, body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Ошибка " + res.status);
+    rs.data = data; rs.blocks = data.blocks; haptic("ok");
+    toast(`Готово: заполнил из ${data.source}. Проверьте строки — нажмите на любую, чтобы поправить`);
+    go("main");
+  } catch (e) { fail(e); renderImport(); }
+}
+
 async function uploadFile(file) {
   $("#rs-body").innerHTML = '<div class="empty"><b>Читаю резюме…</b>Разбираю текст и проверяю.</div>';
   await uploadCv(file);  // app.js: extracts text, builds the search-preset analysis and a new version
@@ -658,6 +711,7 @@ function versionSheet() {
     <p class="lbl">Новая версия</p>
     <div class="rs-start">
       <label class="rs-card"><b>📄 Из файла</b><input type="file" id="vs-file" accept=".pdf,.docx,.txt,.md"></label>
+      <button class="rs-card" id="vs-import"><b>📥 Из hh.ru или LinkedIn</b></button>
       <button class="rs-card" id="vs-wizard"><b>✍️ Собрать с нуля</b></button>
     </div>
     ${a ? `<button class="danger-btn" id="vs-del">Удалить «${esc(a.name)}»</button>` : ""}
@@ -674,7 +728,8 @@ function versionSheet() {
     act({ action: "delete", vid: a.id }, "Версию удалил");
   };
   $("#vs-file").onchange = (e) => { closeSheet(); if (e.target.files[0]) uploadFile(e.target.files[0]); };
-  $("#vs-wizard").onclick = () => { closeSheet(); rs.draft = null; go("wizard"); };
+  $("#vs-import").onclick = () => { closeSheet(); go("import"); };
+  $("#vs-wizard").onclick =() => { closeSheet(); rs.draft = null; go("wizard"); };
 }
 function exportSheet() {
   st.sheet = { export: true };

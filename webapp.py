@@ -247,6 +247,7 @@ class WebApp:
         r.add_post("/api/resume/export", self.api_resume_export)
         r.add_post("/api/resume/design", self.api_resume_design)
         r.add_post("/api/resume/photo", self.api_resume_photo)
+        r.add_post("/api/resume/import", self.api_resume_import)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -874,6 +875,29 @@ class WebApp:
             applied += 1
         resume.save_version(m, resume.markdown_of(bl), vid=meta["id"])
         return web.json_response({"applied": applied, **self.resume_payload(m)})
+
+    async def api_resume_import(self, request):
+        """A file exported from hh.ru / LinkedIn (or any résumé file) -> a new version."""
+        m = self.member(request)
+        try:
+            form = await request.post()
+        except Exception:
+            return self.bad("Файл не дошёл, попробуйте ещё раз")
+        field = form.get("file")
+        if not hasattr(field, "file"):
+            return self.bad("Выберите файл")
+        data = field.file.read(cv_reader.MAX_BYTES + 1)
+        if len(data) > cv_reader.MAX_BYTES:
+            return self.bad("Файл больше 5 МБ. Для LinkedIn выберите в архиве только профиль (быстрый вариант).")
+        try:
+            md, source = await asyncio.get_running_loop().run_in_executor(None, resume.import_file, field.filename, data)
+            first = not resume.load_index(m)["list"]
+            base = {"hh.ru": "С hh.ru", "LinkedIn": "С LinkedIn", "архив LinkedIn": "С LinkedIn"}.get(source, "Загруженное")
+            resume.save_version(m, md, name=resume.unique_name(m, "Основное" if first else base))
+        except ValueError as e:
+            return self.bad(str(e))
+        log.info("resume import for %s: %s, %d chars", m.name, source, len(md))
+        return web.json_response({"source": source, **self.resume_payload(m)})
 
     async def api_resume_design(self, request):
         """Template, colour, photo on/off and photo shape of a version."""
