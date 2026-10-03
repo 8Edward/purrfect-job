@@ -1171,6 +1171,11 @@ class JobRadar:
             log.info("sites for %s: %d new", g.name, len(items))
             if items:
                 await self.notify(g, items)
+        # your companies (co-*) into your feed too; your job boards come via scan.mjs (check_boards)
+        own = {k: v for k, v in listed.items() if guests.is_own_site(k)}
+        items = self.store_for(self.me, guests.match_site_jobs(feed, self.me, own))
+        log.info("sites for %s: %d new of %d companies", self.me.name, len(items), len(self.me.sites(own)) - (guests.HH_ID in self.me.sites(own)))
+        await self.notify(self.me, items)
 
     async def hh_pass(self):
         if not guests.HH_FEED:
@@ -1202,6 +1207,11 @@ class JobRadar:
             log.exception("hh.ru pass failed")
         finally:
             self.hh_busy = False
+
+    async def boards_task(self):
+        """Your job boards (scan.mjs) after a manual refresh in the app; on schedule they run every 2 h."""
+        if self.cfg.get("boards_enabled", True):
+            await self.alert(await self.check(tg=False, web=True, manual=True) or [])
 
     async def sites_task(self):
         if self.sites_busy:

@@ -1566,7 +1566,7 @@ class WebApp:
             async with self.radar.lock:
                 found = (await self.radar.check_pool([m], rescan_days=1))[m.id]
         more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
-        for task in ("hh_task", "sites_task"):
+        for task in ("hh_task", "sites_task") + (("boards_task",) if m.is_owner else ()):
             if hasattr(self.radar, task):
                 asyncio.create_task(getattr(self.radar, task)())
                 more = True
