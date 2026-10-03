@@ -55,7 +55,7 @@ class JobFilter:
     def is_job(self, text):
         if not text or len(text) < self.min_length:
             return False
-        if any(p.search(text) for p in self.negative):
+        if any(p.search(text) for p in self.negative) or looks_like_article(text):
             return False
         return any(p.search(text) for p in self.job) and any(p.search(text) for p in self.role)
 
@@ -63,10 +63,37 @@ class JobFilter:
         """A job post by its own words (вакансия, hiring…), whatever the role: for search."""
         if not text or len(text) < self.min_length or any(p.search(text) for p in self.negative):
             return False
-        return any(p.search(text) for p in self.job)
+        return any(p.search(text) for p in self.job) and not looks_like_article(text)
 
     def tags_for(self, text):
         return [name for name, pats in self.tags.items() if any(p.search(text) for p in pats)]
+
+
+# An article, a market review, a digest of vacancies or a career-advice post mentions «вакансии»,
+# «зарплата», «ищем» too. It is told apart by how it is written, and kept only when it also
+# reads like an actual offer (duties, requirements, how to apply).
+ARTICLE_SIGNS = [re.compile(p, re.IGNORECASE) for p in (
+    r"\(ссылка\)|\bссылка в (комментари|описани)|читать (полностью|далее|статью)|read more|full article",
+    r"медианн\w*|по данным\b|исследовани\w*|опрос\w*|рейтинг\w*|статистик\w*|аналитик\w* (рынка|hh)|\bWEF\b|survey|report shows",
+    r"подборк\w*|дайджест\w*|вакансии недели|топ[- ]\d+|\btop \d+\b|лучших вакансий|обзор рынка",
+    r"\bстать\w*\b|лонгрид|колонк\w*|подкаст|вебинар|эфир\w*|мнение|совет\w* (соискател|кандидат)|как (найти|пройти|составить|написать)",
+    r"професси\w* (будущего|до 20\d\d)|рынок труда|на рынке труда|job market|layoffs|увольнени\w* в",
+)]
+DIGEST_SIGN = re.compile(r"подборк\w* вакансий|дайджест\w* вакансий|вакансии (недели|дня)|лучших вакансий|топ[- ]\d+ вакансий", re.IGNORECASE)
+OFFER_SIGNS = [re.compile(p, re.IGNORECASE) for p in (
+    r"обязанност\w*|чем (предстоит|нужно) заниматься|задачи\s*:|что (делать|нужно делать)|responsibilit\w*|what you.ll do",
+    r"требовани\w*|ожидаем|мы ждём|мы ждем|requirements|you have|must have|qualifications",
+    r"(мы )?предлагаем|условия\s*:|we offer|benefits|компенсаци\w*|оформлени\w*",
+    r"отклик\w*|присыла\w*|пиши(те)? (в|@)|резюме (на|в|присыла)|send (your )?(cv|resume)|\bapply\b|контакт\w*\s*:|@\w{4,}",
+)]
+
+
+def looks_like_article(text):
+    head = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    article = sum(1 for p in ARTICLE_SIGNS if p.search(text)) + (1 if head.rstrip().endswith("?") else 0)
+    article += 2 if DIGEST_SIGN.search(text) else 0  # a list of other people's vacancies
+    offer = sum(1 for p in OFFER_SIGNS if p.search(text))
+    return article >= 2 and offer < 2
 
 
 def fingerprint(text):

@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from telethon import Button, TelegramClient, events, functions, types
 
 import boards
+import extras
 import guests
 import screens
 import tg_collect as tc
@@ -602,6 +603,7 @@ class JobRadar:
         self.sites_busy = False
         self.hh_run = None
         self.hh_busy = False
+        self.daily_run = None
         self.last_seen = {}  # guest id -> time of the last action (anti-flood)
         self.bot_username = None
         self.app_url = None  # the mini app's public address (tunnel.py), None while offline
@@ -894,6 +896,9 @@ class JobRadar:
             if not self.hh_run or now - self.hh_run >= guests.HH_EVERY:
                 self.hh_run = now
                 asyncio.create_task(self.hh_task())
+            if not self.daily_run or now - self.daily_run >= timedelta(minutes=10):
+                self.daily_run = now
+                await self.daily_pass()
             await asyncio.sleep(60)
 
     # ------------------------------------------------------------ messages
@@ -1201,6 +1206,59 @@ class JobRadar:
             log.exception("sites pass failed")
         finally:
             self.sites_busy = False
+
+    # ------------------------------------------------------------ ☀️ morning digest, 📋 tracker reminders
+
+    async def daily_pass(self):
+        """Once a day after 9:00 (the person's time zone): the 5 best new vacancies of the last day.
+        In the daytime: a reminder about responses that have been silent for a week."""
+        people = [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
+        for m in people:
+            try:
+                if extras.digest_due(m, m.load_state()):
+                    m.update_state(digest_date=extras.local_now(m).date().isoformat())
+                    items, total = extras.digest_items(m, m.load_inbox())
+                    log.info("digest for %s: %d of %d", m.name, len(items), total)
+                    if items:
+                        await self.send_screen(*self.digest_screen(items, total), guest=self.g(m))
+                if not 9 <= extras.local_now(m).hour < 22:
+                    continue
+                inbox = m.load_inbox()
+                due = extras.due_reminders(inbox)
+                if due:
+                    for _, item in due:
+                        item["track"]["reminded"] = item["track"]["at"]
+                    m.save_inbox(inbox)
+                    await self.send_screen(*self.reminder_screen(due), guest=self.g(m))
+            except Exception:
+                log.exception("daily pass for %s failed", m.name)
+
+    def digest_screen(self, items, total):
+        lines = [f"☀️ <b>Доброе утро! {len(items)} {plural(len(items), 'лучшая вакансия', 'лучшие вакансии', 'лучших вакансий')} за сутки</b>", ""]
+        for n, (_, item) in enumerate(items, 1):
+            title = esc(short(title_of(item), 60))
+            if item.get("link"):
+                title = f'<a href="{esc(item["link"])}">{title}</a>'
+            extra = [item.get("company") or origin_of(item)]
+            if extras.salary_of(item):
+                extra.append("💰 " + extras.salary_of(item))
+            if item.get("ai"):
+                extra.append(f"✨ {item['ai']['score']}/5")
+            lines.append(f"{n}. {title}\n   <i>{esc(short(' · '.join(x for x in extra if x), 70))}</i>")
+        if total > len(items):
+            lines.append(f"\nВсего новых за сутки: {total}")
+        rows = [[app_button(self.app_url, "📱 Разобрать в приложении")]] if self.app_url else []
+        return "\n".join(lines), rows + [[HOME_BTN]]
+
+    def reminder_screen(self, due):
+        lines = ["⏰ <b>Тишина уже неделю</b>", ""]
+        for _, item in due[:8]:
+            track = item["track"]
+            lines.append(f"• {esc(short(title_of(item), 50))}" + (f" — {esc(short(item.get('company', ''), 30))}" if item.get("company") else "")
+                         + f"\n   <i>{extras.STAGES[track['stage']].lower()}, {extras.silent_days(item)} дн. без новостей</i>")
+        lines.append("\nМожно написать короткое письмо-напоминание или отметить этап: «Ещё → 📋 Мои отклики».")
+        rows = [[app_button(self.app_url, "📋 Открыть отклики")]] if self.app_url else []
+        return "\n".join(lines), rows + [[HOME_BTN]]
 
     # ------------------------------------------------------------ 📡 pool and 🌐 sites: screens
 

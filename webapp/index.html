@@ -19,6 +19,7 @@
       <div class="brand">
         <svg class="mark" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" stroke-width="2" opacity=".35"/><circle cx="17" cy="17" r="8" fill="none" stroke="currentColor" stroke-width="2" opacity=".6"/><path d="M17 17 L29 9" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/><circle cx="24" cy="21" r="2.6" fill="var(--accent)"/></svg>
         <span>Job Radar</span>
+        <button class="icon-btn" id="view-toggle" aria-label="Показать списком">☰</button>
         <button class="icon-btn" id="refresh" aria-label="Обновить сейчас">↻</button>
       </div>
       <div class="hello" id="hello">Загружаю…</div>
@@ -38,6 +39,7 @@
       <button class="chip" data-f="pt" aria-pressed="false">Part-time</button>
     </div>
     <div class="stack" id="stack"></div>
+    <div id="feed-list" hidden></div>
     <div class="left" id="left"></div>
     <div class="acts" id="acts" hidden>
       <button class="act no" id="b-no" aria-label="Скрыть">✕</button>
@@ -78,6 +80,9 @@
         <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
         <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
       </div></div>
+    <div class="group" id="g-tz"><h4>🕒 Часовой пояс</h4>
+      <div class="tg"><span>Скрывать вакансии не под мой пояс<small>где пояс не указан, вакансия остаётся в ленте</small></span><button class="sw" id="tz-on" aria-pressed="false" aria-label="Фильтр по часовому поясу"></button></div>
+      <div class="tzrow"><label>Мой пояс<select class="inp" id="tz-mine"></select></label><label>Разница до<select class="inp" id="tz-spread"></select></label></div></div>
   </section>
 
   <!-- РЕЗЮМЕ -->
@@ -85,6 +90,7 @@
     <h2 class="h2">Резюме</h2>
     <div class="chips" id="rs-versions"></div>
     <div id="rs-body"><div class="skeleton"></div><div class="skeleton"></div></div>
+    <div id="rs-plan"></div>
   </section>
 
   <!-- СОХРАНЁННОЕ -->
@@ -100,7 +106,10 @@
 
   <!-- ЕЩЁ -->
   <section class="screen" id="s-more" hidden>
-    <h2 class="h2">Настройки</h2>
+    <h2 class="h2">Ещё</h2>
+    <div class="group" id="g-track"><h4>📋 Мои отклики</h4><div class="pad" id="track-list"></div>
+      <button class="link block" id="track-add">＋ Добавить отклик вручную</button></div>
+    <div class="group"><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
     <button class="row" id="memo"><b>📖 Памятка</b><span class="m">что это и как работает</span><span class="s">Что уже настроено, как пользоваться, что важно знать</span></button>
     <button class="link block" id="again">Показать обучение снова</button>
@@ -130,5 +139,6 @@
 
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/resume.js?v={{v}}"></script>
+<script src="/static/plan.js?v={{v}}"></script>
 </body>
 </html>

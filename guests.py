@@ -268,7 +268,7 @@ def trim_inbox(inbox):
     extra = len(inbox) - INBOX_CAP
     if extra <= 0:
         return inbox
-    droppable = sorted((k for k, v in inbox.items() if not v.get("fav") and v.get("status") != "taken"),
+    droppable = sorted((k for k, v in inbox.items() if not v.get("fav") and v.get("status") != "taken" and not v.get("track")),
                        key=lambda k: inbox[k].get("date", ""))
     for k in droppable[:extra]:
         del inbox[k]

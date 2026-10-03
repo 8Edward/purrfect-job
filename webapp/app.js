@@ -14,7 +14,9 @@ const SKINS = {
   tropic: { name: "Тропики", bg: "#e6f4ef", colors: ["#e6f4ef", "#0f3b37", "#ff6650"] },
 };
 const MATCH = { exact: "точно" };
-const st = { me: null, feed: [], filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null };
+const st = { me: null, feed: [], filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
+try { if (localStorage.getItem("jr-feed") === "list") st.view = "list"; } catch (e) { /* blocked */ }
+const STAGES = { applied: "Откликнулся", test: "Тестовое", interview: "Собеседование", offer: "Оффер", rejected: "Отказ" };
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -69,8 +71,13 @@ const kindOf = (i) => (i.source === "tg" ? "tg" : i.origin === "hh.ru" ? "hh" : 
 const originOf = (i) => (i.source === "tg" ? "💬 " + i.origin : i.origin === "hh.ru" ? "hh.ru" : "🌐 " + i.origin);
 const tagsHtml = (tags) => (tags || []).map((t) =>
   `<span class="tag${t === "ru-company" ? " ru" : ""}">#${esc(t.replace(/-/g, "_"))}</span>`).join("");
-const realComp = (c) => c && !/^не указан/i.test(c);
-const metaHtml = (i) => [i.location && "📍 " + i.location, realComp(i.comp) && "💰 " + i.comp].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
+const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
+const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin).join(", ")}` : "");
+function aiLine(i) {
+  if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
+  if (st.scoring.has(i.key)) return '<div class="ai busy">✨ ИИ оценивает…</div>';
+  return st.me && st.me.ai ? '<button class="ai-btn" data-score>✨ Оценить ИИ: подходит ли мне</button>' : "";
+}
 function openLink(url) {
   if (!url) return;
   if (tg && /^https:\/\/t\.me\//.test(url)) tg.openTelegramLink(url);
@@ -113,7 +120,9 @@ async function loadMe() {
   $("#badge").textContent = s.new > 99 ? "99+" : s.new;
 }
 async function loadFeed() {
-  st.feed = (await api("/api/jobs?view=new")).items;
+  const d = await api("/api/jobs?view=new");
+  st.feed = d.items;
+  st.tzHidden = d.tz_hidden || 0;
   renderStack();
 }
 function keep(i) {
@@ -123,31 +132,71 @@ function keep(i) {
 }
 function renderStack() {
   const items = st.feed.filter(keep), box = $("#stack");
+  const list = st.view === "list";
+  $("#view-toggle").textContent = list ? "🃏" : "☰";
+  $("#view-toggle").setAttribute("aria-label", list ? "Показать карточками" : "Показать списком");
+  box.hidden = list;
+  $("#feed-list").hidden = !list;
+  if (list) {
+    $("#acts").hidden = true;
+    $("#left").textContent = items.length ? `Всего ${items.length} · тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "") : "";
+    renderList(items);
+    if (items.length) return;
+    box.hidden = false;
+  }
   if (!items.length) {
     const filtered = st.feed.length && st.filter !== "all";
     box.innerHTML = `<div class="empty"><b>${filtered ? "Тут пусто" : "Всё разобрано"}</b>${filtered
       ? "С этим фильтром новых нет."
-      : "Новые вакансии появятся после следующей проверки."}<br><button class="link" id="empty-act">${filtered ? "Показать все" : "Проверить сейчас"}</button></div>`;
+      : "Новые вакансии появятся после следующей проверки."}${st.tzHidden ? `<br>Не под ваш часовой пояс скрыто: ${st.tzHidden}.` : ""}<br><button class="link" id="empty-act">${filtered ? "Показать все" : "Проверить сейчас"}</button></div>`;
     $("#empty-act").onclick = filtered ? () => setFilter("all") : refresh;
     $("#left").textContent = "";
     $("#acts").hidden = true;
     return;
   }
   $("#acts").hidden = false;
-  $("#left").textContent = `Ещё ${items.length} · вправо — в работу, влево — скрыть, тап — подробно`;
+  $("#left").textContent = `Ещё ${items.length} · вправо — в работу, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "");
   box.innerHTML = items.slice(0, 3).reverse().map((i, n, arr) => {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
       <span class="verdict yes">В РАБОТУ</span><span class="verdict no">СКРЫТЬ</span>
       <div class="src"><span>${esc(originOf(i))}</span><span>${esc(when(i.date))}${i.fav ? " · ★" : ""}</span></div>
       <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
-      <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>
+      <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>${aiLine(i)}
+      ${i.also ? `<div class="also">${esc(alsoText(i))}</div>` : ""}
       <p>${esc(i.text || "Полное описание на сайте.")}</p><span class="more">Подробнее →</span></article>`;
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
 }
 const byKey = (key) => st.feed.find((i) => i.key === key);
+
+/* the whole feed as a scrolling list (the other view of the same vacancies) */
+function renderList(items) {
+  const box = $("#feed-list");
+  box.innerHTML = items.map((i, n) => {
+    const facts = [i.company, originOf(i), when(i.date)].filter(Boolean).join(" · ");
+    const extra = [i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz, i.also && "＋" + i.also.length].filter(Boolean).join(" · ");
+    return `<div class="lrow" data-n="${n}"><button class="lmain" data-open="${n}"><b>${esc(i.title)}${i.fav ? " ★" : ""}</b>
+      <span class="s">${esc(facts)}</span>${extra ? `<span class="s x">${esc(extra)}</span>` : ""}
+      ${i.ai ? `<span class="sc">✨ ${i.ai.score}</span>` : ""}</button>
+      <span class="lacts"><button class="no" data-no="${n}" aria-label="Скрыть">✕</button><button class="yes" data-yes="${n}" aria-label="В работу">✓</button></span></div>`;
+  }).join("");
+  $$("[data-open]", box).forEach((b) => (b.onclick = () => openSheet(items[+b.dataset.open], false)));
+  $$("[data-yes]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.yes], true, b.closest(".lrow"))));
+  $$("[data-no]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.no], false, b.closest(".lrow"))));
+}
+async function quick(item, yes, row) {
+  haptic(yes ? "ok" : "medium");
+  if (row) row.classList.add(yes ? "gone-yes" : "gone-no");
+  st.feed = st.feed.filter((i) => i !== item);
+  setTimeout(renderStack, 180);
+  try {
+    const d = await api(`/api/jobs/${encodeURIComponent(item.key)}/${yes ? "take" : "hide"}`, {});
+    toast(d.note);
+    loadMe().catch(() => {});
+  } catch (e) { fail(e); loadFeed().catch(() => {}); }
+}
 function topCard() { return $("#stack .card:last-child"); }
 
 async function decide(card, yes) {
@@ -164,8 +213,8 @@ async function decide(card, yes) {
   } catch (e) { fail(e); loadFeed().catch(() => {}); }
 }
 function drag(card) {
-  let x0 = null, y0 = 0, dx = 0;
-  card.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; dx = 0; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
+  let x0 = null, y0 = 0, dx = 0, down = null;
+  card.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; dx = 0; down = e.target; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
   card.addEventListener("pointermove", (e) => {
     if (x0 === null) return;
     dx = e.clientX - x0;
@@ -181,7 +230,10 @@ function drag(card) {
     if (Math.abs(dx) > 90) return decide(card, dx > 0);
     card.style.transform = "";
     $$(".verdict", card).forEach((v) => (v.style.opacity = 0));
-    if (tap && e.type === "pointerup") openSheet(byKey(card.dataset.key), false);
+    if (tap && e.type === "pointerup") {
+      if (down && down.closest && down.closest("[data-score]")) scoreJob(byKey(card.dataset.key));
+      else openSheet(byKey(card.dataset.key), false);
+    }
   };
   card.addEventListener("pointerup", end);
   card.addEventListener("pointercancel", end);
@@ -228,6 +280,10 @@ function renderSheet() {
     <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
     <div class="meta">${metaHtml(i)}</div><div class="tags" style="margin-top:8px">${tagsHtml(i.tags)}</div>
     ${status ? `<div class="status">${status}</div>` : ""}
+    ${aiBox(i)}
+    ${i.also ? `<div class="also">Эта же вакансия ещё в: ${i.also.map((a, n) => a.link ? `<button class="link" data-also="${n}">${esc(a.origin)}</button>` : esc(a.origin)).join(", ")}</div>` : ""}
+    <div class="track"><div class="lbl">📋 Мой отклик${i.silent >= 7 ? ` · <span class="warn">⏰ тишина ${i.silent} дн.</span>` : ""}</div><div class="chiprow">${[["", "—"], ...Object.entries(STAGES)].map(([k, v]) =>
+      `<button class="stage" data-stage="${k}" aria-pressed="${((i.track && i.track.stage) || "") === k}">${v}</button>`).join("")}</div></div>
     <div class="body">${esc(i.text || "Полное описание на сайте: кнопка ниже.")}</div>
     <div class="btns">
       ${fresh ? `<button class="yes" data-a="take">✓ В работу</button><button data-a="hide">✕ Скрыть</button>` : ""}
@@ -236,10 +292,106 @@ function renderSheet() {
       ${i.link ? `<button data-a="open" class="${fresh ? "" : "wide"}">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
     </div>`;
   $$("#sheet [data-a]").forEach((b) => (b.onclick = () => sheetAction(b.dataset.a)));
+  $$("#sheet [data-stage]").forEach((b) => (b.onclick = () => setStage(st.sheet.item, b.dataset.stage)));
+  $$("#sheet [data-also]").forEach((b) => (b.onclick = () => openLink(i.also[+b.dataset.also].link)));
+}
+function aiBox(i) {
+  if (i.ai) {
+    return `<div class="aibox"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}${i.ai.thin ? " <small>(оценка по названию: полный текст не подтянулся)</small>" : ""}
+      <ul>${(i.ai.pros || []).map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${(i.ai.cons || []).map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>
+      <button class="link" data-a="score">Оценить заново</button></div>`;
+  }
+  if (st.scoring.has(i.key)) return '<div class="aibox busy">✨ ИИ сравнивает вакансию с вашим резюме…</div>';
+  return st.me && st.me.ai ? '<button class="ai-btn" data-a="score">✨ Оценить ИИ: подходит ли мне</button>' : "";
+}
+
+/* ---------------------------------------------------------------- ✨ AI score of a vacancy */
+
+async function waitJob(job) {
+  for (let n = 0; n < 160; n++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const j = await api("/api/resume/ai/" + job);
+    if (j.status === "done") return j.result;
+    if (j.status === "error") throw new Error(j.error);
+  }
+  throw new Error("ИИ не ответил. Попробуйте позже.");
+}
+function patchItem(key, fields) {
+  const fix = (i) => (i.key === key ? { ...i, ...fields } : i);
+  st.feed = st.feed.map(fix);
+  st.results = st.results.map(fix);
+  if (st.sheet && st.sheet.item && st.sheet.item.key === key) { st.sheet.item = { ...st.sheet.item, ...fields }; renderSheet(); }
+  renderStack();
+}
+async function scoreJob(item) {
+  if (!item || st.scoring.has(item.key)) return;
+  st.scoring.add(item.key);
+  patchItem(item.key, {});
+  haptic();
+  try {
+    const d = await api("/api/score", { key: item.key });
+    if (d.queued) toast("ИИ занят другой задачей: поставил в очередь");
+    const ai = await waitJob(d.job);
+    st.scoring.delete(item.key);
+    patchItem(item.key, { ai });
+    haptic("ok");
+  } catch (e) { st.scoring.delete(item.key); patchItem(item.key, {}); fail(e); }
+}
+
+/* ---------------------------------------------------------------- 📋 my responses (tracker) */
+
+async function setStage(item, stage) {
+  try {
+    const d = await api("/api/track", { key: item.key, stage });
+    haptic("ok");
+    toast(stage ? "Этап: " + STAGES[stage] : "Убрал из откликов");
+    st.feed = st.feed.filter((i) => i.key !== item.key || d.item.status === "new");
+    if (st.sheet && st.sheet.item) { st.sheet.item = { ...st.sheet.item, ...d.item, text: st.sheet.item.text, also: st.sheet.item.also }; renderSheet(); }
+    renderStack();
+    if (!$("#s-more").hidden) loadTrack();
+    loadMe().catch(() => {});
+  } catch (e) { fail(e); }
+}
+async function loadTrack() {
+  const box = $("#track-list");
+  try {
+    const d = await api("/api/track");
+    const order = Object.keys(STAGES);
+    const items = d.items.sort((a, b) => order.indexOf(a.track.stage) - order.indexOf(b.track.stage));
+    const row = (i, n, list) => `<button class="row" data-list="${list}" data-n="${n}"><b>${esc(i.title)}</b>
+      <span class="m${i.silent >= 7 ? " warn" : ""}">${i.track ? esc(STAGES[i.track.stage]) + (i.silent >= 7 ? " · ⏰ " + i.silent + " дн." : "") : "отметить"}</span>
+      <span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`;
+    const counts = order.map((k) => [k, items.filter((i) => i.track.stage === k).length]).filter(([, n]) => n);
+    box.innerHTML = (counts.length ? `<div class="hint">${counts.map(([k, n]) => `${STAGES[k]}: <b>${n}</b>`).join(" · ")}</div>` : "")
+      + (items.length ? items.map((i, n) => row(i, n, "t")).join("")
+        : '<div class="hint">Пока пусто. Откройте вакансию и отметьте этап внизу карточки: «Откликнулся», «Тестовое»… Если неделю нет новостей, бот напомнит.</div>')
+      + (d.taken.length ? `<div class="lbl">В работе, без отметки</div>${d.taken.map((i, n) => row(i, n, "k")).join("")}` : "");
+    $$(".row", box).forEach((r) => (r.onclick = () => openSheet((r.dataset.list === "t" ? items : d.taken)[+r.dataset.n], false)));
+  } catch (e) { box.innerHTML = ""; fail(e); }
+}
+function addTrackSheet() {
+  st.sheet = { form: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>＋ Отклик вручную</h3>
+    <p class="hint" style="font-size:14px">Если откликнулись не из ленты: на сайте, по почте, через знакомых.</p>
+    <label class="fld"><span>Должность *</span><input class="inp" id="ta-title" maxlength="120" placeholder="Data Analyst"></label>
+    <label class="fld"><span>Компания</span><input class="inp" id="ta-company" maxlength="80"></label>
+    <label class="fld"><span>Ссылка на вакансию</span><input class="inp" id="ta-link" maxlength="500" placeholder="https://…"></label>
+    <label class="fld"><span>Этап</span><select class="inp" id="ta-stage">${Object.entries(STAGES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
+    <div class="btns"><button class="yes" id="ta-save">Добавить</button><button id="ta-cancel">Отмена</button></div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  $("#ta-cancel").onclick = closeSheet;
+  $("#ta-save").onclick = async () => {
+    try {
+      await api("/api/track/add", { title: $("#ta-title").value, company: $("#ta-company").value, link: $("#ta-link").value, stage: $("#ta-stage").value });
+      haptic("ok"); toast("Добавил в отклики"); closeSheet(); loadTrack();
+    } catch (e) { fail(e); }
+  };
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
 }
 async function sheetAction(action) {
   const { item, viaSearch } = st.sheet;
   if (action === "open") return openLink(item.link);
+  if (action === "score") return scoreJob(item);
   try {
     const path = viaSearch ? `/api/search/${encodeURIComponent(item.key)}/${action}` : `/api/jobs/${encodeURIComponent(item.key)}/${action}`;
     const d = await api(path, {});
@@ -360,6 +512,12 @@ async function loadSources(data) {
   $("#hhq").value = s.hh.query;
   $("#hh-remote").setAttribute("aria-pressed", s.hh.remote);
   $("#hh-box").hidden = !s.sites.some((x) => x.id === "hh" && x.on);
+  const tz = s.tz, offs = [];
+  for (let h = -12; h <= 14; h++) { offs.push(h); if (h === 3 || h === 5 || h === 9) offs.push(h + 0.5); }
+  const utc = (o) => "UTC" + (o >= 0 ? "+" : "−") + Math.trunc(Math.abs(o)) + (o % 1 ? ":30" : "");
+  $("#tz-on").setAttribute("aria-pressed", tz.on);
+  $("#tz-mine").innerHTML = offs.map((o) => `<option value="${o}" ${o === tz.mine ? "selected" : ""}>${utc(o)}</option>`).join("");
+  $("#tz-spread").innerHTML = [1, 2, 3, 4, 6, 8].map((n) => `<option value="${n}" ${n === tz.spread ? "selected" : ""}>±${n} ч</option>`).join("");
 }
 async function change(body, note) {
   try {
@@ -520,7 +678,13 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 <li><b>Поиск 🎯 Точно:</b> ищет фразу один в один, например «бизнес аналитик».</li>
 <li><b>Поиск 🕸 Похожие:</b> добавляет синонимы и смежные роли по графу. Лишнюю роль можно выключить нажатием.</li>
 <li><b>Мои:</b> избранное, взятое в работу и скрытое (его можно вернуть).</li>
-<li><b>↻</b> на главной: проверить каналы прямо сейчас.</li>
+<li><b>↻</b> на главной: проверить каналы прямо сейчас. <b>☰</b> рядом: вся лента списком, а не карточками.</li>
+<li><b>✨ Оценить ИИ</b> на карточке: насколько вакансия подходит именно вам (1–5) и почему. Сравнивает с вашим резюме.</li>
+<li><b>💰 и 🕒</b> на карточке: зарплата и часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну.</li>
+<li><b>📋 Мои отклики</b> во «Ещё»: отмечайте этапы (откликнулся, тестовое, собеседование, оффер, отказ). Если неделю тишина, бот напомнит.</li>
+<li><b>☀️ Утренняя сводка</b>: в 9:00 по вашему поясу бот пришлёт 5 лучших вакансий за сутки. Выключается во «Ещё».</li>
+<li><b>🕒 Часовой пояс</b> в «Поиск → Что попадает в ленту»: скрывать вакансии, которым нужен далёкий от вас пояс.</li>
+<li><b>🧭 Карьерный план</b> в «Резюме»: цель (грейд, роль, направление), и ИИ по резюме распишет шаги.</li>
 </ul>
 <h4>Важно знать</h4>
 <ul>
@@ -593,11 +757,20 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); }
+  if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
 }
 $$(".nav button").forEach((b) => (b.onclick = () => { haptic(); show(b.dataset.s); }));
 $$("#filters .chip").forEach((c) => (c.onclick = () => { haptic(); setFilter(c.dataset.f); }));
+$("#view-toggle").onclick = () => {
+  st.view = st.view === "list" ? "cards" : "list";
+  try { localStorage.setItem("jr-feed", st.view); } catch (e) { /* blocked */ }
+  haptic();
+  toast(st.view === "list" ? "Лента списком" : "Лента карточками");
+  renderStack();
+};
 $$("#s-saved .seg button").forEach((b) => (b.onclick = () => { st.saved = b.dataset.v; loadSaved(); }));
 $("#b-yes").onclick = () => topCard() && decide(topCard(), true);
 $("#b-no").onclick = () => topCard() && decide(topCard(), false);
@@ -628,6 +801,21 @@ $("#ch-add").onsubmit = (e) => {
 };
 $("#hh-form").onsubmit = (e) => { e.preventDefault(); change({ type: "hh", query: $("#hhq").value }, "Запрос для hh.ru сохранён"); };
 $("#hh-remote").onclick = () => change({ type: "hh", remote: $("#hh-remote").getAttribute("aria-pressed") !== "true" });
+const tzChange = (body) => change(body).then(() => Promise.all([loadFeed(), loadMe()])).catch(() => {});
+$("#tz-on").onclick = () => tzChange({ type: "tz", on: $("#tz-on").getAttribute("aria-pressed") !== "true" });
+$("#tz-mine").onchange = () => tzChange({ type: "tz", mine: +$("#tz-mine").value });
+$("#tz-spread").onchange = () => tzChange({ type: "tz", spread: +$("#tz-spread").value });
+$("#track-add").onclick = addTrackSheet;
+$("#digest").onclick = async () => {
+  const on = $("#digest").getAttribute("aria-pressed") !== "true";
+  try {
+    await api("/api/settings", { digest: on });
+    st.me.digest = on;
+    $("#digest").setAttribute("aria-pressed", on);
+    haptic();
+    toast(on ? "Сводка по утрам включена" : "Сводка выключена");
+  } catch (e) { fail(e); }
+};
 $("#again").onclick = showOnboarding;
 $("#memo").onclick = showMemo;
 $("#reset").onclick = showReset;

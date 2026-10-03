@@ -27,6 +27,7 @@ from aiohttp import web
 from telethon import utils
 
 import cv_reader
+import extras
 import guests
 import resume
 import resume_ai
@@ -169,7 +170,36 @@ def item_json(key, item, full=False):
         "fav": bool(item.get("fav")),
         "tags": item.get("tags", []),
         "text": excerpt(item.get("text", ""), 4000 if full else 600),
+        "salary": extras.salary_of(item),
+        "tz": extras.tz_label(item),
+        "ai": item.get("ai"),
+        "track": item.get("track"),
+        "silent": extras.silent_days(item),
     }
+
+
+def grouped_json(pairs):
+    """Vacancies with duplicates merged: one card, the other sources listed under «also»."""
+    out = []
+    for g in extras.groups(pairs):
+        (key, item), rest = g[0], g[1:]
+        data = item_json(key, item)
+        if rest:
+            data["also"] = [{"key": k, "origin": extras.origin(v), "source": "web" if v.get("source") == "web" else "tg",
+                             "link": v.get("link", "")} for k, v in rest]
+            if not data["ai"]:
+                data["ai"] = next((v["ai"] for _, v in rest if v.get("ai")), None)
+        out.append(data)
+    return out
+
+
+def feed_pairs(m, inbox):
+    """The «new» feed: newest first, the person's time zone filter applied. -> (pairs, filtered out)"""
+    tz = extras.tz_settings(m)
+    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new"), key=lambda kv: kv[1]["date"], reverse=True)
+    new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
+    keep = [(k, v) for k, v in new if extras.tz_fits(v, tz)]
+    return keep, len(new) - len(keep)
 
 
 def searchable(job):
@@ -227,6 +257,12 @@ class WebApp:
         r.add_post("/api/sources", self.api_sources_change)
         r.add_post("/api/settings", self.api_settings)
         r.add_post("/api/refresh", self.api_refresh)
+        r.add_post("/api/score", self.api_score)
+        r.add_get("/api/track", self.api_track)
+        r.add_post("/api/track", self.api_track_set)
+        r.add_post("/api/track/add", self.api_track_add)
+        r.add_get("/api/plan", self.api_plan)
+        r.add_post("/api/plan", self.api_plan_make)
         r.add_get("/api/cv", self.api_cv)
         r.add_post("/api/cv", self.api_cv_upload)
         r.add_post("/api/cv/apply", self.api_cv_apply)
@@ -309,8 +345,10 @@ class WebApp:
             "owner": m.is_owner,
             "skin": state.get("skin") if state.get("skin") in SKINS else None,
             "onboarded": bool(state.get("app_onboarded")),
+            "digest": not state.get("digest_off"),
+            "ai": resume_ai.allowed(m),
             "stats": {
-                "new": sum(1 for i in inbox.values() if i["status"] == "new"),
+                "new": len(extras.groups(feed_pairs(m, inbox)[0])),
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
                 "fav": sum(1 for i in inbox.values() if i.get("fav")),
                 "hidden": sum(1 for i in inbox.values() if i["status"] == "hidden"),
@@ -323,10 +361,14 @@ class WebApp:
 
     async def api_jobs(self, request):
         m = self.member(request)
-        keep = VIEWS.get(request.query.get("view", "new"), VIEWS["new"])
+        view = request.query.get("view", "new")
+        keep = VIEWS.get(view, VIEWS["new"])
         inbox = m.load_inbox()
-        items = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True)
-        return web.json_response({"items": [item_json(k, v) for k, v in items[:300]]})
+        if view == "new" or view not in VIEWS:
+            items, tz_hidden = feed_pairs(m, inbox)
+        else:
+            items, tz_hidden = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True), 0
+        return web.json_response({"items": grouped_json(items[:400])[:300], "tz_hidden": tz_hidden})
 
     async def api_job(self, request):
         m = self.member(request)
@@ -345,6 +387,10 @@ class WebApp:
         if not item:
             raise web.HTTPNotFound(text='{"error": "Вакансия не найдена"}', content_type="application/json")
         changed, note = guests.job_action(m, key, item, action)
+        if changed and action in ("take", "hide", "restore"):  # the same vacancy from other sources goes along
+            for twin in extras.twins_of(inbox, key):
+                if inbox[twin]["status"] != item["status"] and (action == "restore" or inbox[twin]["status"] == "new"):
+                    inbox[twin]["status"] = item["status"]
         if changed:
             m.save_inbox(inbox)
         return web.json_response({"ok": changed, "note": note, "item": item_json(key, item)})
@@ -506,6 +552,7 @@ class WebApp:
             "sites": [{"id": pid, "name": name, "on": pid in mine} for pid, name in listed.items()],
             "hh": guests.hh_settings(m),
             "words": {g: [guests.plain(p) for p in kw.get(g, [])] for g in ("role", "negative")},
+            "tz": extras.tz_settings(m),
         })
 
     async def api_sources_change(self, request):
@@ -538,6 +585,11 @@ class WebApp:
             if "remote" in data:
                 fields["remote"] = bool(data["remote"])
             guests.set_hh(m, **fields)
+        elif kind == "tz":
+            try:
+                extras.set_tz(m, **{k: data[k] for k in ("on", "mine", "spread") if k in data})
+            except (TypeError, ValueError):
+                raise web.HTTPBadRequest(text='{"error": "Не понял часовой пояс"}', content_type="application/json")
         elif kind == "words" and data.get("group") in ("role", "negative"):
             search = m.load_search()
             if data.get("add"):
@@ -567,6 +619,8 @@ class WebApp:
             fields["skin"] = data["skin"]
         if data.get("onboarded"):
             fields["app_onboarded"] = True
+        if "digest" in data:
+            fields["digest_off"] = not data["digest"]
         if fields:
             m.update_state(**fields)
         return web.json_response({"ok": True, **fields})
@@ -953,6 +1007,157 @@ class WebApp:
             log.exception("export to %s failed", m.id)
             return self.bad("Не получилось отправить файл в чат. Откройте чат с ботом и нажмите Start.", 500)
         return web.json_response({"ok": True, "format": fmt})
+
+    # -- ✨ vacancy score, 📋 application tracker, 🧭 career plan (extras.py)
+
+    def new_ai_job(self, m, op, **extra):
+        for jid in [j for j, v in self.ai_jobs.items() if time.time() - v["started"] > 3600]:
+            del self.ai_jobs[jid]
+        jid = secrets.token_hex(6)
+        self.ai_jobs[jid] = {"member": m.id, "op": op, "status": "running", "started": time.time(), **extra}
+        return jid
+
+    async def run_ai_job(self, jid, m, work):
+        """Run `work()` (a coroutine giving the result) as a job the page polls."""
+        job = self.ai_jobs[jid]
+        try:
+            job.update(status="done", result=await work())
+            self.ai.checked = (time.monotonic(), None)
+        except RuntimeError as e:
+            if str(e) in ("login", "missing"):
+                self.ai.checked = (time.monotonic(), str(e))
+            job.update(status="error", error=resume_ai.human_error(e))
+            log.warning("ai %s for %s failed: %s", job["op"], m.name, e)
+        except ValueError as e:
+            job.update(status="error", error=str(e))
+        except Exception:
+            log.exception("ai %s for %s crashed", job["op"], m.name)
+            job.update(status="error", error="Что-то пошло не так. Подробности в логе бота.")
+
+    def running(self, m, op):
+        return [j for j in self.ai_jobs.values() if j["member"] == m.id and j["op"] == op and j["status"] == "running"]
+
+    async def api_score(self, request):
+        """✨ How well one vacancy fits the person (1–5 and why), by Claude on the owner's subscription."""
+        m = self.member(request)
+        key = str((await self.body(request)).get("key") or "")
+        if not resume_ai.allowed(m):
+            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        if not item:
+            return self.bad("Вакансия не найдена", 404)
+        same = next((j for j, v in self.ai_jobs.items() if v["member"] == m.id and v.get("key") == key and v["status"] == "running"), None)
+        if same:
+            return web.json_response({"job": same, "queued": True})
+        if extras.scores_left(m) <= 0:
+            return self.bad("Оценки ИИ на сегодня закончились. Завтра снова можно.", 429)
+        if not extras.candidate_text(m):
+            return self.bad("Чтобы ИИ сравнил вакансию с вашим опытом, добавьте резюме во вкладке «▤ Резюме».")
+        if len(self.running(m, "score")) >= 3:
+            return self.bad("ИИ уже оценивает три вакансии — подождите их.", 409)
+        jid = self.new_ai_job(m, "score", key=key)
+
+        async def work():
+            thin = False
+            try:
+                text = await self.vacancy_text(m, {"job_key": key})
+            except ValueError:
+                text, thin = item.get("text") or "", True
+            head = "\n".join(f"{k}: {v}" for k, v in (("Title", item.get("title")), ("Company", item.get("company")),
+                                                       ("Location", item.get("location")), ("Pay", extras.salary_of(item))) if v)
+            answer = await self.ai.ask(extras.SCORE_RULES, extras.score_prompt(m, item, head + "\n\n" + text, thin))
+            result = dict(extras.parse_score(answer), thin=thin)
+            inbox = m.load_inbox()
+            if key in inbox:
+                inbox[key]["ai"] = result
+                m.save_inbox(inbox)
+            extras.count_score(m)
+            log.info("ai score for %s: %s %s", m.name, key, result["score"])
+            return result
+        asyncio.create_task(self.run_ai_job(jid, m, work))
+        return web.json_response({"job": jid, "queued": self.ai.lock.locked(), "left": extras.scores_left(m)})
+
+    async def api_track(self, request):
+        m = self.member(request)
+        inbox = m.load_inbox()
+        tracked = sorted(((k, v) for k, v in inbox.items() if v.get("track")), key=lambda kv: kv[1]["track"].get("at", ""), reverse=True)
+        taken = sorted(((k, v) for k, v in inbox.items() if v["status"] == "taken" and not v.get("track")),
+                       key=lambda kv: kv[1]["date"], reverse=True)
+        return web.json_response({"items": [item_json(k, v) for k, v in tracked],
+                                  "taken": grouped_json(taken[:80])[:60], "stages": extras.STAGES})
+
+    async def api_track_set(self, request):
+        """{key, stage, note}: move a vacancy along «Мои отклики»; stage "" takes it off."""
+        m = self.member(request)
+        data = await self.body(request)
+        key = str(data.get("key") or "")
+        inbox = m.load_inbox()
+        if key not in inbox and key in self.results.get(m.id, {}):
+            inbox[key] = guests.to_item(self.results[m.id][key])
+            inbox[key]["via"] = "search"
+        item = inbox.get(key)
+        if not item:
+            return self.bad("Вакансия не найдена", 404)
+        try:
+            if data.get("stage") and item["status"] != "taken":
+                item["status"] = "new"
+                guests.job_action(m, key, item, "take")
+            extras.set_stage(item, data.get("stage") or None, data.get("note"))
+        except ValueError as e:
+            return self.bad(str(e))
+        m.save_inbox(inbox)
+        return web.json_response({"ok": True, "item": item_json(key, item)})
+
+    async def api_track_add(self, request):
+        """A response sent somewhere else (not from the feed), typed by hand."""
+        m = self.member(request)
+        data = await self.body(request)
+        try:
+            key, item = extras.manual_item(data.get("title"), data.get("company"), data.get("link"), data.get("note"))
+            extras.set_stage(item, data.get("stage") or "applied")
+        except ValueError as e:
+            return self.bad(str(e))
+        inbox = m.load_inbox()
+        inbox[key] = item
+        m.save_inbox(inbox)
+        return web.json_response({"ok": True, "item": item_json(key, item)})
+
+    async def api_plan(self, request):
+        m = self.member(request)
+        return web.json_response({"plan": m.load_state().get("career_plan"), "goals": extras.GOALS})
+
+    async def api_plan_make(self, request):
+        """🧭 Career plan from a résumé version and a goal (grade up / new role / new field)."""
+        m = self.member(request)
+        data = await self.body(request)
+        goal, target = data.get("goal"), re.sub(r"\s+", " ", str(data.get("target") or "")).strip()[:120]
+        if goal not in extras.GOALS:
+            return self.bad("Выберите цель")
+        if goal != "grade" and len(target) < 3:
+            return self.bad("Напишите, куда хотите перейти: роль или направление.")
+        if not resume_ai.allowed(m):
+            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+        if resume_ai.uses_left(m) <= 0:
+            return self.bad("ИИ на сегодня всё: дневной лимит исчерпан. Завтра снова можно.", 429)
+        if self.running(m, "plan"):
+            return self.bad("План уже составляется — подождите.", 409)
+        try:
+            meta, md = resume.get_version(m, data.get("vid"))
+        except ValueError:
+            return self.bad("Сначала добавьте резюме: план строится по нему.")
+        if len(md.strip()) < 200:
+            return self.bad("В резюме слишком мало текста для плана.")
+        jid = self.new_ai_job(m, "plan")
+
+        async def work():
+            plan = extras.parse_plan(await self.ai.ask(extras.PLAN_RULES, extras.plan_prompt(md, goal, target)), md)
+            plan.update(goal=goal, goal_text=target, version=meta["name"], at=extras.now().isoformat(timespec="seconds"))
+            m.update_state(career_plan=plan)
+            resume_ai.count_use(m)
+            log.info("career plan for %s: %s %r", m.name, goal, target)
+            return plan
+        asyncio.create_task(self.run_ai_job(jid, m, work))
+        return web.json_response({"job": jid, "queued": self.ai.lock.locked()})
 
     async def api_reset(self, request):
         """«Начать заново». The page asks first; the word "reset" here is a second guard
