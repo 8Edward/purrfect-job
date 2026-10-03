@@ -445,5 +445,6 @@ html[data-skin="tropic"] .lrow { border-radius: 18px; }
 html[data-skin="tropic"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big, #be-text, .card .ai, .aibox, .skeleton, .stat, .lrow, .verdict) { border-radius: 18px; }
 .remark .rfix { display: flex; flex-wrap: wrap; gap: 6px; }
 .remark li[data-ex] { cursor: pointer; }
-.remark li .go { opacity: .7; font-size: 11px; }
+.remark li[data-ex] { text-decoration: underline dotted; text-underline-offset: 3px; }
+.remark li .ex-pen { font-size: 11px; text-decoration: none; display: inline; }
 .rs-design .twobtn button:disabled { opacity: .45; }

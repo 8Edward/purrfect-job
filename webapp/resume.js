@@ -198,8 +198,8 @@ function renderMain() {
     ${doc.remarks.length ? `<div class="rs-remarks">${remarks.map((r, ri) => `<div class="remark ${r.level}">
         <div class="rh"><i></i><b>${esc(r.title)}</b><small>${LEVEL[r.level]}</small></div>
         <p>${esc(r.detail)}</p>
-        ${r.examples.length ? `<ul>${r.examples.map((x, n) => `<li data-ex="${ri}:${n}" title="Поправить эту строку">${esc(x.length > 110 ? x.slice(0, 110) + "…" : x)} <span class="go">✏️</span></li>`).join("")}</ul>` : ""}
-        <div class="rfix">${r.ai ? aiBtn(r.ai, r.ai === "summary" ? "✨ Написать с ИИ" : "✨ Исправить с ИИ", `data-focus="${esc(r.title)}"`) : ""}<button class="rs-act" data-hand="${ri}">✏️ Поправить вручную</button></div>
+        ${r.examples.length ? `<ul>${r.examples.map((x, n) => `<li data-ex="${ri}:${n}" title="Поправить эту строку">${esc(x.length > 110 ? x.slice(0, 110) + "…" : x)} <span class="ex-pen">✏️</span></li>`).join("")}</ul>` : ""}
+        <div class="rfix">${r.ai ? aiBtn(r.ai, r.ai === "summary" ? "✨ Написать с ИИ" : "✨ Исправить с ИИ", `data-focus="${esc(r.title)}"`) : ""}${r.examples.length ? "" : `<button class="rs-act" data-hand="${ri}">✏️ Поправить вручную</button>`}</div>
       </div>`).join("")}
       ${doc.remarks.length > 3 ? `<button class="link" id="rs-all">${rs.showAll ? "Свернуть" : `Показать все замечания (${doc.remarks.length})`}</button>` : ""}</div>`
       : `<p class="hint">Замечаний нет — резюме в хорошей форме. 🎉</p>`}
