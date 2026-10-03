@@ -44,6 +44,13 @@ def compile_patterns(patterns):
     return [re.compile(p, re.IGNORECASE) for p in patterns or []]
 
 
+# Card-style channels (e.g. @revacancy_global) post «Title | Senior | IC / Company / 150k - 180k USD /
+# Skills: … / Contacts and Full Description» and never say «вакансия» or «hiring».
+JOB_CARD = re.compile(
+    r"full description|required languages|\bskills\s*:|\bзарплата\s*:|\bз/п\s*:|"
+    r"\d[\d\s.,]*k?\s*[-–]\s*\d[\d\s.,]*k?\s*(usd|eur|gbp|\$|€|₽|руб)", re.IGNORECASE)
+
+
 class JobFilter:
     def __init__(self, keywords, min_length):
         self.job = compile_patterns(keywords.get("job"))
@@ -57,13 +64,21 @@ class JobFilter:
             return False
         if any(p.search(text) for p in self.negative) or looks_like_article(text):
             return False
-        return any(p.search(text) for p in self.job) and any(p.search(text) for p in self.role)
+        if any(p.search(text) for p in self.job):
+            return any(p.search(text) for p in self.role)
+        # a vacancy card: its first line is the job title, so the role must be there
+        # (otherwise «Skills: sql, python» would let every engineer through)
+        head = text.strip().splitlines()[0]
+        return bool(JOB_CARD.search(text)) and any(p.search(head) for p in self.role)
+
+    def has_job_word(self, text):
+        return any(p.search(text) for p in self.job) or bool(JOB_CARD.search(text))
 
     def is_job_like(self, text):
         """A job post by its own words (вакансия, hiring…), whatever the role: for search."""
         if not text or len(text) < self.min_length or any(p.search(text) for p in self.negative):
             return False
-        return any(p.search(text) for p in self.job) and not looks_like_article(text)
+        return self.has_job_word(text) and not looks_like_article(text)
 
     def tags_for(self, text):
         return [name for name, pats in self.tags.items() if any(p.search(text) for p in pats)]

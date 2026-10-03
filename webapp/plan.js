@@ -1,16 +1,17 @@
 "use strict";
 /* 🧭 Career plan (the «Резюме» tab, its own block under the résumé): from the active résumé
-   version and a goal — grade up, another role or another field — Claude drafts a step-by-step
+   version and a goal — grade up, or another role or field — Claude drafts a step-by-step
    plan. Today's position is described only from the résumé; the server drops invented facts. */
 
 const pl = { data: null, goal: "grade", target: "", busy: false };
-const PLAN_GOALS = { grade: "⬆️ Поднять грейд", role: "🔀 Сменить роль", field: "🧭 Сменить направление" };
+const PLAN_GOALS = { grade: "⬆️ Поднять грейд", role: "🔀 Сменить роль или сферу" };
+const OLD_GOALS = { field: "🔀 Сменить роль или сферу" };  // plans saved before the two buttons were merged
 
 async function loadPlan() {
   try {
     const d = await api("/api/plan");
     pl.data = d.plan;
-    if (d.plan && !pl.busy) { pl.goal = d.plan.goal || pl.goal; pl.target = d.plan.goal_text || pl.target; }
+    if (d.plan && !pl.busy) { pl.goal = PLAN_GOALS[d.plan.goal] ? d.plan.goal : "role"; pl.target = d.plan.goal_text || pl.target; }
   } catch (e) { /* the tab works without it */ }
   renderPlan();
 }
@@ -19,9 +20,9 @@ function renderPlan() {
   if (!box) return;
   const p = pl.data, list = (xs) => (xs || []).map((x) => `<li>${esc(x)}</li>`).join("");
   const form = `<div class="goals">${Object.entries(PLAN_GOALS).map(([k, v]) => `<button class="stage" data-goal="${k}" aria-pressed="${pl.goal === k}">${v}</button>`).join("")}</div>
-    <input class="inp" id="plan-target" maxlength="120" value="${esc(pl.target)}" placeholder="${pl.goal === "grade" ? "Например: Senior Data Analyst (можно пусто)" : pl.goal === "role" ? "Например: Product Analyst" : "Например: финтех, Data Engineering"}">
+    <input class="inp" id="plan-target" maxlength="120" value="${esc(pl.target)}" placeholder="${pl.goal === "grade" ? "Например: Senior Data Analyst (можно пусто)" : "Куда: например, Product Analyst или аналитик в финтехе"}">
     <button class="cta" id="plan-go" ${pl.busy ? "disabled" : ""}>${pl.busy ? "Составляю план… (до пары минут)" : p ? "✨ Составить заново" : "✨ Составить план"}</button>`;
-  const body = p ? `<div class="lbl">${esc(PLAN_GOALS[p.goal] || "")}${p.target ? " → " + esc(p.target) : ""}</div>
+  const body = p ? `<div class="lbl">${esc(PLAN_GOALS[p.goal] || OLD_GOALS[p.goal] || "")}${p.target ? " → " + esc(p.target) : ""}</div>
     ${p.now ? `<div><b>Сейчас.</b> ${esc(p.now)}</div>` : ""}
     ${p.strengths && p.strengths.length ? `<div><b>Уже есть</b><ul>${list(p.strengths)}</ul></div>` : ""}
     ${p.gaps && p.gaps.length ? `<div><b>Чего не хватает</b><ul>${list(p.gaps)}</ul></div>` : ""}

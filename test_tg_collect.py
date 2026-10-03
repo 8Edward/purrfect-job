@@ -430,4 +430,9 @@ with tempfile.TemporaryDirectory() as d:
     assert guests.remove(reg, 101) and guests.get(reg, 101) is None and mama.dir.exists()
     guests.USERS_DIR, guests.REGISTRY_PATH, guests.POOL_PATH, guests.PORTALS_PATH = saved
 
+# vacancy cards without «вакансия»/«hiring» (@revacancy_global): role must be in the title line
+card = tc.JobFilter({"job": ["ваканси"], "role": ["data analyst", "sql"]}, 50)
+assert card.is_job("🟪 Senior Data Analyst | 5 year(s) | Senior | IC\n▫️ Acme | Fintech\n▫️ 90k - 120k USD Annually\nSkills: sql, python\n👉 Contacts and Full Description")
+assert not card.is_job("🟪 Senior Software Engineer | 5 year(s) | Senior | IC\n▫️ Acme | Fintech\n▫️ 90k - 120k USD Annually\nSkills: sql, golang\n👉 Contacts and Full Description")
+
 print("ok")

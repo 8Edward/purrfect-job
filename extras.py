@@ -394,7 +394,7 @@ def parse_score(text):
 
 # ---------------------------------------------------------------- ✨ AI: career plan
 
-GOALS = {"grade": "поднять грейд в той же роли", "role": "сменить роль", "field": "сменить направление / отрасль"}
+GOALS = {"grade": "поднять грейд в той же роли", "role": "сменить роль или сферу (другая профессия и/или отрасль)", "field": "сменить направление / отрасль"}  # field: old plans only
 
 PLAN_RULES = """You are a pragmatic career coach. You build a step-by-step transition plan for one person.
 HARD RULES: describe the person's CURRENT position ONLY from facts in the résumé — never invent employers,
