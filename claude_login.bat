@@ -4,6 +4,8 @@ rem Double-click: a browser opens, sign in with the same account as in the Claud
 setlocal
 set "EXE="
 for /d %%P in ("%LOCALAPPDATA%\Packages\Claude_*") do for /d %%V in ("%%P\LocalCache\Roaming\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
+rem After Settings -> Apps -> Claude -> Move, the app data lives in <drive>:\WpSystem\<SID>\AppData\Local\Packages
+if not defined EXE for %%D in (D E F) do for /d %%S in ("%%D:\WpSystem\*") do for /d %%P in ("%%S\AppData\Local\Packages\Claude_*") do for /d %%V in ("%%P\LocalCache\Roaming\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
 if not defined EXE for /d %%V in ("%APPDATA%\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
 if not defined EXE (
   echo Claude Code not found. Open the Claude desktop app once, then run this again.

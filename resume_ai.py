@@ -66,9 +66,15 @@ def find_exe(configured=None):
     # The Claude desktop app is an MSIX package: its %APPDATA% folder is virtual and only processes
     # inside the package (like Claude's own terminal) see it there. The bot, started by the task
     # scheduler, finds the real files under %LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming.
+    # If the app was moved to another drive (Settings → Apps → Move), Windows keeps its data in
+    # <drive>:\WpSystem\<user SID>\AppData\Local\Packages\Claude_*.
     local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     bases = {Path(os.environ["APPDATA"]) if os.environ.get("APPDATA") else None, Path.home() / "AppData" / "Roaming"}
     bases |= set((local / "Packages").glob("Claude_*/LocalCache/Roaming"))
+    for drive in "CDEFGH":
+        root = Path(f"{drive}:/WpSystem")
+        if root.exists():
+            bases |= set(root.glob("*/AppData/Local/Packages/Claude_*/LocalCache/Roaming"))
     bases -= {None}
     found = []
     for base in bases:
@@ -91,6 +97,8 @@ class Claude:
         self.checked = (0.0, "checking")  # (when, None = ready | "login" | "missing" | "error" | "checking")
 
     async def ask(self, system, prompt, timeout=TIMEOUT):
+        if not self.exe or not Path(self.exe).exists():  # the app updated or moved to another drive
+            self.exe = find_exe()
         if not self.exe:
             raise RuntimeError("missing")
         WORK_DIR.mkdir(parents=True, exist_ok=True)
