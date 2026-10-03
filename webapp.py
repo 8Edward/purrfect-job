@@ -1592,8 +1592,8 @@ class WebApp:
                 found = (await self.radar.check_pool([m], rescan_days=1))[m.id]
         more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
         for task in ("hh_task", "sites_task") + (("boards_task",) if m.is_owner else ()):
-            if hasattr(self.radar, task):  # hh.ru and sites: a full pass, old vacancies are checked again with today's words
-                asyncio.create_task(getattr(self.radar, task)(**({} if task == "boards_task" else {"full": True})))
+            if hasattr(self.radar, task):  # hh.ru and sites: a full pass for this person, old vacancies are checked again with today's words
+                asyncio.create_task(getattr(self.radar, task)(**({} if task == "boards_task" else {"full": m.id})))
                 more = True
         self.mark_checked(m)
         log.info("manual refresh by %s: %d new from channels", m.name, len(found))

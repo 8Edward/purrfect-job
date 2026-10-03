@@ -1154,7 +1154,7 @@ class JobRadar:
             if result[m.id]:
                 await self.notify(m, result[m.id])
 
-    async def sites_pass(self, full=False):
+    async def sites_pass(self, full=None):
         listed = guests.listed_sites()
         people = [g for g in guests.all_guests(guests.load_registry())
                   if not g.load_state().get("step") and g.sites(listed)]
@@ -1167,17 +1167,17 @@ class JobRadar:
         if errors:
             log.warning("site feed errors: %s", errors)
         for g in people:
-            items = self.guest_store(g, guests.match_site_jobs(feed, g, listed, full))
+            items = self.guest_store(g, guests.match_site_jobs(feed, g, listed, full == g.id))
             log.info("sites for %s: %d new", g.name, len(items))
             if items:
                 await self.notify(g, items)
         # your companies (co-*) into your feed too; your job boards come via scan.mjs (check_boards)
         own = {k: v for k, v in listed.items() if guests.is_own_site(k)}
-        items = self.store_for(self.me, guests.match_site_jobs(feed, self.me, own, full))
+        items = self.store_for(self.me, guests.match_site_jobs(feed, self.me, own, full == self.me.id))
         log.info("sites for %s: %d new of %d companies", self.me.name, len(items), len(self.me.sites(own)) - (guests.HH_ID in self.me.sites(own)))
         await self.notify(self.me, items)
 
-    async def hh_pass(self, full=False):
+    async def hh_pass(self, full=None):
         if not guests.HH_FEED:
             return
         listed = guests.listed_sites()
@@ -1191,13 +1191,13 @@ class JobRadar:
             except Exception as e:
                 log.warning("hh.ru for %s: %s", m.name, e)
                 continue
-            items = self.store_for(m, guests.match_hh_jobs(raw, m, full))
+            items = self.store_for(m, guests.match_hh_jobs(raw, m, full == m.id))
             log.info("hh.ru for %s: %d of %d new", m.name, len(items), len(raw))
             if items:
                 await self.notify(m, items)
             await asyncio.sleep(guests.HH_PAUSE)
 
-    async def hh_task(self, full=False):
+    async def hh_task(self, full=None):
         if self.hh_busy:
             return
         self.hh_busy = True
@@ -1213,7 +1213,7 @@ class JobRadar:
         if self.cfg.get("boards_enabled", True):
             await self.alert(await self.check(tg=False, web=True, manual=True) or [])
 
-    async def sites_task(self, full=False):
+    async def sites_task(self, full=None):
         if self.sites_busy:
             return
         self.sites_busy = True
