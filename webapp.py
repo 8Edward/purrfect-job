@@ -1455,6 +1455,17 @@ class WebApp:
         log.info("app: %s started over (wipe_jobs=%s)", m.name, bool(data.get("wipe_jobs")))
         return web.json_response({"ok": True})
 
+    def mark_checked(self, m):
+        """«Проверено N мин назад» and «следующая через» start over after a manual check
+        (a rescan used to leave the old time, so the header looked stuck)."""
+        stamp = datetime.now(timezone.utc).isoformat()
+        if m.is_owner:
+            state = tc.load_state()
+            state["last_run"] = stamp
+            tc.save_state(state)
+        else:
+            m.update_state(pool_run=stamp)
+
     async def api_refresh(self, request):
         """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""
         m = self.member(request)
@@ -1464,6 +1475,7 @@ class WebApp:
                 self.radar.lock.release()
             except asyncio.TimeoutError:
                 return web.json_response({"busy": True, "new": 0})
+            self.mark_checked(m)
             return web.json_response({"busy": False, "new": 0, "waited": True, "more": False})
         if m.is_owner:
             found = await self.radar.check(tg=True, web=False, rescan_days=1, manual=True) or []
@@ -1475,5 +1487,6 @@ class WebApp:
             if hasattr(self.radar, task):
                 asyncio.create_task(getattr(self.radar, task)())
                 more = True
+        self.mark_checked(m)
         log.info("manual refresh by %s: %d new from channels", m.name, len(found))
         return web.json_response({"busy": False, "new": len(found), "more": more})
