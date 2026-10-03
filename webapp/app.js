@@ -776,7 +776,7 @@ function renderCv() {
   const cv = cvState.data;
   if (cvState.busy) { box.innerHTML = '<div class="cv"><div class="busy">Читаю резюме и подбираю роли…</div></div>'; return; }
   if (!cv) {
-    box.innerHTML = `<div class="cv"><p>Загрузите резюме (PDF, DOCX или TXT). Я найду в нём ваши роли и навыки и предложу настройки поиска: слова, запрос для hh.ru и каналы. Ничего не поменяется, пока вы не нажмёте «Применить».</p>
+    box.innerHTML = `<div class="cv"><p>Загрузите резюме (PDF, DOCX или TXT). Я найду в нём ваши роли и навыки и предложу настройки поиска: слова и запрос для hh.ru. Ничего не поменяется, пока вы не нажмёте «Применить».</p>
       ${uploadHtml(false)}<span class="muted">Хранится только текст резюме, на компьютере владельца бота. Удалить можно в любой момент.</span></div>`;
   } else {
     const chosen = cv.roles.filter((r) => cvState.roles.has(r.id));
@@ -792,12 +792,10 @@ function renderCv() {
       <label class="check"><input type="checkbox" id="cv-skills" ${cvState.skills ? "checked" : ""}> Искать и по инструментам (${esc(cv.skill_words.join(", ") || "нет")})</label>
       <div class="preview"><b>Слова для поиска</b>${esc(words.join(", ") || "—")}</div>
       <div class="preview"><b>Запрос на hh.ru</b>${esc(hh || "—")}</div>
-      ${cv.channels.length ? `<div class="lbl">Каналы</div>${cv.channels.map((c) => `<div class="tg" style="padding:8px 0"><span>${esc(c.title)}<small>@${esc(c.key)}${c.suggested ? " · подходит" : ""}</small></span><button class="sw" data-cvch="${esc(c.key)}" aria-pressed="${cvState.channels.has(c.key)}" aria-label="${esc(c.title)}"></button></div>`).join("")}` : ""}
-      <p class="muted" id="cv-sync">${cvState.synced || "Отметки сразу меняют ленту: слова поиска, запрос hh.ru и каналы. Слова, которые вы вписали сами, остаются."}</p>
+      <p class="muted" id="cv-sync">${cvState.synced || "Отметки сразу меняют ленту: слова поиска и запрос hh.ru. Слова, которые вы вписали сами, остаются. Каналы — во вкладке «Поиск»."}</p>
       ${uploadHtml(true)}
       <button class="link" id="cv-delete">Удалить резюме</button></div>`;
     $$("[data-role]", box).forEach((b) => (b.onclick = () => { const id = b.dataset.role; cvState.roles.has(id) ? cvState.roles.delete(id) : cvState.roles.add(id); haptic(); renderCv(); syncCv(); }));
-    $$("[data-cvch]", box).forEach((b) => (b.onclick = () => { const k = b.dataset.cvch; cvState.channels.has(k) ? cvState.channels.delete(k) : cvState.channels.add(k); haptic(); renderCv(); syncCv(); }));
     $("#cv-skills").onchange = (e) => { cvState.skills = e.target.checked; renderCv(); syncCv(); };
     $("#cv-delete").onclick = deleteCv;
   }
@@ -829,7 +827,7 @@ function syncCv() {
   cvState.syncT = setTimeout(async () => {
     if (!cvState.roles.size) { cvState.synced = "Отметьте хотя бы одну роль — тогда лента подстроится."; return renderCv(); }
     try {
-      const d = await api("/api/cv/apply", { roles: [...cvState.roles], channels: [...cvState.channels], mode: "sync", skill_words: cvState.skills });
+      const d = await api("/api/cv/apply", { roles: [...cvState.roles], mode: "sync", skill_words: cvState.skills });
       cvState.synced = `✓ Лента обновлена: ${d.words} ${plural(d.words, "слово", "слова", "слов")} для поиска${d.hh_query ? ", запрос hh.ru" : ""}. Новые вакансии подтянутся при следующей проверке (или нажмите ↻ в ленте).`;
       renderCv();
       loadSources().catch(() => {});
