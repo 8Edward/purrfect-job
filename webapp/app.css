@@ -99,7 +99,7 @@ html[data-skin="dossier"] .tag.ru { border-style: solid; background: var(--accen
 .left { font-size: 12.5px; color: var(--muted); text-align: center; margin: 12px 0 8px; }
 .acts { display: flex; justify-content: center; align-items: center; gap: clamp(12px, 5vw, 20px); }
 .act { width: clamp(48px, 14vw, 58px); height: clamp(48px, 14vw, 58px); border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 22px; display: grid; place-items: center; }
-.act.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); width: clamp(56px, 17vw, 68px); height: clamp(56px, 17vw, 68px); }
+.act.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 html[data-skin="dossier"] .act { border-radius: 6px; }
 .empty { text-align: center; padding: 46px 12px; color: var(--muted); line-height: 1.5; }
 .empty b { display: block; font-size: 18px; color: var(--fg); margin-bottom: 6px; }
