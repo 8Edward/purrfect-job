@@ -487,3 +487,4 @@ html[data-skin="hybrid"] .mascot .m-hybrid, html[data-skin="remote"] .mascot .m-
 .hero .hello, .hero .sub { padding-right: clamp(80px, 24vw, 112px); }
 html[data-skin="hybrid"] .sweep, html[data-skin="remote"] .blob { opacity: .35; }
 html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not belong in the office */
+.brand img.mark { border-radius: 50%; }
