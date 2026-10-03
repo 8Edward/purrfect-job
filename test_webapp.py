@@ -196,7 +196,7 @@ async def main():
                 {"title": "Welder", "url": "https://himalayas.app/jobs/w", "company": "Y", "posted": "2026-10-01"}]}}})
 
             async def fake_hh(query, remote):
-                assert '"бизнес аналитик"' in query
+                assert query.startswith("бизнес аналитик OR business analyst"), query
                 return [{"title": "Системный аналитик", "url": "https://hh.ru/vacancy/9", "company": "Avito",
                          "location": "Москва", "comp": "", "posted": "2026-10-02T10:00:00+03:00"}]
             guests.fetch_hh = fake_hh

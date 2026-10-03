@@ -13,6 +13,8 @@ import { fileURLToPath } from 'url';
 
 import { makeHttpCtx } from '../providers/_http.mjs';
 import { loadProviders } from '../providers/_registry.mjs';
+import { parseHimalayasResponse } from '../providers/himalayas.mjs';
+import { parseJobicyResponse } from '../providers/jobicy.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PER_BOARD_TIMEOUT_MS = 120_000;
@@ -34,6 +36,25 @@ function withTimeout(promise, ms) {
   ]).finally(() => clearTimeout(timer));
 }
 
+// Some boards give only their first page through the career-ops provider (Himalayas: the
+// 20 newest of ~100k). For those we walk the board's own cursor pages here.
+const PAGED = {
+  himalayas: { pages: 15, first: 'https://himalayas.app/jobs/api?limit=20', parse: parseHimalayasResponse },
+  jobicy: { pages: 5, first: 'https://jobicy.com/api/v2/remote-jobs?count=100', parse: (j) => parseJobicyResponse(j) },
+};
+
+async function fetchPaged(spec) {
+  const jobs = [];
+  let url = spec.first;
+  for (let i = 0; i < spec.pages && url; i++) {
+    const json = await ctx.fetchJson(url, { redirect: 'error' });
+    jobs.push(...spec.parse(json));
+    const next = json && typeof json.nextCursor === 'string' && json.nextCursor !== 'None' ? json.nextCursor : '';
+    url = next ? `${spec.first}&cursor=${encodeURIComponent(next)}` : '';
+  }
+  return jobs;
+}
+
 const out = {};
 for (const id of ids) {
   const provider = providers.get(id);
@@ -42,7 +63,8 @@ for (const id of ids) {
     continue;
   }
   try {
-    const jobs = await withTimeout(provider.fetch({ name: id, provider: id }, ctx), PER_BOARD_TIMEOUT_MS);
+    const jobs = await withTimeout(PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
+      PER_BOARD_TIMEOUT_MS);
     if (!Array.isArray(jobs)) throw new Error('fetch() did not return an array');
     out[id] = {
       jobs: jobs

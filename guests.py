@@ -1,7 +1,7 @@
 """Family mode: the same bot also serves people you invite.
 
 Sources are SHARED, choices are personal:
-- 📡 Channel pool (users/pool.json): public channels, at most 30 for everyone
+- 📡 Channel pool (users/pool.json): public channels, at most 60 for everyone
   together, you included. They are read through YOUR account, so only public
   channels (@username) qualify. Everyone ticks the channels they want from the
   pool; each channel is read once per check and filtered per person. Your own
@@ -46,7 +46,7 @@ OWNER_INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
 FEED_SCRIPT = tc.TG_DIR / "board-feed.mjs"
 
 # Hard limits: keep your account's reading modest and the bot hard to break.
-MAX_POOL = 30             # channels in the shared pool, everyone together
+MAX_POOL = 60             # channels in the shared pool, everyone together
 MAX_MEMBERS = 10          # invited people
 POOL_ADDS_PER_DAY = 3     # new pool channels per guest per day (you: unlimited)
 PROPOSALS_PER_DAY = 3     # site proposals per guest per day
@@ -879,6 +879,37 @@ def _hh_get(query, remote):
 
 async def fetch_hh(query, remote):
     return await asyncio.get_running_loop().run_in_executor(None, _hh_get, query, remote)
+
+
+HIMALAYAS_SEARCH = "https://himalayas.app/jobs/api/search"
+
+
+def _himalayas_get(queries, pages=2):
+    """Live Himalayas search (its feed is ~100k jobs, the cached feed holds only the newest):
+    [{title, url, company, location, posted}]."""
+    jobs, seen = [], set()
+    for q in queries[:3]:
+        for page in range(1, pages + 1):
+            url = HIMALAYAS_SEARCH + "?" + urlencode({"q": q, "page": page})
+            with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"}), timeout=20) as resp:
+                data = json.loads(resp.read(5_000_000))
+            items = data.get("jobs") or []
+            for it in items:
+                link = str(it.get("applicationLink") or it.get("guid") or "")
+                if not re.match(r"^https://([a-z0-9-]+\.)?himalayas\.app/", link) or link in seen:
+                    continue
+                seen.add(link)
+                pub = it.get("pubDate")
+                jobs.append({"title": str(it.get("title") or "")[:200], "url": link, "company": str(it.get("companyName") or "")[:120],
+                             "location": ", ".join(str(x) for x in it.get("locationRestrictions") or [])[:120],
+                             "posted": datetime.fromtimestamp(int(pub), timezone.utc).isoformat() if str(pub).isdigit() else ""})
+            if len(items) < 20:
+                break
+    return jobs
+
+
+async def fetch_himalayas(queries):
+    return await asyncio.get_running_loop().run_in_executor(None, _himalayas_get, queries)
 
 
 def match_hh_jobs(raw, member):

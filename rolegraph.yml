@@ -5,6 +5,8 @@
 # `far` = related but further away. Links work both ways: if A links to B, B shows A.
 # Names are matched as phrases, case-insensitive, with Russian endings allowed
 # («аналитик данных» also finds «аналитика данных»). Add your own roles freely.
+# `words` below are word equivalents for search (RU <-> EN, spellings): a query word also matches
+# its equivalents, and words may come in any order («антифрод аналитик» finds «Fraud Analyst»).
 # Avoid names of 1-3 letters (BA, PM): they match too much junk, so search skips them.
 
 roles:
@@ -50,6 +52,15 @@ roles:
   financial-analyst:
     names: [финансовый аналитик, financial analyst, fp&a, экономист, economist]
     links: {accountant: far}
+  fraud-analyst:
+    names: [антифрод аналитик, фрод аналитик, fraud analyst, antifraud analyst, anti-fraud analyst, аналитик по противодействию мошенничеству, fraud specialist, антифрод специалист]
+    links: {risk-analyst: adj, data-analyst: adj, aml-analyst: adj, financial-analyst: far}
+  risk-analyst:
+    names: [риск аналитик, risk analyst, аналитик рисков, credit risk analyst, кредитный аналитик, риск-менеджер, risk manager]
+    links: {financial-analyst: adj, data-analyst: far}
+  aml-analyst:
+    names: [aml analyst, aml специалист, специалист по финансовому мониторингу, kyc analyst, kyc специалист, compliance analyst, комплаенс аналитик, trust and safety]
+    links: {risk-analyst: adj}
   product-manager:
     names: [product manager, продакт менеджер, менеджер продукта, product owner, продакт оунер]
     links: {project-manager: adj}
@@ -77,3 +88,25 @@ roles:
   support:
     names: [специалист поддержки, customer support, support specialist, оператор поддержки]
     links: {}
+
+words:
+  - [антифрод, анти-фрод, antifraud, anti-fraud, фрод, fraud]
+  - [аналитик, analyst, analytics]
+  - [данных, data, дата]
+  - [риск, risk]
+  - [разработчик, developer]
+  - [инженер, engineer]
+  - [менеджер, manager]
+  - [специалист, specialist]
+  - [дизайнер, designer]
+  - [тестировщик, tester, qa]
+  - [продуктовый, product]
+  - [маркетинговый, marketing, маркетинг]
+  - [финансовый, financial, finance]
+  - [системный, system, systems]
+  - [бизнес, business]
+  - [комплаенс, compliance]
+  - [мошенничеству, мошенничества, fraud]
+  - [младший, junior]
+  - [старший, senior]
+  - [ведущий, lead]

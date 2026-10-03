@@ -368,7 +368,7 @@ with tempfile.TemporaryDirectory() as d:
     # screens: fit in Telegram limits, buttons carry what the handlers expect
     pool = guests.load_pool()
     caption, rows = bot.pool_screen(pool, mama)
-    assert "2 из 30" in caption and "У тебя отмечено: 2" in caption and bot.visible_len(caption) <= 1024
+    assert "2 из 60" in caption and "У тебя отмечено: 2" in caption and bot.visible_len(caption) <= 1024
     assert data(rows[0][0]) == "p:t:buh_jobs:0" and data(rows[0][1]) == "p:d:buh_jobs:0"
     caption, rows = bot.pool_screen(pool, papa)
     assert len(rows[0]) == 1  # papa can't delete mama's channel

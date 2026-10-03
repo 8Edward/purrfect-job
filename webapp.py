@@ -41,7 +41,7 @@ FEED_CACHE_PATH = tc.ROOT / "data" / "tg-feed-cache.json"
 HOST, PORT = "127.0.0.1", 8787
 SKINS = ("radar", "dossier", "tropic")
 INIT_MAX_AGE = timedelta(days=1)  # how long one app launch stays valid
-SEARCH_DAYS = 7                   # how far back search reads channels
+SEARCH_DAYS = 21                  # how far back search reads channels (job channels post a few a week)
 POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this often
 POSTS_PER_CHANNEL = 300
 QUERY_MAX = 80
@@ -528,6 +528,12 @@ class WebApp:
             for j in (feed.get(provider) or {}).get("jobs", []):
                 if j.get("url"):
                     add(guests.web_job(j, listed.get(provider, provider), m), "sites")
+        if "himalayas" in m.sites(listed):  # its cached feed is only the newest few hundred of ~100k
+            try:
+                for j in await guests.fetch_himalayas(hh_variants(query)):
+                    add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m), "sites")
+            except Exception as e:
+                log.warning("search himalayas: %s", e)
         try:
             hh = guests.hh_settings(m)
             # hh.ru gets the phrase (words in any order, in the title) and its English twin, plus
