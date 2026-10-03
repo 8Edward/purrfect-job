@@ -110,7 +110,7 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------- 🐾 the chat's home: a cat radar animation
 
 BRAND = "Purrfect Job"   # the word the radar finds at the end; config.yml `brand:` overrides it
-ANIM_VERSION = 2
+ANIM_VERSION = 5
 OUT_W, OUT_H = 640, 400  # the GIF; frames are drawn twice as big and scaled down, so edges stay smooth
 K = 2                    # drawing scale
 AW, AH = OUT_W * K, OUT_H * K
@@ -118,7 +118,9 @@ AC = (AW // 2, 186 * K)  # radar centre
 AR = 150 * K             # radar radius
 A_BG = ((14, 38, 44), (32, 30, 58))
 A_RING, A_SWEEP, A_MINT, A_PINK, A_WHITE = (88, 190, 170), (120, 230, 200), (90, 214, 150), (255, 140, 160), (238, 242, 250)
-CAT, CAT_DARK, CAT_LIGHT, CAT_EYE = (138, 146, 158), (96, 104, 116), (196, 202, 212), (120, 214, 160)
+# the user's cat: British blue-cream (photo 2026-10-03)
+CAT, CAT_DARK, CAT_LIGHT, CAT_CREAM = (150, 146, 156), (104, 98, 108), (214, 208, 206), (190, 170, 152)
+CAT_EYE, CAT_NOSE, CAT_EAR = (216, 168, 70), (186, 138, 140), (214, 170, 168)
 BLIPS = [  # (angle in degrees clockwise from north, distance 0..1 — icons stay well inside the rim, kind)
     (40, .55, "paw"), (110, .62, "dollar"), (175, .45, "offer"), (235, .6, "whiskers"), (300, .5, "dollar"), (345, .66, "tail"),
 ]
@@ -165,26 +167,32 @@ def _icon(d, kind, x, y, alpha):
 
 
 def _cat(d, x, y, s, alpha=255):
-    """A grey cat's face: ears with pink insides, green eyes, pink nose, white whiskers."""
+    """The user's cat: a round British blue-cream face (lavender grey with warm cream patches), small wide-set
+    rounded ears, half-closed amber eyes with a sleepy-grumpy look, a mauve nose, a pale muzzle, tabby «M» stripes."""
     a = lambda col: (*col, alpha)  # noqa: E731
+    w = max(2, int(2 * s))
+    for side in (-1, 1):  # ears: small, rounded, set wide
+        ear = [(x + side * 42 * s, y - 10 * s), (x + side * 38 * s, y - 50 * s), (x + side * 12 * s, y - 30 * s)]
+        d.polygon(ear, fill=a(CAT))
+        d.polygon([(x + side * 37 * s, y - 18 * s), (x + side * 36 * s, y - 43 * s), (x + side * 20 * s, y - 30 * s)], fill=a(CAT_EAR))
+    d.ellipse([x - 44 * s, y - 32 * s, x + 44 * s, y + 30 * s], fill=a(CAT))          # broad round head
+    d.ellipse([x + 4 * s, y - 30 * s, x + 34 * s, y - 2 * s], fill=a(CAT_CREAM))     # warm cream patches
+    d.ellipse([x - 40 * s, y + 2 * s, x - 18 * s, y + 22 * s], fill=a(CAT_CREAM))
+    d.ellipse([x - 18 * s, y + 4 * s, x + 18 * s, y + 28 * s], fill=a(CAT_LIGHT))    # pale muzzle
+    for dx in (-10, -4, 4, 10):  # tabby «M» on the forehead
+        d.line([x + dx * s, y - 30 * s, x + dx * 0.8 * s, y - 16 * s], fill=a(CAT_DARK), width=w)
+    for ex in (-17, 17):  # amber eyes, half closed under heavy lids
+        d.ellipse([x + (ex - 10) * s, y - 8 * s, x + (ex + 10) * s, y + 6 * s], fill=a(CAT_EYE))
+        d.ellipse([x + (ex - 1.8) * s, y - 6 * s, x + (ex + 1.8) * s, y + 5 * s], fill=a((30, 26, 22)))
+        d.chord([x + (ex - 11) * s, y - 14 * s, x + (ex + 11) * s, y + 4 * s], 180, 360, fill=a(CAT))  # the lid
+        d.line([x + (ex - 10) * s, y - 4 * s, x + (ex + 10) * s, y - 4 * s], fill=a(CAT_DARK), width=w)
+    d.polygon([(x - 5 * s, y + 8 * s), (x + 5 * s, y + 8 * s), (x, y + 14 * s)], fill=a(CAT_NOSE))
+    d.line([x, y + 14 * s, x, y + 18 * s], fill=a(CAT_DARK), width=w)
+    d.arc([x - 8 * s, y + 14 * s, x, y + 22 * s], 0, 180, fill=a(CAT_DARK), width=w)
+    d.arc([x, y + 14 * s, x + 8 * s, y + 22 * s], 0, 180, fill=a(CAT_DARK), width=w)
     for side in (-1, 1):
-        d.polygon([(x + side * 27 * s, y - 8 * s), (x + side * 21 * s, y - 42 * s), (x + side * 4 * s, y - 24 * s)], fill=a(CAT))
-        d.polygon([(x + side * 22 * s, y - 14 * s), (x + side * 20 * s, y - 33 * s), (x + side * 10 * s, y - 23 * s)], fill=a(A_PINK))
-    d.ellipse([x - 32 * s, y - 30 * s, x + 32 * s, y + 28 * s], fill=a(CAT))
-    d.ellipse([x - 14 * s, y + 2 * s, x + 14 * s, y + 24 * s], fill=a(CAT_LIGHT))  # muzzle
-    for side in (-1, 1):  # forehead stripes
-        d.line([x + side * 6 * s, y - 28 * s, x + side * 4 * s, y - 18 * s], fill=a(CAT_DARK), width=max(2, int(3 * s)))
-    d.line([x, y - 29 * s, x, y - 17 * s], fill=a(CAT_DARK), width=max(2, int(3 * s)))
-    for ex in (-12, 12):
-        d.ellipse([x + (ex - 7) * s, y - 10 * s, x + (ex + 7) * s, y + 3 * s], fill=a(CAT_EYE))
-        d.ellipse([x + (ex - 2) * s, y - 9 * s, x + (ex + 2) * s, y + 2 * s], fill=a((20, 26, 30)))
-        d.ellipse([x + (ex - 4.5) * s, y - 8 * s, x + (ex - 2) * s, y - 5 * s], fill=a(A_WHITE))
-    d.polygon([(x - 4 * s, y + 7 * s), (x + 4 * s, y + 7 * s), (x, y + 12 * s)], fill=a(A_PINK))
-    d.line([x, y + 12 * s, x - 4 * s, y + 16 * s], fill=a(CAT_DARK), width=max(2, int(2 * s)))
-    d.line([x, y + 12 * s, x + 4 * s, y + 16 * s], fill=a(CAT_DARK), width=max(2, int(2 * s)))
-    for side in (-1, 1):
-        for dy in (8, 14):
-            d.line([x + side * 12 * s, y + 12 * s, x + side * 44 * s, y + dy * s], fill=a(A_WHITE), width=max(2, int(1.6 * s)))
+        for dy in (12, 18, 24):
+            d.line([x + side * 16 * s, y + 16 * s, x + side * 54 * s, y + dy * s], fill=a(A_WHITE), width=max(2, int(1.4 * s)))
 
 
 def _frame(base, sweep, seen, final=0.0, brand=BRAND):
@@ -216,7 +224,7 @@ def _frame(base, sweep, seen, final=0.0, brand=BRAND):
         t = ImageDraw.Draw(top)
         a = int(255 * final)
         t.ellipse([AC[0] - 70 * K, AC[1] - 80 * K, AC[0] + 70 * K, AC[1] + 60 * K], fill=(*A_MINT, int(45 * final)))
-        _cat(t, AC[0], AC[1] - 8 * K, 1.6 * K * (0.7 + 0.3 * final), a)
+        _cat(t, AC[0], AC[1] - 4 * K, 1.25 * K * (0.7 + 0.3 * final), a)
         t.text((AW // 2, AH - 34 * K), brand, font=font("black", 44 * K), fill=(*A_WHITE, a), anchor="mm")
         img = Image.alpha_composite(img, top)
     return img.convert("RGB").resize((OUT_W, OUT_H), Image.LANCZOS)
