@@ -3,6 +3,7 @@
 Uses a temp folder and a fake bot: no Telegram, no network, real data untouched."""
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -367,7 +368,22 @@ async def main():
                 await asyncio.sleep(0.1)
                 j = await (await c.get(f"/api/resume/ai/{job['job']}", headers=auth)).json()
                 assert j["status"] == "error" and "войти в Claude Code" in j["error"]
-                # export: files go to the person's chat with the bot
+                # design: template, colour, photo (cropped in the app, re-checked and resized here)
+                rs = await (await c.get("/api/resume", headers=auth)).json()
+                assert rs["design"]["tpl"] == "classic" and 'data-i="0"' in rs["paper"]["html"] and len(rs["templates"]) == 4
+                rs = await (await c.post("/api/resume/design", headers=auth, json={"vid": built_vid, "tpl": "modern", "color": "teal", "tpl_x": 1})).json()
+                assert rs["design"]["tpl"] == "modern" and rs["design"]["color"] == "teal" and "#0f6a6e" in rs["paper"]["css"]
+                assert (await (await c.post("/api/resume/design", headers=auth, json={"vid": built_vid, "tpl": "nope"})).json())["design"]["tpl"] == "modern"
+                assert (await c.post("/api/resume/photo", headers=auth, json={"vid": built_vid, "data": "data:image/png;base64,AAAA"})).status == 400
+                from io import BytesIO
+                from PIL import Image
+                buf = BytesIO()
+                Image.new("RGB", (300, 200), (200, 80, 40)).save(buf, "PNG")
+                png = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+                rs = await (await c.post("/api/resume/photo", headers=auth, json={"vid": built_vid, "data": png})).json()
+                assert rs["design"]["photo"] and rs["design"]["has_photo"] and 'data-photo="1"' in rs["paper"]["html"]
+                assert Image.open(guests.resume_dir(app.radar.member_for(5)) / "photo.jpg").size == (400, 400)
+                # export: files go to the person's chat with the bot (in the chosen template, with the photo)
                 for fmt in ("md", "html", "pdf"):
                     r = await (await c.post("/api/resume/export", headers=auth, json={"vid": built_vid, "format": fmt})).json()
                     assert r == {"ok": True, "format": fmt}, r

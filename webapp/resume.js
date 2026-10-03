@@ -14,7 +14,7 @@ const OP_LABEL = { improve: "Улучшаю формулировки", summary: 
 async function loadResume(keepView) {
   try { rs.data = await api("/api/resume"); } catch (e) { return fail(e); }
   rs.blocks = rs.data.blocks || [];
-  if (!rs.data.active) rs.view = ["wizard", "paste"].includes(rs.view) ? rs.view : "start";
+  if (!rs.data.active) rs.view = rs.view === "wizard" ? rs.view : "start";
   else if (!keepView || rs.view === "start") rs.view = "main";
   renderResume();
 }
@@ -26,7 +26,6 @@ function renderResume() {
   if (v === "start") renderStart();
   else if (v === "main") renderMain();
   else if (v === "raw") renderRaw();
-  else if (v === "paste") renderPaste();
   else if (v === "wizard") renderWizard();
   else if (v === "match") renderMatch();
   else if (v === "review") renderReview();
@@ -59,14 +58,38 @@ function inl(s) {
   h = h.replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?![*\w])/g, "$1<i>$2</i>");
   return h;
 }
-function paperHtml(blocks) {
-  let out = "", inList = false;
-  blocks.forEach((b, i) => {
-    if (b.t === "li" && !inList) { out += "<ul>"; inList = true; }
-    if (b.t !== "li" && inList) { out += "</ul>"; inList = false; }
-    out += `<${b.t} data-i="${i}">${inl(b.x)}</${b.t}>`;
-  });
-  return out + (inList ? "</ul>" : "");
+const PAGE_W = 794;  // A4 in CSS px, same as resume.py: the page is drawn full size and scaled to the phone
+const EDIT_CSS = ".cv [data-i], .cv [data-photo] { cursor: pointer; border-radius: 3px; transition: background .15s; } .cv [data-i].hl { background: #fff1c2 !important; color: #1a1d24; }";
+function mountPaper() {
+  // The page comes from the server (resume.render) — the very same HTML and CSS the PDF is made of.
+  // A shadow root keeps the template's styles and the app's styles apart.
+  const host = $("#paper-host");
+  if (!host) return;
+  let root = host.shadowRoot;
+  if (!root) {
+    root = host.attachShadow({ mode: "open" });
+    root.addEventListener("click", (e) => {  // a shadow root has no onclick property
+      const el = e.target.closest("[data-i], [data-photo]");
+      if (!el) return;
+      e.preventDefault();
+      if (el.dataset.photo) photoSheet(); else editBlock(+el.dataset.i);
+    });
+  }
+  root.innerHTML = `<style>${rs.data.paper.css}${EDIT_CSS}</style>${rs.data.paper.html}`;
+  const fit = () => { if (host.isConnected) host.style.zoom = Math.min(1, host.parentElement.clientWidth / PAGE_W); };
+  fit();
+  window.onresize = fit;
+}
+const paperEl = (i) => { const h = $("#paper-host"); return h && h.shadowRoot ? h.shadowRoot.querySelector(`[data-i="${i}"]`) : null; };
+function designHtml() {
+  const d = rs.data.design;
+  return `<div class="group pad rs-design"><h4>🎨 Оформление</h4>
+    <div class="tpls">${rs.data.templates.map((t) => `<button class="tpl" data-tpl="${t.id}" aria-pressed="${d.tpl === t.id}"><i class="tp-${t.id}"></i><b>${esc(t.name)}</b><span>${esc(t.about)}</span></button>`).join("")}</div>
+    <div class="dots">${Object.entries(rs.data.colors).map(([k, c]) => `<button class="dot" data-color="${k}" style="--c:${c}" aria-pressed="${d.color === k}" aria-label="Цвет"></button>`).join("")}</div>
+    <button class="rs-act wide" id="rs-photo">📷 ${d.has_photo ? (d.photo ? "Фото: изменить или убрать" : "Фото скрыто — показать или изменить") : "Добавить фото (по желанию)"}</button></div>`;
+}
+async function setDesign(change) {
+  try { rs.data = await api("/api/resume/design", { vid: rs.data.active.id, ...change }); rs.blocks = rs.data.blocks; haptic(); renderResume(); } catch (e) { fail(e); }
 }
 
 /* ---------------------------------------------------------------- start: no résumé yet */
@@ -77,7 +100,6 @@ function renderStart() {
       <label class="rs-card"><b>📄 Загрузить файл</b><span>PDF, DOCX или TXT. Разберу, оценю и подскажу, что поправить.</span>
         <input type="file" id="rs-file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></label>
       <button class="rs-card" data-go="wizard"><b>✍️ Собрать с нуля</b><span>По шагам с подсказками: контакты, опыт, навыки. Минут 10–15.</span></button>
-      <button class="rs-card" data-go="paste"><b>📋 Вставить текст</b><span>Скопируйте резюме откуда угодно (hh.ru, Word, LinkedIn) и вставьте.</span></button>
     </div>
     <p class="muted">Резюме хранится на компьютере владельца бота. Удалить можно в любой момент.</p>`;
   bindCommon();
@@ -128,17 +150,22 @@ function renderMain() {
       <button class="rs-act" id="rs-export">⬇️ Скачать PDF / HTML</button>
     </div>
     ${aiNote()}
-    <div class="rs-paperhead"><b>Ваше резюме</b><span>Нажмите на строку, чтобы поправить · <button class="link" data-go="raw">весь текст</button></span></div>
-    <article class="paper" id="paper">${paperHtml(rs.blocks)}</article>
-    <button class="ghost wide" id="rs-addline">＋ Добавить строку в конец</button>
+    ${designHtml()}
+    <div class="rs-paperhead"><b>Ваше резюме</b><span>Нажмите на строку или фото, чтобы поправить · <button class="link" data-go="raw">весь текст</button></span></div>
+    <div class="paper-wrap"><div id="paper-host"></div></div>
+    <div class="twobtn"><button class="ghost" id="rs-addline">＋ Строка в конец</button><button class="ghost" id="rs-addsec">＋ Раздел</button></div>
     <div class="group" style="margin-top:14px"><h4>🔎 Настроить поиск вакансий по этому резюме</h4><div id="cv-box"></div></div>`;
   bindCommon();
   if ($("#rs-all")) $("#rs-all").onclick = () => { rs.showAll = !rs.showAll; renderMain(); };
   $$("[data-cover]").forEach((b) => (b.onclick = () => { rs.coverMode = true; go("match"); }));
   $("[data-go=match]").onclick = () => { rs.coverMode = false; go("match"); };
   $("#rs-export").onclick = exportSheet;
-  $$("#paper [data-i]").forEach((el) => (el.onclick = (e) => { e.preventDefault(); editBlock(+el.dataset.i); }));
+  mountPaper();
+  $$("[data-tpl]").forEach((b) => (b.onclick = () => setDesign({ tpl: b.dataset.tpl })));
+  $$("[data-color]").forEach((b) => (b.onclick = () => setDesign({ color: b.dataset.color })));
+  $("#rs-photo").onclick = photoSheet;
   $("#rs-addline").onclick = () => { rs.blocks.push({ t: "li", x: "" }); editBlock(rs.blocks.length - 1, true); };
+  $("#rs-addsec").onclick = sectionSheet;
   mountCvBox();
 }
 async function mountCvBox() {
@@ -155,8 +182,9 @@ async function mountCvBox() {
 function editBlock(i, isNew) {
   const b = rs.blocks[i];
   if (!b) return;
-  $$("#paper .hl").forEach((x) => x.classList.remove("hl"));
-  const el = $(`#paper [data-i="${i}"]`);
+  const host = $("#paper-host");
+  if (host && host.shadowRoot) host.shadowRoot.querySelectorAll(".hl").forEach((x) => x.classList.remove("hl"));
+  const el = paperEl(i);
   if (el) el.classList.add("hl");
   st.sheet = { block: i };
   $("#sheet").innerHTML = `<div class="grip"></div><h3>Правка строки</h3>
@@ -168,7 +196,7 @@ function editBlock(i, isNew) {
       <button data-fx="add" title="Новая строка ниже">＋</button><button data-fx="del" title="Удалить" class="del">🗑</button>
     </div>
     <div class="be-preview paper" id="be-preview"></div>
-    <p class="muted" id="be-hint"></p>
+    <p class="muted" id="be-hint"></p>${b.t === "h2" ? '<p class="muted">↑ ↓ двигают раздел целиком, со всеми строками.</p>' : ""}
     <div class="btns"><button class="yes" id="be-save">Сохранить</button><button id="be-cancel">Отмена</button></div>`;
   $("#sheet").hidden = $("#sheet-bg").hidden = false;
   try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
@@ -193,6 +221,11 @@ function editBlock(i, isNew) {
     if (fx === "i") return wrap("*", "*", "текст");
     if (fx === "link") return wrap("[", "](https://)", "текст ссылки");
     commit(false);
+    if ((fx === "up" || fx === "down") && rs.blocks[i].t === "h2") {
+      const to = moveSection(i, fx === "up" ? -1 : 1);
+      if (to === null) return toast(fx === "up" ? "Это и так первый раздел" : "Это и так последний раздел");
+      await saveBlocks(); return editBlock(to);
+    }
     if (fx === "up" && i > 0) { [rs.blocks[i - 1], rs.blocks[i]] = [rs.blocks[i], rs.blocks[i - 1]]; await saveBlocks(); return editBlock(i - 1); }
     if (fx === "down" && i < rs.blocks.length - 1) { [rs.blocks[i + 1], rs.blocks[i]] = [rs.blocks[i], rs.blocks[i + 1]]; await saveBlocks(); return editBlock(i + 1); }
     if (fx === "add") { rs.blocks.splice(i + 1, 0, { t: rs.blocks[i].t === "li" ? "li" : "p", x: "" }); return editBlock(i + 1, true); }
@@ -209,6 +242,124 @@ function editBlock(i, isNew) {
   $("#be-cancel").onclick = () => { if (isNew && !rs.blocks[i].x) rs.blocks.splice(i, 1); closeSheet(); renderMain(); };
   if (isNew) setTimeout(() => ta.focus(), 200);
 }
+function sectionEnd(i) {
+  let e = i + 1;
+  while (e < rs.blocks.length && !["h1", "h2"].includes(rs.blocks[e].t)) e++;
+  return e;
+}
+function moveSection(i, dir) {
+  // [i, end) is this section; swap it with the whole previous or next section. Returns its new start.
+  const b = rs.blocks, end = sectionEnd(i);
+  if (dir < 0) {
+    let p = i - 1;
+    while (p >= 0 && b[p].t !== "h2") p--;
+    if (p < 0) return null;
+    rs.blocks = [...b.slice(0, p), ...b.slice(i, end), ...b.slice(p, i), ...b.slice(end)];
+    return p;
+  }
+  if (end >= b.length || b[end].t !== "h2") return null;
+  const nEnd = sectionEnd(end);
+  rs.blocks = [...b.slice(0, i), ...b.slice(end, nEnd), ...b.slice(i, end), ...b.slice(nEnd)];
+  return i + (nEnd - end);
+}
+const SECTIONS = {
+  ru: ["О себе", "Опыт работы", "Образование", "Навыки", "Языки", "Проекты", "Курсы и сертификаты", "Достижения"],
+  en: ["Summary", "Work Experience", "Education", "Skills", "Languages", "Projects", "Courses & Certifications", "Achievements"],
+};
+function sectionSheet() {
+  const have = new Set(rs.blocks.filter((b) => b.t === "h2").map((b) => b.x.toLowerCase()));
+  const list = SECTIONS[rs.data.active.lang === "en" ? "en" : "ru"].filter((x) => !have.has(x.toLowerCase()));
+  st.sheet = { section: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>＋ Новый раздел</h3>
+    <div class="chips wrap">${list.map((x) => `<button class="chip" data-sec="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+    <form class="add" id="sec-own" style="padding:0"><input placeholder="Или свой: Волонтёрство, Публикации…" maxlength="60"><button>+</button></form>
+    <p class="muted">Раздел встанет в конец — потом его можно передвинуть: нажмите на заголовок и стрелки ↑ ↓.</p>
+    <div class="btns"><button class="wide" id="sec-close">Закрыть</button></div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  const add = async (name) => {
+    name = name.trim();
+    if (!name) return;
+    closeSheet();
+    rs.blocks.push({ t: "h2", x: name });
+    await saveBlocks();
+    rs.blocks.push({ t: /навык|skill|язык|language/i.test(name) ? "p" : "li", x: "" });
+    editBlock(rs.blocks.length - 1, true);
+  };
+  $$("[data-sec]").forEach((b) => (b.onclick = () => add(b.dataset.sec)));
+  $("#sec-own").onsubmit = (e) => { e.preventDefault(); add($("input", e.target).value); };
+  $("#sec-close").onclick = closeSheet;
+}
+
+/* ---------------------------------------------------------------- photo: pick, crop, shape */
+
+function photoSheet() {
+  const d = rs.data.design;
+  st.sheet = { photo: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>📷 Фото в резюме</h3>
+    <p class="muted">По желанию. В США и Великобритании фото обычно не ставят, в СНГ и Азии — часто. Роботы-фильтры (ATS) фото не читают.</p>
+    <div class="crop" id="crop" hidden><img id="crop-img" alt=""></div>
+    <input type="range" id="crop-zoom" min="1" max="3" step="0.01" value="1" hidden aria-label="Масштаб">
+    <p class="muted" id="crop-hint" hidden>Двигайте фото пальцем, ползунком — приблизить.</p>
+    <label class="rs-card"><b>${d.has_photo ? "🖼 Выбрать другое фото" : "🖼 Выбрать фото"}</b><span>JPG или PNG из галереи</span><input type="file" id="ph-file" accept="image/*"></label>
+    <div class="seg" role="group" aria-label="Форма"><button data-shape="round" aria-pressed="${d.shape !== "square"}">● Круг</button><button data-shape="square" aria-pressed="${d.shape === "square"}">■ Квадрат</button></div>
+    ${d.has_photo ? `<div class="tg"><span>Показывать фото в этой версии</span><button class="sw" id="ph-show" aria-pressed="${d.photo}" aria-label="Показывать фото"></button></div>` : ""}
+    <div class="btns"><button class="yes" id="ph-save" hidden>Сохранить фото</button><button id="ph-close">Закрыть</button></div>
+    ${d.has_photo ? '<button class="danger-btn" id="ph-del">Удалить фото совсем</button>' : ""}`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  $("#ph-close").onclick = closeSheet;
+  $$("[data-shape]").forEach((b) => (b.onclick = () => {
+    $$("[data-shape]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    $("#crop").classList.toggle("square", b.dataset.shape === "square");
+    if ($("#ph-save").hidden && d.has_photo) setDesign({ shape: b.dataset.shape });
+  }));
+  if ($("#ph-show")) $("#ph-show").onclick = () => { closeSheet(); setDesign({ photo: !d.photo }); };
+  if ($("#ph-del")) $("#ph-del").onclick = async (e) => {
+    if (!e.target.dataset.sure) { e.target.dataset.sure = "1"; e.target.textContent = "Точно удалить? Нажмите ещё раз"; return; }
+    try { rs.data = await api("/api/resume/photo", { remove: true }); rs.blocks = rs.data.blocks; closeSheet(); renderResume(); toast("Фото удалил"); } catch (err) { fail(err); }
+  };
+  $("#ph-file").onchange = (e) => e.target.files[0] && startCrop(e.target.files[0]);
+}
+function startCrop(file) {
+  const V = 260, img = $("#crop-img"), box = $("#crop"), zoom = $("#crop-zoom");
+  const c = { x: 0, y: 0, s: 1, base: 1 };
+  const url = URL.createObjectURL(file);
+  const clamp = () => {
+    const w = img.naturalWidth * c.s, h = img.naturalHeight * c.s;
+    c.x = Math.min(0, Math.max(V - w, c.x)); c.y = Math.min(0, Math.max(V - h, c.y));
+    img.style.transform = `translate(${c.x}px, ${c.y}px) scale(${c.s})`;
+  };
+  img.onerror = () => toast("Не получилось открыть картинку. Нужен JPG или PNG.");
+  img.onload = () => {
+    box.hidden = zoom.hidden = $("#crop-hint").hidden = $("#ph-save").hidden = false;
+    box.classList.toggle("square", $('[data-shape="square"]').getAttribute("aria-pressed") === "true");
+    c.base = c.s = V / Math.min(img.naturalWidth, img.naturalHeight);
+    c.x = (V - img.naturalWidth * c.s) / 2; c.y = (V - img.naturalHeight * c.s) / 2;
+    zoom.value = 1;
+    clamp();
+  };
+  img.src = url;
+  zoom.oninput = () => {
+    const ns = c.base * +zoom.value, k = ns / c.s;
+    c.x = V / 2 - (V / 2 - c.x) * k; c.y = V / 2 - (V / 2 - c.y) * k; c.s = ns; clamp();
+  };
+  let drag = null;
+  box.onpointerdown = (e) => { drag = { x: e.clientX, y: e.clientY, cx: c.x, cy: c.y }; box.setPointerCapture(e.pointerId); };
+  box.onpointermove = (e) => { if (!drag) return; c.x = drag.cx + e.clientX - drag.x; c.y = drag.cy + e.clientY - drag.y; clamp(); };
+  box.onpointerup = box.onpointercancel = () => (drag = null);
+  $("#ph-save").onclick = async () => {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 400;
+    cv.getContext("2d").drawImage(img, -c.x / c.s, -c.y / c.s, V / c.s, V / c.s, 0, 0, 400, 400);
+    const shape = $('[data-shape="square"]').getAttribute("aria-pressed") === "true" ? "square" : "round";
+    try {
+      $("#ph-save").disabled = true;
+      await api("/api/resume/photo", { vid: rs.data.active.id, data: cv.toDataURL("image/jpeg", 0.88) });
+      URL.revokeObjectURL(url);
+      closeSheet(); toast("Фото на месте");
+      await setDesign({ shape, photo: true });
+    } catch (err) { $("#ph-save").disabled = false; fail(err); }
+  };
+}
 async function saveBlocks() {
   try {
     rs.data = await api("/api/resume/save", { vid: rs.data.active.id, blocks: rs.blocks.filter((x) => x.x) });
@@ -217,7 +368,7 @@ async function saveBlocks() {
   } catch (e) { fail(e); }
 }
 
-/* ---------------------------------------------------------------- whole text / paste */
+/* ---------------------------------------------------------------- whole text */
 
 function renderRaw() {
   $("#rs-body").innerHTML = `${backBtn()}<div class="group pad"><h4>Весь текст резюме</h4>
@@ -227,17 +378,6 @@ function renderRaw() {
   bindCommon();
   $("#raw-save").onclick = async () => {
     try { rs.data = await api("/api/resume/save", { vid: rs.data.active.id, markdown: $("#raw").value }); rs.blocks = rs.data.blocks; haptic("ok"); toast("Сохранил"); go("main"); } catch (e) { fail(e); }
-  };
-}
-function renderPaste() {
-  $("#rs-body").innerHTML = `${backBtn(rs.data && rs.data.active ? "main" : "start")}<div class="group pad"><h4>Вставить резюме текстом</h4>
-    <p class="muted">Скопируйте весь текст резюме (с hh.ru, из Word, LinkedIn) и вставьте сюда. Я разложу его по разделам.</p>
-    <textarea id="paste" class="big" placeholder="Имя Фамилия&#10;Должность&#10;&#10;Опыт работы&#10;…"></textarea>
-    <input id="paste-name" class="inp" value="${rs.data && rs.data.versions.length ? "Новая версия" : "Основное"}" maxlength="40" aria-label="Название версии">
-    <button class="cta wide" id="paste-save">Сохранить и проверить</button></div>`;
-  bindCommon();
-  $("#paste-save").onclick = async () => {
-    try { rs.data = await api("/api/resume/new", { mode: "text", text: $("#paste").value, name: $("#paste-name").value }); rs.blocks = rs.data.blocks; haptic("ok"); go("main"); } catch (e) { fail(e); }
   };
 }
 
@@ -518,7 +658,6 @@ function versionSheet() {
     <p class="lbl">Новая версия</p>
     <div class="rs-start">
       <label class="rs-card"><b>📄 Из файла</b><input type="file" id="vs-file" accept=".pdf,.docx,.txt,.md"></label>
-      <button class="rs-card" id="vs-paste"><b>📋 Вставить текст</b></button>
       <button class="rs-card" id="vs-wizard"><b>✍️ Собрать с нуля</b></button>
     </div>
     ${a ? `<button class="danger-btn" id="vs-del">Удалить «${esc(a.name)}»</button>` : ""}
@@ -535,7 +674,6 @@ function versionSheet() {
     act({ action: "delete", vid: a.id }, "Версию удалил");
   };
   $("#vs-file").onchange = (e) => { closeSheet(); if (e.target.files[0]) uploadFile(e.target.files[0]); };
-  $("#vs-paste").onclick = () => { closeSheet(); go("paste"); };
   $("#vs-wizard").onclick = () => { closeSheet(); rs.draft = null; go("wizard"); };
 }
 function exportSheet() {

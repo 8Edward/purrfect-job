@@ -11,6 +11,7 @@ Anyone else gets 403. Nothing here writes to Telegram chats.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -244,6 +245,8 @@ class WebApp:
         r.add_get("/api/resume/ai/{job}", self.api_resume_ai_job)
         r.add_post("/api/resume/apply", self.api_resume_apply)
         r.add_post("/api/resume/export", self.api_resume_export)
+        r.add_post("/api/resume/design", self.api_resume_design)
+        r.add_post("/api/resume/photo", self.api_resume_photo)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -689,7 +692,8 @@ class WebApp:
                 resume.delete_version(m, vid)
             elif action == "duplicate":
                 meta, md = resume.get_version(m, vid)
-                resume.save_version(m, md, name=resume.unique_name(m, meta["name"] + " (копия)"))
+                new = resume.save_version(m, md, name=resume.unique_name(m, meta["name"] + " (копия)"))
+                resume.set_design(m, new["id"], **resume.design_of(meta))
             else:
                 return self.bad("Не понял, что сделать с версией")
         except ValueError as e:
@@ -821,6 +825,7 @@ class WebApp:
             if op == "translate":
                 name = resume.unique_name(m, "English" if result["lang"] == "en" else "Русский")
                 new = resume.save_version(m, result["markdown"], name=name, lang=result["lang"], make_active=False)
+                resume.set_design(m, new["id"], **resume.design_of(resume.get_version(m, job["vid"])[0]))
                 result = {"vid": new["id"], "name": new["name"], "problems": result["problems"]}
             resume_ai.count_use(m)
             job.update(status="done", result=result)
@@ -869,6 +874,38 @@ class WebApp:
             applied += 1
         resume.save_version(m, resume.markdown_of(bl), vid=meta["id"])
         return web.json_response({"applied": applied, **self.resume_payload(m)})
+
+    async def api_resume_design(self, request):
+        """Template, colour, photo on/off and photo shape of a version."""
+        m = self.member(request)
+        data = await self.body(request)
+        changes = {k: data[k] for k in ("tpl", "color", "photo", "shape") if k in data}
+        try:
+            resume.set_design(m, str(data.get("vid") or ""), **changes)
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response(self.resume_payload(m))
+
+    async def api_resume_photo(self, request):
+        """{vid, data: "data:image/...;base64,..."} -> photo.jpg, shown on that version;
+        {remove: true} -> photo deleted everywhere."""
+        m = self.member(request)
+        data = await self.body(request)
+        if data.get("remove"):
+            resume.delete_photo(m)
+            return web.json_response(self.resume_payload(m))
+        raw = str(data.get("data") or "")
+        match = re.match(r"^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$", raw)
+        if not match or len(raw) > 4 * 1024 * 1024:
+            return self.bad("Нужна картинка JPG или PNG до 3 МБ")
+        try:
+            resume.get_version(m, data.get("vid"))
+            await asyncio.get_running_loop().run_in_executor(None, resume.save_photo, m, base64.b64decode(match.group(2)))
+            resume.set_design(m, str(data.get("vid")), photo=True)
+        except ValueError as e:
+            return self.bad(str(e))
+        log.info("resume photo for %s saved", m.name)
+        return web.json_response(self.resume_payload(m))
 
     async def api_resume_export(self, request):
         """PDF / HTML / Markdown of a version, sent as a file into the person's chat with the bot."""

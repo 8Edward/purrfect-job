@@ -281,41 +281,219 @@ def inline_html(text):
     return s
 
 
-def to_html(markdown, title="Резюме"):
-    """A self-contained, ATS-friendly HTML page (one column, real text, no tables)."""
-    body, in_list = [], False
-    for b in blocks(markdown):
-        if b["t"] == "li" and not in_list:
-            body.append("<ul>")
-            in_list = True
-        elif b["t"] != "li" and in_list:
-            body.append("</ul>")
-            in_list = False
-        tag = {"h1": "h1", "h2": "h2", "h3": "h3", "li": "li", "p": "p"}[b["t"]]
-        body.append(f"<{tag}>{inline_html(b['x'])}</{tag}>")
-    if in_list:
-        body.append("</ul>")
+# ---------------------------------------------------------------- templates (one look for the app and the PDF)
+
+TEMPLATES = {  # id -> (name, one-line description)
+    "classic": ("Классика ATS", "Одна колонка, лучше всего проходит роботов-фильтров"),
+    "modern": ("Современный", "Две колонки: навыки, языки и учёба сбоку"),
+    "compact": ("Компактный", "Мелче и плотнее — чтобы уместить на одну страницу"),
+    "minimal": ("Минимал", "Строгий, с засечками и воздухом"),
+}
+COLORS = {"blue": "#24407a", "teal": "#0f6a6e", "green": "#2f6b3a", "wine": "#7a2443", "orange": "#a8501c", "graphite": "#2b2f36"}
+SIDE_KEYS = ("skills", "languages", "education", "courses")  # «Современный»: these go to the side column
+PAGE_W = 794  # A4 width in CSS px; the app scales the page down to the phone
+DEFAULT_DESIGN = {"tpl": "classic", "color": "blue", "photo": False, "shape": "round"}
+
+BASE_CSS = """
+.cv { --ac: %(color)s; --ac-soft: %(soft)s; color: #1a1d24; font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-size: 10.5pt; line-height: 1.42; box-sizing: border-box; background: #fff; }
+@media screen { .cv { width: 794px; min-height: 1123px; padding: 56px 60px; } }
+.cv * { box-sizing: border-box; }
+.cv h1 { font-size: 22pt; margin: 0 0 4px; letter-spacing: -.01em; line-height: 1.15; }
+.cv h2 { font-size: 11.5pt; text-transform: uppercase; letter-spacing: .06em; color: var(--ac); border-bottom: 1.2px solid var(--ac-soft);
+  padding-bottom: 3px; margin: 16px 0 8px; break-after: avoid; }
+.cv h3 { font-size: 11pt; margin: 10px 0 1px; break-after: avoid; }
+.cv h3 + p { margin: 0 0 4px; color: #586072; font-size: 9.8pt; }
+.cv p { margin: 3px 0; }
+.cv ul { margin: 3px 0 6px; padding-left: 18px; }
+.cv li { margin: 2px 0; break-inside: avoid; }
+.cv a { color: var(--ac); text-decoration: none; }
+.cv .head { display: flex; align-items: center; gap: 18px; }
+.cv .head > div { flex: 1; min-width: 0; }
+.cv .head p { color: #3d4452; margin: 1px 0; }
+.cv .photo { width: 104px; height: 104px; object-fit: cover; flex: none; border-radius: 50%%; }
+.cv .photo.square { border-radius: 8px; }
+"""
+TEMPLATE_CSS = {
+    "classic": """
+.cv .head { flex-direction: row-reverse; }
+""",
+    "modern": """
+.cv { font-size: 10.2pt; }
+.cv .head { background: var(--ac); color: #fff; border-radius: 10px; padding: 20px 22px; margin-bottom: 16px; }
+.cv .head p { color: rgba(255,255,255,.88); }
+.cv .head a { color: #fff; }
+.cv .head .photo { border: 3px solid rgba(255,255,255,.85); }
+.cv .cols { display: grid; grid-template-columns: 34% 1fr; gap: 22px; align-items: start; }
+.cv aside { background: var(--ac-soft); border-radius: 10px; padding: 4px 14px 12px; }
+.cv aside h2 { border-bottom-color: rgba(0,0,0,.12); font-size: 10.5pt; }
+.cv aside h3 { font-size: 10pt; }
+.cv main > section:first-child h2, .cv aside > section:first-child h2 { margin-top: 10px; }
+.cv h3 { color: var(--ac); }
+""",
+    "compact": """
+.cv { font-family: Arial, Helvetica, sans-serif; font-size: 9.4pt; line-height: 1.3; }
+@media screen { .cv { padding: 40px 44px; } }
+.cv h1 { font-size: 18pt; }
+.cv h2 { font-size: 10pt; margin: 10px 0 4px; padding-bottom: 2px; }
+.cv h3 { font-size: 9.8pt; margin: 6px 0 0; }
+.cv h3 + p { font-size: 8.8pt; margin-bottom: 2px; }
+.cv li { margin: 1px 0; }
+.cv ul { margin: 2px 0 4px; padding-left: 15px; }
+.cv .photo { width: 80px; height: 80px; }
+.cv .head { flex-direction: row-reverse; }
+""",
+    "minimal": """
+.cv { font-family: Georgia, "Times New Roman", serif; font-size: 10.6pt; line-height: 1.5; }
+.cv .head { flex-direction: column; text-align: center; gap: 10px; margin-bottom: 8px; }
+.cv h1 { font-size: 24pt; font-weight: 400; letter-spacing: .02em; }
+.cv h2 { text-transform: none; letter-spacing: .02em; font-size: 12.5pt; font-weight: 400; font-style: italic; color: var(--ac);
+  border-bottom: none; border-top: 1px solid #d9dbe0; padding: 8px 0 0; margin-top: 18px; }
+.cv h3 { font-size: 10.8pt; }
+.cv h3 + p { font-style: italic; }
+""",
+}
+PRINT_CSS = "@page { size: A4; margin: 14mm 15mm; } html, body { margin: 0; background: #fff; } .cv { -webkit-print-color-adjust: exact; print-color-adjust: exact; }"
+
+
+def soft(color):
+    """A pale tint of the accent colour (for lines and the side column)."""
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    mix = lambda c: round(c + (255 - c) * 0.88)  # noqa: E731
+    return f"#{mix(r):02x}{mix(g):02x}{mix(b):02x}"
+
+
+def design_of(meta):
+    d = dict(DEFAULT_DESIGN)
+    d.update({k: meta[k] for k in DEFAULT_DESIGN if k in (meta or {})})
+    if d["tpl"] not in TEMPLATES:
+        d["tpl"] = "classic"
+    if d["color"] not in COLORS:
+        d["color"] = "blue"
+    return d
+
+
+def template_css(design):
+    color = COLORS[design["color"]]
+    return BASE_CSS % {"color": color, "soft": soft(color)} + TEMPLATE_CSS[design["tpl"]]
+
+
+def render(markdown, design=None, photo=None, editable=False):
+    """The résumé body (<div class="cv">…) in a template. `photo` is a data: URI or None.
+    editable=True marks every line with data-i (its block index) for the app's tap-to-edit."""
+    design = design or dict(DEFAULT_DESIGN)
+    bl = blocks(markdown)
+    head, secs = [], []
+    for i, b in enumerate(bl):
+        if b["t"] == "h2":
+            secs.append((section_key(b["x"]), [(i, b)]))
+        elif secs:
+            secs[-1][1].append((i, b))
+        else:
+            head.append((i, b))
+
+    def lines(items):
+        out, in_list = [], False
+        for i, b in items:
+            if b["t"] == "li" and not in_list:
+                out.append("<ul>")
+                in_list = True
+            elif b["t"] != "li" and in_list:
+                out.append("</ul>")
+                in_list = False
+            mark = f' data-i="{i}"' if editable else ""
+            out.append(f"<{b['t']}{mark}>{inline_html(b['x'])}</{b['t']}>")
+        if in_list:
+            out.append("</ul>")
+        return "".join(out)
+
+    pic = ""
+    if photo and design.get("photo"):
+        shape = " square" if design.get("shape") == "square" else ""
+        mark = ' data-photo="1"' if editable else ""
+        pic = f'<img class="photo{shape}" src="{photo}" alt=""{mark}>'
+    parts = [f'<header class="head">{pic}<div>{lines(head)}</div></header>' if head or pic else ""]
+    section = lambda s: f'<section class="sec-{s[0] or "other"}">{lines(s[1])}</section>'  # noqa: E731
+    side = [s for s in secs if s[0] in SIDE_KEYS]
+    if design["tpl"] == "modern" and side and len(side) < len(secs):
+        main = [s for s in secs if s[0] not in SIDE_KEYS]
+        parts.append(f'<div class="cols"><aside>{"".join(map(section, side))}</aside><main>{"".join(map(section, main))}</main></div>')
+    else:
+        parts.append("".join(map(section, secs)))
+    return f'<div class="cv tpl-{design["tpl"]}">{"".join(parts)}</div>'
+
+
+def to_html(markdown, title="Резюме", design=None, photo=None):
+    """A self-contained HTML page in the chosen template (real text, so ATS can read it)."""
+    design = design or dict(DEFAULT_DESIGN)
     lang = detect_lang(markdown)
     return f"""<!doctype html>
 <html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
-<style>
-@page {{ size: A4; margin: 16mm 16mm 16mm 16mm; }}
-body {{ font-family: "Segoe UI", Arial, Helvetica, sans-serif; color: #1a1d24; font-size: 10.5pt; line-height: 1.42; max-width: 780px; margin: 24px auto; padding: 0 20px; }}
-@media print {{ body {{ margin: 0; padding: 0; max-width: none; }} }}
-h1 {{ font-size: 22pt; margin: 0 0 4px; letter-spacing: -.01em; }}
-h1 + p {{ margin-top: 0; color: #3d4452; }}
-h2 {{ font-size: 11.5pt; text-transform: uppercase; letter-spacing: .06em; color: #24407a; border-bottom: 1.2px solid #c9d1e3; padding-bottom: 3px; margin: 16px 0 8px; break-after: avoid; }}
-h3 {{ font-size: 11pt; margin: 10px 0 1px; break-after: avoid; }}
-h3 + p {{ margin: 0 0 4px; color: #586072; font-size: 9.8pt; }}
-p {{ margin: 3px 0; }}
-ul {{ margin: 3px 0 6px; padding-left: 18px; }}
-li {{ margin: 2px 0; break-inside: avoid; }}
-a {{ color: #24407a; text-decoration: none; }}
-</style></head><body>
-{chr(10).join(body)}
+<style>{template_css(design)}
+@media screen {{ body {{ background: #eef0f4; margin: 0; padding: 20px 0; }} .cv {{ margin: 0 auto; box-shadow: 0 2px 16px rgba(0,0,0,.12); }} }}
+@media print {{ {PRINT_CSS} }}</style></head><body>
+{render(markdown, design, photo)}
 </body></html>
 """
+
+
+# ---------------------------------------------------------------- design and photo
+
+def set_design(member, vid, **changes):
+    """Template / colour / photo on or off / photo shape of a version."""
+    index = load_index(member)
+    meta = next((v for v in index["list"] if v["id"] == vid), None)
+    if not meta:
+        raise ValueError("Нет такой версии")
+    for k, v in changes.items():
+        if k == "tpl" and v in TEMPLATES or k == "color" and v in COLORS or k == "shape" and v in ("round", "square"):
+            meta[k] = v
+        elif k == "photo":
+            meta[k] = bool(v)
+    save_index(member, index)
+    return design_of(meta)
+
+
+def photo_path(member):
+    return folder(member) / "photo.jpg"
+
+
+def save_photo(member, data):
+    """Bytes of an image (already cropped square in the app) -> photo.jpg, 400×400 JPEG."""
+    from io import BytesIO
+    from PIL import Image
+    try:
+        img = Image.open(BytesIO(data))
+        img.load()
+    except Exception:
+        raise ValueError("Не получилось открыть картинку. Нужен JPG или PNG.")
+    img = img.convert("RGB")
+    side = min(img.size)
+    img = img.crop(((img.width - side) // 2, (img.height - side) // 2, (img.width + side) // 2, (img.height + side) // 2))
+    img = img.resize((400, 400), Image.LANCZOS)
+    path = photo_path(member)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(path, "JPEG", quality=86)
+    return path
+
+
+def delete_photo(member):
+    path = photo_path(member)
+    if path.exists():
+        path.unlink()
+    index = load_index(member)
+    for v in index["list"]:
+        v["photo"] = False
+    save_index(member, index)
+
+
+def photo_uri(member):
+    import base64
+    path = photo_path(member)
+    if not path.exists():
+        return None
+    return "data:image/jpeg;base64," + base64.b64encode(path.read_bytes()).decode()
 
 
 # ---------------------------------------------------------------- doctor: score and remarks
@@ -686,7 +864,7 @@ def export_file(member, vid, fmt, workdir):
         path = workdir / f"{base}.md"
         path.write_text(md, encoding="utf-8")
         return path
-    page = to_html(md, title=f"{meta['name']} — {base}")
+    page = to_html(md, title=f"{meta['name']} — {base}", design=design_of(meta), photo=photo_uri(member))
     html_path = workdir / f"{base}.html"
     html_path.write_text(page, encoding="utf-8")
     return html_path
@@ -725,5 +903,11 @@ def overview(member):
         meta, md = get_version(member)
     except ValueError:
         return {"versions": index["list"], "active": None}
-    return {"versions": index["list"], "active": meta, "markdown": md, "blocks": blocks(md), "doctor": doctor(md)}
+    design = design_of(meta)
+    photo = photo_uri(member)
+    return {"versions": index["list"], "active": meta, "markdown": md, "blocks": blocks(md), "doctor": doctor(md),
+            "design": {**design, "has_photo": bool(photo)},
+            "paper": {"css": template_css(design), "html": render(md, design, photo, editable=True)},
+            "templates": [{"id": k, "name": n, "about": a} for k, (n, a) in TEMPLATES.items()],
+            "colors": COLORS}
 
