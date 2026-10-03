@@ -64,7 +64,10 @@ def render_dashboard(stats, out_dir, subtitle="Удалённые ваканси
         return path
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     for old in Path(out_dir).glob("dash-*.png"):
-        old.unlink()
+        try:
+            old.unlink()
+        except OSError:  # still being sent by another message (Windows locks it); cleaned up next time
+            pass
 
     img = gradient().convert("RGBA")
     img = glow(img, (1100, 80), 260, (124, 58, 237), 120)
