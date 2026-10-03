@@ -4,6 +4,7 @@ Temp folder, fake bot and fake Claude: no Telegram, no network, real data untouc
 
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import time
@@ -334,6 +335,27 @@ async def main():
                 assert j["status"] == "done" and j["result"]["now"].startswith("Аналитик в банке"), j
                 saved_plan = (await (await c.get("/api/plan", headers=auth)).json())["plan"]
                 assert saved_plan["goal"] == "role" and saved_plan["steps"][0]["weeks"] == "3–4 нед."
+
+                # ✉️ «Откликнуться» in dry mode: draft, «send» (nothing leaves), tracker marked
+                import apply
+                os.environ["JR_APPLY_DRY"] = "1"
+                apply.resume_pdf = lambda m, vid: asyncio.sleep(0, None)
+                app.owner_only = app.member
+                inbox = g.load_inbox()
+                inbox["mail1"] = {"source": "tg", "title": "Data Analyst", "chat": "datajob", "status": "new", "fav": False, "tags": [],
+                                  "date": now.isoformat(), "text": "Ищем аналитика данных, SQL. Резюме на hr@uzum.com или @hr_uzum."}
+                g.save_inbox(inbox)
+                app.ai = FakeClaude([json.dumps({"text": "Здравствуйте! Я аналитик данных, пишу SQL-запросы к PostgreSQL. " * 3})])
+                job = await (await c.post("/api/apply/prepare", headers=auth, json={"key": "mail1"})).json()
+                j = await wait(c, auth, job["job"])
+                assert j["status"] == "done", j
+                r = j["result"]
+                assert r["channels"]["email"] == ["hr@uzum.com"] and r["channels"]["tg"] == ["hr_uzum"] and r["dry"] and r["lang"] == "ru"
+                assert (await c.post("/api/apply/send", headers=auth, json={"key": "mail1", "to": "nope", "subject": "x", "text": r["letter"]})).status == 400
+                s = await (await c.post("/api/apply/send", headers=auth, json={"key": "mail1", "to": "hr@uzum.com", "subject": r["subject"],
+                                                                                "text": r["letter"], "vid": r["resume"]["vid"]})).json()
+                assert s["result"] == "dry" and s["item"]["track"]["stage"] == "applied" and s["item"]["fav"]
+                del os.environ["JR_APPLY_DRY"]
 
                 # 🗑 deleting the last résumé version sticks (it used to come back from cv.txt)
                 import cv_reader

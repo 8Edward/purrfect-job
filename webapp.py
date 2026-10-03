@@ -26,6 +26,7 @@ import yaml
 from aiohttp import web
 from telethon import utils
 
+import apply
 import cv_reader
 import extras
 import guests
@@ -334,6 +335,9 @@ class WebApp:
         r.add_post("/api/refresh", self.api_refresh)
         r.add_post("/api/score", self.api_score)
         r.add_post("/api/score/new", self.api_score_new)
+        r.add_post("/api/apply/prepare", self.api_apply_prepare)
+        r.add_post("/api/apply/send", self.api_apply_send)
+        r.add_post("/api/apply/done", self.api_apply_done)
         r.add_get("/api/resume/original", self.api_original)
         r.add_post("/api/resume/original/send", self.api_original_send)
         r.add_get("/api/track", self.api_track)
@@ -1246,6 +1250,94 @@ class WebApp:
             return {"scored": done, "failed": failed, "left": extras.scores_left(m)}
         asyncio.create_task(self.run_ai_job(jid, m, work))
         return web.json_response({"job": jid, "total": len(todo), "queued": self.ai.lock.locked()})
+
+    # -- ✉️ «Откликнуться» (owner only; apply.py). Nothing is sent without the owner's own tap.
+
+    def owner_only(self, request):
+        m = self.member(request)
+        if not m.is_owner:
+            raise web.HTTPForbidden(text='{"error": "Отклики пока только у владельца"}', content_type="application/json")
+        return m
+
+    async def api_apply_prepare(self, request):
+        """Draft a response: the letter in the vacancy's language, the résumé version to send, where it can go."""
+        m = self.owner_only(request)
+        key = str((await self.body(request)).get("key") or "")
+        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        if not item:
+            return self.bad("Вакансия не найдена", 404)
+        if self.running(m, "apply"):
+            return self.bad("Отклик уже готовится — подождите.", 409)
+        if resume_ai.uses_left(m) <= 0:
+            return self.bad("ИИ на сегодня всё: дневной лимит исчерпан.", 429)
+        jid = self.new_ai_job(m, "apply", key=key)
+
+        async def work():
+            try:
+                text = await self.vacancy_text(m, {"job_key": key})
+            except ValueError:
+                text = item.get("text") or ""
+            head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n{item.get('location') or ''}\n\n"
+            lang = resume.detect_lang(text or head)
+            meta = apply.pick_version(m, lang)
+            if not meta:
+                raise ValueError("Сначала добавьте резюме во вкладке «▤ Резюме».")
+            _, md = resume.get_version(m, meta["id"])
+            letter = await resume_ai.run(self.ai, "cover", md, head + text, lang)
+            resume_ai.count_use(m)
+            name = (resume.blocks(md)[0]["x"] if resume.blocks(md) else "").strip("# ")
+            return {"letter": letter["text"], "warning": letter["warning"], "lang": lang,
+                    "subject": apply.subject_for(item, name, lang), "channels": apply.contacts(item, text),
+                    "resume": {"vid": meta["id"], "name": meta["name"], "lang": meta.get("lang", "ru")},
+                    "smtp": bool(apply.smtp_settings(self.radar.cfg)), "dry": apply.dry_run(self.radar.cfg)}
+        asyncio.create_task(self.run_ai_job(jid, m, work))
+        return web.json_response({"job": jid, "queued": self.ai.lock.locked()})
+
+    async def api_apply_send(self, request):
+        """«Отправить» by email: only after the owner's tap; the PDF of the chosen version goes along."""
+        m = self.owner_only(request)
+        data = await self.body(request)
+        key, to = str(data.get("key") or ""), str(data.get("to") or "").strip()
+        subject, text = str(data.get("subject") or "").strip()[:200], str(data.get("text") or "").strip()[:8000]
+        if not apply.EMAIL_RE.fullmatch(to):
+            return self.bad("Не похоже на адрес почты")
+        if len(text) < 40 or not subject:
+            return self.bad("Письмо пустое")
+        smtp = apply.smtp_settings(self.radar.cfg)
+        if not smtp and not apply.dry_run(self.radar.cfg):
+            return self.bad("Почта не подключена: нужен пароль приложения Gmail в config.yml (smtp).")
+        try:
+            pdf = await apply.resume_pdf(m, data.get("vid"))
+            result = await apply.dry_or_send(self.radar.cfg, smtp, to, subject, text, pdf, log)
+        except (ValueError, RuntimeError) as e:
+            return self.bad(str(e))
+        except Exception as e:
+            log.exception("apply email to %s failed", to)
+            return self.bad(f"Письмо не ушло: {str(e)[:160]}", 500)
+        item = apply.mark_applied(m, key, f"Отклик по почте: {to}")
+        log.info("apply: %s to %s for %s", result, to, key)
+        return web.json_response({"ok": True, "result": result, "item": item_json(key, item) if item else None})
+
+    async def api_apply_done(self, request):
+        """The owner applied another way (opened the vacancy / a mail draft / a Telegram chat): the letter and the
+        PDF go into their bot chat to forward or attach, and the vacancy is marked «Откликнулся»."""
+        m = self.owner_only(request)
+        data = await self.body(request)
+        key, how = str(data.get("key") or ""), str(data.get("how") or "сайт")[:60]
+        text = str(data.get("text") or "").strip()[:3500]
+        try:
+            pdf = await apply.resume_pdf(m, data.get("vid")) if data.get("vid") else None
+        except (ValueError, RuntimeError):
+            pdf = None
+        try:
+            if text:
+                await self.radar.bot.send_message(m.id, "✉️ Письмо для отклика — скопируйте:\n\n" + text, link_preview=False)
+            if pdf:
+                await self.radar.bot.send_file(m.id, str(pdf), caption="📄 Резюме для этого отклика", force_document=True)
+        except Exception:
+            log.warning("apply: could not send the draft to the chat", exc_info=True)
+        item = apply.mark_applied(m, key, f"Отклик: {how}")
+        return web.json_response({"ok": True, "item": item_json(key, item) if item else None})
 
     async def api_original(self, request):
         """📎 The résumé file as it was uploaded: its name, date and text."""

@@ -11,3 +11,11 @@ bot_token: "123456789:AAAA-your-bot-token"
 
 # Search settings (interval, keywords, ...) live in search.default.yml / search.yml
 # and can be changed from the bot: ⚙️ Настройки.
+
+# ✉️ «Откликнуться» by email from your own Gmail (optional). Without it the app opens a ready mail draft.
+# Make an app password at https://myaccount.google.com/apppasswords (needs 2-step verification on).
+# smtp:
+#   user: you@gmail.com
+#   app_password: "abcd efgh ijkl mnop"
+#   name: Your Name
+# apply_dry_run: true   # tests: «Отправить» only logs, nothing is sent

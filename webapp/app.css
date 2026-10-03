@@ -493,3 +493,9 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 .icon-btn svg { display: block; }
 .icon-btn.spin { animation: none; }
 .icon-btn.spin svg { animation: spin 1s linear infinite; transform-origin: 50% 50%; }
+
+/* ✉️ apply sheet */
+.ap-btns { display: grid; gap: 8px; margin: 10px 0; }
+.ap-btns button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-sm); padding: 11px; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
+.ap-btns button.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+#ap-text { min-height: 34vh; }

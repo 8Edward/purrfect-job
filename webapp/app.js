@@ -338,6 +338,7 @@ function renderSheet() {
       ${fresh ? `<button class="yes" data-a="take">★ В избранное</button><button data-a="hide">✕ Скрыть</button>` : ""}
       ${i.status === "hidden" ? `<button data-a="restore" class="wide">↩ Вернуть в новые</button>` : ""}
       ${fresh ? "" : `<button data-a="fav" class="wide">${i.fav ? "★ Убрать из избранного" : "☆ В избранное"}</button>`}
+      ${st.me && st.me.owner ? '<button data-a="apply" class="yes wide">✉️ Откликнуться</button>' : ""}
       ${i.link ? `<button data-a="open" class="wide">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
     </div>`;
   $$("#sheet [data-a]").forEach((b) => (b.onclick = () => sheetAction(b.dataset.a)));
@@ -385,6 +386,73 @@ async function scoreJob(item) {
     patchItem(item.key, { ai });
     haptic("ok");
   } catch (e) { st.scoring.delete(item.key); patchItem(item.key, {}); fail(e); }
+}
+
+/* ---------------------------------------------------------------- ✉️ «Откликнуться» (owner only) */
+
+async function applyFlow(item) {
+  st.sheet = { apply: item };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
+    <div class="empty"><div class="spinner"></div><b>Готовлю письмо</b>Пишу на языке вакансии, только по фактам из резюме. До минуты.</div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+  try {
+    const d = await api("/api/apply/prepare", { key: item.key });
+    const r = await waitJob(d.job);
+    if (!st.sheet || st.sheet.apply !== item) return;
+    renderApply(item, r);
+  } catch (e) { closeSheet(); fail(e); }
+}
+function renderApply(item, r) {
+  const ch = r.channels;
+  const mails = ch.email.map((m) => `<button class="${r.smtp || r.dry ? "yes" : ""}" data-mail="${esc(m)}">📧 ${r.smtp || r.dry ? "Отправить на" : "Письмо на"} ${esc(m)}</button>`).join("");
+  const tgs = ch.tg.map((t) => `<button data-tg="${esc(t)}">💬 Открыть чат @${esc(t)}</button>`).join("");
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
+    <p class="hint">Проверьте и поправьте письмо. Резюме: «${esc(r.resume.name)}»${r.resume.lang !== r.lang ? " (другой язык, чем вакансия — можно перевести во вкладке «Резюме»)" : ""}. Ничего не уйдёт, пока вы не нажмёте кнопку.${r.dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
+    ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
+    ${ch.email.length ? `<label class="fld"><span>Тема письма</span><input class="inp" id="ap-subj" value="${esc(r.subject)}" maxlength="200"></label>` : ""}
+    <label class="fld"><span>Письмо</span><textarea class="inp big" id="ap-text">${esc(r.letter)}</textarea></label>
+    <div class="ap-btns">${mails}${tgs}
+      ${ch.link ? '<button data-site="1">🔗 Открыть вакансию</button>' : ""}
+      <button data-copy="1">📋 Скопировать письмо</button></div>
+    ${!r.smtp && !r.dry && ch.email.length ? '<p class="hint">Чтобы я отправлял письма сам, нужен «пароль приложения» Gmail в config.yml — спросите меня в чате, покажу по шагам.</p>' : ""}
+    <p class="hint">После «Открыть…» письмо и PDF резюме придут в чат с ботом, а вакансия отметится «Откликнулся».</p>
+    <div class="btns"><button class="wide" id="ap-cancel">Отмена</button></div>`;
+  const text = () => $("#ap-text").value;
+  const done = async (how) => {
+    try {
+      const d = await api("/api/apply/done", { key: item.key, how, text: text(), vid: r.resume.vid });
+      haptic("ok"); toast("Отмечено: Откликнулся · письмо и резюме в чате с ботом");
+      afterApply(item, d.item);
+    } catch (e) { fail(e); }
+  };
+  $("#ap-cancel").onclick = closeSheet;
+  $$("[data-mail]").forEach((b) => (b.onclick = async () => {
+    const to = b.dataset.mail;
+    if (!(r.smtp || r.dry)) {  // no mailbox connected: a ready draft in the person's mail app
+      openLink(`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent($("#ap-subj").value)}&body=${encodeURIComponent(text())}`);
+      return done("письмо " + to);
+    }
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = `Точно отправить на ${to}? Нажмите ещё раз`; return; }
+    b.disabled = true; b.textContent = "Отправляю…";
+    try {
+      const d = await api("/api/apply/send", { key: item.key, to, subject: $("#ap-subj").value, text: text(), vid: r.resume.vid });
+      haptic("ok"); toast(d.result === "dry" ? "Сухой режим: письмо не ушло, но всё готово" : `Отправлено на ${to} · отмечено «Откликнулся»`);
+      afterApply(item, d.item);
+    } catch (e) { b.disabled = false; delete b.dataset.sure; b.textContent = `📧 Отправить на ${to}`; fail(e); }
+  }));
+  $$("[data-tg]").forEach((b) => (b.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(text()).catch(() => {}); openLink("https://t.me/" + b.dataset.tg); done("Telegram @" + b.dataset.tg); }));
+  $$("[data-site]").forEach((b) => (b.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(text()).catch(() => {}); openLink(ch.link); done("на сайте"); }));
+  $$("[data-copy]").forEach((b) => (b.onclick = async () => {
+    try { await navigator.clipboard.writeText(text()); toast("Письмо скопировано"); } catch (e) { toast("Не получилось скопировать — выделите текст вручную"); }
+  }));
+}
+function afterApply(item, fresh) {
+  closeSheet();
+  if (fresh) st.feed = st.feed.filter((i) => i.key !== item.key);
+  renderStack();
+  loadMe().catch(() => {});
+  if (!$("#s-more").hidden) loadTrack();
 }
 
 /* ---------------------------------------------------------------- 📋 my responses (tracker) */
@@ -441,6 +509,7 @@ async function sheetAction(action) {
   const { item, viaSearch } = st.sheet;
   if (action === "open") return openLink(item.link);
   if (action === "score") return scoreJob(item);
+  if (action === "apply") return applyFlow(item);
   try {
     const path = viaSearch ? `/api/search/${encodeURIComponent(item.key)}/${action}` : `/api/jobs/${encodeURIComponent(item.key)}/${action}`;
     const d = await api(path, {});
