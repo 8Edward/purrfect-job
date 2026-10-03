@@ -269,10 +269,37 @@ def grouped_json(pairs, grouped=False):
     return out
 
 
+def fits_now(m):
+    """Does a stored vacancy still fit the person's CURRENT feed settings (words, stop words,
+    ticked channels and sites)? Vacancies were filtered when found; after the settings change
+    the feed follows at once. Nothing is deleted: change the settings back and they return."""
+    filt = tc.job_filter_from(m.cfg())
+    listed = guests.listed_sites()
+    names = {name: pid for pid, name in listed.items()}
+    sites = set(m.sites(listed))
+    pool = guests.load_pool()
+    channels = set(m.selected(pool))
+
+    def fits(v):
+        if v.get("fav"):
+            return True
+        if v.get("source") == "web":
+            if v.get("site") in names and names[v["site"]] not in sites:
+                return False
+            text = " ".join([v.get("title") or "", v.get("company") or "", v.get("location") or ""])
+            return (not filt.role or any(p.search(text) for p in filt.role)) and not any(p.search(text) for p in filt.negative)
+        chan = re.match(r"https://t\.me/([A-Za-z0-9_]{4,})/\d+", v.get("link") or "")
+        if chan and chan.group(1).lower() in {k.lower() for k in pool["channels"]} and chan.group(1).lower() not in {k.lower() for k in channels}:
+            return False
+        return not filt.role or filt.is_job(v.get("text", ""))
+    return fits
+
+
 def feed_pairs(m, inbox):
     """The «new» feed: newest first, the person's time zone filter applied. -> (pairs, filtered out)"""
     tz = extras.tz_settings(m)
-    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new"), key=lambda kv: kv[1]["date"], reverse=True)
+    fits = fits_now(m)
+    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
     keep = [(k, v) for k, v in new if extras.tz_fits(v, tz)]
     return keep, len(new) - len(keep)
@@ -1567,8 +1594,8 @@ class WebApp:
                 found = (await self.radar.check_pool([m], rescan_days=1))[m.id]
         more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
         for task in ("hh_task", "sites_task") + (("boards_task",) if m.is_owner else ()):
-            if hasattr(self.radar, task):
-                asyncio.create_task(getattr(self.radar, task)())
+            if hasattr(self.radar, task):  # hh.ru and sites: a full pass, old vacancies are checked again with today's words
+                asyncio.create_task(getattr(self.radar, task)(**({} if task == "boards_task" else {"full": True})))
                 more = True
         self.mark_checked(m)
         log.info("manual refresh by %s: %d new from channels", m.name, len(found))

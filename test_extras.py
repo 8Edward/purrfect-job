@@ -218,6 +218,7 @@ async def main():
             guests.save_registry(reg)
             g = guests.get(reg, 5)
             g.update_state(step=None)
+            g.set_sites(list(guests.listed_sites()))  # the feed shows only ticked sites
             fresh = (now - timedelta(hours=2)).isoformat()
             g.save_inbox({
                 "a": dict(a, status="new", fav=False, tags=[], date=fresh),
@@ -231,6 +232,15 @@ async def main():
                 auth = {"Authorization": "tma " + sign({"id": 5, "first_name": "Мама"})}
                 feed = await (await c.get("/api/jobs?view=new", headers=auth)).json()
                 assert len(feed["items"]) == 2 and feed["tz_hidden"] == 0
+                # the feed follows today's settings: a new stop word hides stored vacancies, removing it brings them back
+                s = g.load_search()
+                s.setdefault("keywords", {})["negative"] = ["uzum"]
+                g.save_search(s)
+                hidden = await (await c.get("/api/jobs?view=new", headers=auth)).json()
+                assert [i["key"] for i in hidden["items"]] == ["us"]
+                s["keywords"]["negative"] = []
+                g.save_search(s)
+                assert len((await (await c.get("/api/jobs?view=new", headers=auth)).json())["items"]) == 2
                 card = next(i for i in feed["items"] if i["key"] == "b")
                 assert card["also"][0]["key"] == "a" and card["salary"] == "$3000" and card["tz"].startswith("UTC+0")
                 me = await (await c.get("/api/me", headers=auth)).json()

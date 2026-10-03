@@ -775,21 +775,23 @@ async def fetch_feed(providers, timeout=900):
     return json.loads(lines[-1])
 
 
-def match_site_jobs(feed, member, listed):
+def match_site_jobs(feed, member, listed, full=False):
     """New site vacancies for one person: title/company/location must contain one of
-    their «Что ищу» words and none of the stop words."""
+    their «Что ищу» words and none of the stop words. full (a manual refresh): vacancies
+    seen before but rejected by the old words get another chance; only the inbox dedups."""
     kw = member.cfg().get("keywords", {})
     role, negative = tc.compile_patterns(kw.get("role")), tc.compile_patterns(kw.get("negative"))
     if not role:
         return []
     state = member.load_state()
     seen = set(state.get("site_seen", []))
+    skip = set() if full else seen
     inbox = member.load_inbox()
     jobs = []
     for provider in member.sites(listed):
         for j in (feed.get(provider) or {}).get("jobs", []):
             key = boards.board_key(j["url"])
-            if key in seen or key in inbox:
+            if key in skip or key in inbox:
                 continue
             seen.add(key)
             text = " ".join([j["title"], j.get("company", ""), j.get("location", "")])
@@ -929,18 +931,19 @@ async def fetch_himalayas(queries):
     return await asyncio.get_running_loop().run_in_executor(None, _himalayas_get, queries)
 
 
-def match_hh_jobs(raw, member):
+def match_hh_jobs(raw, member, full=False):
     """New hh.ru vacancies for one person: title must hold a «Что ищу» word (hh also
     matches the description, which drags in unrelated jobs), no stop words."""
     kw = member.cfg().get("keywords", {})
     role, negative = tc.compile_patterns(kw.get("role")), tc.compile_patterns(kw.get("negative"))
     state = member.load_state()
     seen = set(state.get("hh_seen", []))
+    skip = set() if full else seen  # see match_site_jobs
     inbox = member.load_inbox()
     jobs = []
     for j in raw:
         key = boards.board_key(j["url"])
-        if key in seen or key in inbox:
+        if key in skip or key in inbox:
             continue
         seen.add(key)
         if role and not any(p.search(j["title"]) for p in role):
