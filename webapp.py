@@ -1579,14 +1579,12 @@ class WebApp:
     async def api_refresh(self, request):
         """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""
         m = self.member(request)
-        if self.radar.lock.locked():  # a scheduled check is running: wait for it, its results are as fresh as ours
+        if self.radar.lock.locked():  # a scheduled check is running: wait for it, then do the full pass anyway
             try:
                 await asyncio.wait_for(self.radar.lock.acquire(), 150)
                 self.radar.lock.release()
             except asyncio.TimeoutError:
                 return web.json_response({"busy": True, "new": 0})
-            self.mark_checked(m)
-            return web.json_response({"busy": False, "new": 0, "waited": True, "more": False})
         if m.is_owner:
             found = await self.radar.check(tg=True, web=False, rescan_days=1, manual=True) or []
         else:
