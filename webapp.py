@@ -50,7 +50,7 @@ SEARCH_COOLDOWN = 2.0             # seconds between one person's searches
 ACTIONS = ("take", "hide", "restore", "fav")
 VIEWS = {
     "new": lambda i: i["status"] == "new",
-    "fav": lambda i: i.get("fav"),
+    "fav": lambda i: i.get("fav"),  # «Избранное»: swiping right stars a vacancy (there is no «в работе» any more)
     "taken": lambda i: i["status"] == "taken",
     "hidden": lambda i: i["status"] == "hidden",
     "all": lambda i: True,
@@ -222,13 +222,39 @@ def item_json(key, item, full=False):
         "ai": item.get("ai"),
         "track": item.get("track"),
         "silent": extras.silent_days(item),
+        "summary": extras.summary(item),
     }
 
 
-def grouped_json(pairs):
+SORTS = {  # feed order: newest first, or by pay / AI score / starred, newest first among equals
+    "date": lambda g: 0,
+    "salary": lambda g: -max(extras.salary_value(v) for _, v in g),
+    "ai": lambda g: -max(((v.get("ai") or {}).get("score") or 0) for _, v in g),
+    "fav": lambda g: -int(any(v.get("fav") for _, v in g)),
+}
+PAGE_MAX = 100
+FILTERS = {  # the feed's chips
+    "ru": lambda v: "ru-company" in (v.get("tags") or []),
+    "pt": lambda v: "part-time" in (v.get("tags") or []),
+    "tg": lambda v: v.get("source", "tg") != "web",
+    "hh": lambda v: v.get("source") == "web" and v.get("site") == "hh.ru",
+    "web": lambda v: v.get("source") == "web" and v.get("site") != "hh.ru",
+}
+SCORE_BATCH = 10  # «Оценить новые»: at most this many per tap
+
+
+def page_json(pairs, sort="date", offset=0, limit=40):
+    """One page of a list with duplicates merged: only the page gets turned into JSON, so a feed of
+    thousands stays light. -> (items, total)"""
+    gs = extras.groups(pairs)  # pairs come newest first, and the sort is stable
+    gs.sort(key=SORTS.get(sort, SORTS["date"]))
+    return grouped_json(gs[offset:offset + limit], grouped=True), len(gs)
+
+
+def grouped_json(pairs, grouped=False):
     """Vacancies with duplicates merged: one card, the other sources listed under «also»."""
     out = []
-    for g in extras.groups(pairs):
+    for g in (pairs if grouped else extras.groups(pairs)):
         (key, item), rest = g[0], g[1:]
         data = item_json(key, item)
         if rest:
@@ -305,6 +331,7 @@ class WebApp:
         r.add_post("/api/settings", self.api_settings)
         r.add_post("/api/refresh", self.api_refresh)
         r.add_post("/api/score", self.api_score)
+        r.add_post("/api/score/new", self.api_score_new)
         r.add_get("/api/track", self.api_track)
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
@@ -387,6 +414,12 @@ class WebApp:
         inbox, state, listed = m.load_inbox(), m.load_state(), guests.listed_sites()
         pool = guests.load_pool()
         last = state.get("last_run" if m.is_owner else "pool_run")
+        if not state.get("fav_migrated"):  # «в работе» became «Избранное»: what was taken is starred now
+            for item in inbox.values():
+                if item.get("status") == "taken":
+                    item["fav"] = True
+            m.save_inbox(inbox)
+            m.update_state(fav_migrated=True)
         return web.json_response({
             "name": "Эдуард" if m.is_owner else (m.info.get("name") or m.name).split(" ")[0],
             "owner": m.is_owner,
@@ -394,6 +427,7 @@ class WebApp:
             "onboarded": bool(state.get("app_onboarded")),
             "digest": not state.get("digest_off"),
             "ai": resume_ai.allowed(m),
+            "funnel": extras.funnel(inbox),
             "stats": {
                 "new": len(extras.groups(feed_pairs(m, inbox)[0])),
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
@@ -415,7 +449,17 @@ class WebApp:
             items, tz_hidden = feed_pairs(m, inbox)
         else:
             items, tz_hidden = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True), 0
-        return web.json_response({"items": grouped_json(items[:400])[:300], "tz_hidden": tz_hidden})
+        try:
+            offset = max(0, int(request.query.get("offset", 0)))
+            limit = min(PAGE_MAX, max(1, int(request.query.get("limit", 40))))
+        except ValueError:
+            offset, limit = 0, 40
+        f = request.query.get("f", "all")
+        if f in FILTERS:
+            items = [(k, v) for k, v in items if FILTERS[f](v)]
+        page, total = page_json(items, request.query.get("sort", "date"), offset, limit)
+        unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
+        return web.json_response({"items": page, "total": total, "offset": offset, "tz_hidden": tz_hidden, "unscored": unscored})
 
     async def api_job(self, request):
         m = self.member(request)
@@ -1112,26 +1156,61 @@ class WebApp:
         if len(self.running(m, "score")) >= 3:
             return self.bad("ИИ уже оценивает три вакансии — подождите их.", 409)
         jid = self.new_ai_job(m, "score", key=key)
+        asyncio.create_task(self.run_ai_job(jid, m, lambda: self.score_one(m, key, item)))
+        return web.json_response({"job": jid, "queued": self.ai.lock.locked(), "left": extras.scores_left(m)})
+
+    async def score_one(self, m, key, item):
+        thin = False
+        try:
+            text = await self.vacancy_text(m, {"job_key": key})
+        except ValueError:
+            text, thin = item.get("text") or "", True
+        head = "\n".join(f"{k}: {v}" for k, v in (("Title", item.get("title")), ("Company", item.get("company")),
+                                                   ("Location", item.get("location")), ("Pay", extras.salary_of(item))) if v)
+        answer = await self.ai.ask(extras.SCORE_RULES, extras.score_prompt(m, item, head + "\n\n" + text, thin))
+        result = dict(extras.parse_score(answer), thin=thin)
+        inbox = m.load_inbox()
+        if key in inbox:
+            inbox[key]["ai"] = result
+            m.save_inbox(inbox)
+        extras.count_score(m)
+        log.info("ai score for %s: %s %s", m.name, key, result["score"])
+        return result
+
+    async def api_score_new(self, request):
+        """✨ «Оценить новые»: the feed's vacancies that have no score yet, one by one (each counts
+        against the daily cap). Already scored ones are never sent again."""
+        m = self.member(request)
+        if not resume_ai.allowed(m):
+            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+        if self.running(m, "score_new"):
+            return self.bad("ИИ уже оценивает ленту — подождите.", 409)
+        left = extras.scores_left(m)
+        if left <= 0:
+            return self.bad("Оценки ИИ на сегодня закончились. Завтра снова можно.", 429)
+        if not extras.candidate_text(m):
+            return self.bad("Чтобы ИИ сравнил вакансии с вашим опытом, добавьте резюме во вкладке «▤ Резюме».")
+        pairs, _ = feed_pairs(m, m.load_inbox())
+        todo = [g[0] for g in extras.groups(pairs) if not any(v.get("ai") for _, v in g)]
+        if not todo:
+            return self.bad("Все вакансии в ленте уже оценены.")
+        todo = todo[:min(left, SCORE_BATCH)]
+        jid = self.new_ai_job(m, "score_new", progress={"done": 0, "total": len(todo)})
 
         async def work():
-            thin = False
-            try:
-                text = await self.vacancy_text(m, {"job_key": key})
-            except ValueError:
-                text, thin = item.get("text") or "", True
-            head = "\n".join(f"{k}: {v}" for k, v in (("Title", item.get("title")), ("Company", item.get("company")),
-                                                       ("Location", item.get("location")), ("Pay", extras.salary_of(item))) if v)
-            answer = await self.ai.ask(extras.SCORE_RULES, extras.score_prompt(m, item, head + "\n\n" + text, thin))
-            result = dict(extras.parse_score(answer), thin=thin)
-            inbox = m.load_inbox()
-            if key in inbox:
-                inbox[key]["ai"] = result
-                m.save_inbox(inbox)
-            extras.count_score(m)
-            log.info("ai score for %s: %s %s", m.name, key, result["score"])
-            return result
+            done, failed = 0, 0
+            for key, item in todo:
+                try:
+                    await self.score_one(m, key, item)
+                    done += 1
+                except RuntimeError as e:
+                    if str(e) in ("login", "missing"):
+                        raise
+                    failed += 1
+                self.ai_jobs[jid]["progress"] = {"done": done + failed, "total": len(todo)}
+            return {"scored": done, "failed": failed, "left": extras.scores_left(m)}
         asyncio.create_task(self.run_ai_job(jid, m, work))
-        return web.json_response({"job": jid, "queued": self.ai.lock.locked(), "left": extras.scores_left(m)})
+        return web.json_response({"job": jid, "total": len(todo), "queued": self.ai.lock.locked()})
 
     async def api_track(self, request):
         m = self.member(request)

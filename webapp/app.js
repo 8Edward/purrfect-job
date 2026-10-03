@@ -14,7 +14,7 @@ const SKINS = {
   tropic: { name: "Тропики", bg: "#e6f4ef", colors: ["#e6f4ef", "#0f3b37", "#ff6650"] },
 };
 const MATCH = { exact: "точно" };
-const st = { me: null, feed: [], filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
+const st = { me: null, feed: [], total: 0, sort: "date", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
 try { if (localStorage.getItem("jr-feed") === "list") st.view = "list"; } catch (e) { /* blocked */ }
 const STAGES = { applied: "Откликнулся", test: "Тестовое", interview: "Собеседование", offer: "Оффер", rejected: "Отказ" };
 
@@ -113,22 +113,40 @@ async function loadMe() {
     : `${esc(m.name)}, всё разобрано`;
   $("#checked").textContent = (m.checked_at ? "Проверено " + ago(m.checked_at) : "Первая проверка скоро")
     + (m.next_check ? ` · следующая через ${m.next_check} мин` : "");
-  $("#st-ch").textContent = s.channels;
-  $("#st-web").textContent = s.sites;
-  $("#st-taken").textContent = s.taken;
+  const f = m.funnel || {};
+  for (const k of ["jobs", "applied", "interview", "offer"]) $("#fn-" + k).textContent = f[k] ?? "–";
   $("#badge").hidden = !s.new;
   $("#badge").textContent = s.new > 99 ? "99+" : s.new;
 }
+/* the feed comes in pages (PAGE at a time) so thousands of vacancies never load at once */
+const PAGE = 40;
+const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&offset=${offset}&limit=${PAGE}`;
 async function loadFeed() {
-  const d = await api("/api/jobs?view=new");
+  const d = await api(feedUrl(0));
   st.feed = d.items;
+  st.total = d.total;
   st.tzHidden = d.tz_hidden || 0;
+  st.unscored = d.unscored || 0;
+  renderScoreNew();
   renderStack();
 }
-function keep(i) {
-  const f = st.filter;
-  return f === "all" || (f === "ru" && (i.tags || []).includes("ru-company"))
-    || (f === "pt" && (i.tags || []).includes("part-time")) || kindOf(i) === f;
+async function moreFeed() {
+  if (st.loading || st.feed.length >= st.total) return;
+  st.loading = true;
+  try {
+    const d = await api(feedUrl(st.feed.length));
+    const have = new Set(st.feed.map((i) => i.key));
+    st.feed = st.feed.concat(d.items.filter((i) => !have.has(i.key)));
+    st.total = d.total;
+    renderStack();
+  } catch (e) { /* the next scroll tries again */ }
+  st.loading = false;
+}
+const keep = () => true;  // the server filters now (chips go with each page request)
+function renderScoreNew() {
+  const b = $("#score-new");
+  b.hidden = !(st.me && st.me.ai) || !st.unscored;
+  if (!st.scoringAll) b.textContent = `✨ Оценить ИИ (${st.unscored})`;
 }
 function renderStack() {
   const items = st.feed.filter(keep), box = $("#stack");
@@ -139,7 +157,7 @@ function renderStack() {
   $("#feed-list").hidden = !list;
   if (list) {
     $("#acts").hidden = true;
-    $("#left").textContent = items.length ? `Всего ${items.length} · тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "") : "";
+    $("#left").textContent = items.length ? `Показано ${items.length} из ${st.total} · тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "") : "";
     renderList(items);
     if (items.length) return;
     box.hidden = false;
@@ -155,21 +173,23 @@ function renderStack() {
     return;
   }
   $("#acts").hidden = false;
-  $("#left").textContent = `Ещё ${items.length} · вправо — в работу, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "");
+  if (items.length < 8) moreFeed();
+  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "");
   box.innerHTML = items.slice(0, 3).reverse().map((i, n, arr) => {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
-      <span class="verdict yes">В РАБОТУ</span><span class="verdict no">СКРЫТЬ</span>
+      <span class="verdict yes">В ИЗБРАННОЕ</span><span class="verdict no">СКРЫТЬ</span>
       <div class="src"><span>${esc(originOf(i))}</span><span>${esc(when(i.date))}${i.fav ? " · ★" : ""}</span></div>
       <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
       <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>${aiLine(i)}
       ${i.also ? `<div class="also">${esc(alsoText(i))}</div>` : ""}
-      <p>${esc(i.text || "Полное описание на сайте.")}</p><span class="more">Подробнее →</span></article>`;
+      ${summaryHtml(i)}<p>${esc(i.text || (i.summary && i.summary.length ? "" : "Полное описание на сайте."))}</p><span class="more">Подробнее →</span></article>`;
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
 }
 const byKey = (key) => st.feed.find((i) => i.key === key);
+const summaryHtml = (i) => (i.summary && i.summary.length ? `<div class="sum">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : "");
 
 /* the whole feed as a scrolling list (the other view of the same vacancies) */
 function renderList(items) {
@@ -178,10 +198,14 @@ function renderList(items) {
     const facts = [i.company, originOf(i), when(i.date)].filter(Boolean).join(" · ");
     const extra = [i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz, i.also && "＋" + i.also.length].filter(Boolean).join(" · ");
     return `<div class="lrow" data-n="${n}"><button class="lmain" data-open="${n}"><b>${esc(i.title)}${i.fav ? " ★" : ""}</b>
-      <span class="s">${esc(facts)}</span>${extra ? `<span class="s x">${esc(extra)}</span>` : ""}
+      <span class="s">${esc(facts)}</span>${extra ? `<span class="s x">${esc(extra)}</span>` : ""}${i.summary && i.summary[0] ? `<span class="s x">${esc(i.summary[0])}</span>` : ""}
       ${i.ai ? `<span class="sc">✨ ${i.ai.score}</span>` : ""}</button>
-      <span class="lacts"><button class="no" data-no="${n}" aria-label="Скрыть">✕</button><button class="yes" data-yes="${n}" aria-label="В работу">✓</button></span></div>`;
-  }).join("");
+      <span class="lacts"><button class="no" data-no="${n}" aria-label="Скрыть">✕</button><button class="yes" data-yes="${n}" aria-label="В избранное">★</button></span></div>`;
+  }).join("") + (st.feed.length < st.total ? '<div class="more-load" id="more-load">Загружаю ещё…</div>' : "");
+  const sentinel = $("#more-load");
+  if (sentinel && "IntersectionObserver" in window) {
+    new IntersectionObserver((es, ob) => { if (es.some((x) => x.isIntersecting)) { ob.disconnect(); moreFeed(); } }).observe(sentinel);
+  }
   $$("[data-open]", box).forEach((b) => (b.onclick = () => openSheet(items[+b.dataset.open], false)));
   $$("[data-yes]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.yes], true, b.closest(".lrow"))));
   $$("[data-no]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.no], false, b.closest(".lrow"))));
@@ -241,7 +265,25 @@ function drag(card) {
 function setFilter(f) {
   st.filter = f;
   $$("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.f === f));
-  renderStack();
+  loadFeed().catch(fail);
+}
+async function scoreNew() {
+  if (st.scoringAll) return;
+  const b = $("#score-new");
+  st.scoringAll = true;
+  try {
+    const d = await api("/api/score/new", {});
+    b.textContent = `✨ Оцениваю 0 из ${d.total}…`;
+    for (let n = 0; n < 400; n++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const j = await api("/api/resume/ai/" + d.job);
+      if (j.progress) b.textContent = `✨ Оцениваю ${j.progress.done} из ${j.progress.total}…`;
+      if (j.status === "error") throw new Error(j.error);
+      if (j.status === "done") { haptic("ok"); toast(`Оценил ${j.result.scored}` + (j.result.failed ? `, не вышло: ${j.result.failed}` : "")); break; }
+    }
+  } catch (e) { fail(e); }
+  st.scoringAll = false;
+  await loadFeed().catch(() => {});
 }
 async function refresh() {
   const b = $("#refresh");
@@ -274,11 +316,12 @@ async function openSheet(item, viaSearch) {
 function renderSheet() {
   const { item: i } = st.sheet;
   const fresh = i.status === "new" || i.status === "found";
-  const status = { taken: "✓ В работе", hidden: "✕ Скрыта" }[i.status] || "";
+  const status = { hidden: "✕ Скрыта" }[i.status] || (i.fav ? "★ В избранном" : "");
   $("#sheet").innerHTML = `<div class="grip"></div>
     <div class="src">${esc(originOf(i))} · ${esc(when(i.date))}</div>
     <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
     <div class="meta">${metaHtml(i)}</div><div class="tags" style="margin-top:8px">${tagsHtml(i.tags)}</div>
+    ${i.summary && i.summary.length ? `<div class="sum" style="margin-top:8px">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : ""}
     ${status ? `<div class="status">${status}</div>` : ""}
     ${aiBox(i)}
     ${i.also ? `<div class="also">Эта же вакансия ещё в: ${i.also.map((a, n) => a.link ? `<button class="link" data-also="${n}">${esc(a.origin)}</button>` : esc(a.origin)).join(", ")}</div>` : ""}
@@ -286,10 +329,10 @@ function renderSheet() {
       `<button class="stage" data-stage="${k}" aria-pressed="${((i.track && i.track.stage) || "") === k}">${v}</button>`).join("")}</div></div>
     <div class="body">${esc(i.text || "Полное описание на сайте: кнопка ниже.")}</div>
     <div class="btns">
-      ${fresh ? `<button class="yes" data-a="take">✓ В работу</button><button data-a="hide">✕ Скрыть</button>` : ""}
+      ${fresh ? `<button class="yes" data-a="take">★ В избранное</button><button data-a="hide">✕ Скрыть</button>` : ""}
       ${i.status === "hidden" ? `<button data-a="restore" class="wide">↩ Вернуть в новые</button>` : ""}
-      <button data-a="fav" class="${fresh ? "" : "wide"}">${i.fav ? "★ В избранном" : "☆ В избранное"}</button>
-      ${i.link ? `<button data-a="open" class="${fresh ? "" : "wide"}">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
+      ${fresh ? "" : `<button data-a="fav" class="wide">${i.fav ? "★ Убрать из избранного" : "☆ В избранное"}</button>`}
+      ${i.link ? `<button data-a="open" class="wide">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
     </div>`;
   $$("#sheet [data-a]").forEach((b) => (b.onclick = () => sheetAction(b.dataset.a)));
   $$("#sheet [data-stage]").forEach((b) => (b.onclick = () => setStage(st.sheet.item, b.dataset.stage)));
@@ -365,7 +408,7 @@ async function loadTrack() {
     box.innerHTML = (counts.length ? `<div class="hint">${counts.map(([k, n]) => `${STAGES[k]}: <b>${n}</b>`).join(" · ")}</div>` : "")
       + (items.length ? items.map((i, n) => row(i, n, "t")).join("")
         : '<div class="hint">Пока пусто. Откройте вакансию и отметьте этап внизу карточки: «Откликнулся», «Тестовое»… Если неделю нет новостей, бот напомнит.</div>')
-      + (d.taken.length ? `<div class="lbl">В работе, без отметки</div>${d.taken.map((i, n) => row(i, n, "k")).join("")}` : "");
+      + (d.taken.length ? `<div class="lbl">Избранное, без отметки</div>${d.taken.map((i, n) => row(i, n, "k")).join("")}` : "");
     $$(".row", box).forEach((r) => (r.onclick = () => openSheet((r.dataset.list === "t" ? items : d.taken)[+r.dataset.n], false)));
   } catch (e) { box.innerHTML = ""; fail(e); }
 }
@@ -443,7 +486,7 @@ async function runSearch() {
 }
 function renderResults() {
   $("#results").innerHTML = st.results.length ? st.results.map((i, n) => {
-    const mark = i.status === "taken" ? " ✓" : i.status === "hidden" ? " ✕" : i.fav ? " ★" : "";
+    const mark = i.status === "hidden" ? " ✕" : i.fav ? " ★" : "";
     return `<button class="row" data-n="${n}"><b>${esc(i.title)}${mark}</b><span class="m ${i.match.kind === "exact" ? "exact" : ""}">${esc(i.match.label)}</span>
       <span class="s">${esc([i.company, originOf(i), when(i.date)].filter(Boolean).join(" · "))}</span></button>`;
   }).join("") : ($("#q").value.trim() && $("#res-head").textContent.startsWith("Найдено") ? '<div class="empty"><b>Ничего</b>Попробуйте «Похожие роли» или другое слово.</div>' : "");
@@ -477,7 +520,7 @@ async function loadSaved() {
   const box = $("#saved");
   try {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
-    const empty = { fav: "Нажмите ★ на вакансии, и она окажется здесь.", taken: "Свайпните карточку вправо, и она окажется здесь.", hidden: "Скрытых нет." };
+    const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет." };
     box.innerHTML = items.length ? items.map((i, n) =>
       `<button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")
       : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`;
@@ -499,7 +542,11 @@ async function loadSources(data) {
   }
   $$(".word").forEach((b) => (b.onclick = () => change({ type: "words", group: b.dataset.g, remove: +b.dataset.n }, "Удалил")));
   const on = s.channels.filter((c) => c.on).length;
-  $("#ch-head").textContent = `📡 Каналы · отмечено ${on} · в общем списке ${s.channels.length} из ${s.max_pool}`;
+  $("#ch-head").innerHTML = `📡 Каналы <small>${on} из ${s.channels.length} · максимум ${s.max_pool}</small>`;
+  $("#sum-role").textContent = s.words.role.length ? s.words.role.slice(0, 3).join(", ") + (s.words.role.length > 3 ? ` +${s.words.role.length - 3}` : "") : "пусто";
+  $("#sum-negative").textContent = s.words.negative.length ? `${s.words.negative.length}` : "пусто";
+  $("#sum-sites").textContent = `${s.sites.filter((x) => x.on).length} из ${s.sites.length}`;
+  $("#sum-tz").textContent = s.tz.on ? `UTC${s.tz.mine >= 0 ? "+" : "−"}${Math.abs(s.tz.mine)} ±${s.tz.spread} ч` : "выключено";
   $("#ch-list").innerHTML = s.channels.map((c) => `<div class="tg"><span>${esc(c.title)}<small>@${esc(c.key)}</small></span>
       <span class="ctl">${c.removable ? `<button class="x" data-rm="${esc(c.key)}" aria-label="Убрать из общего списка">🗑</button>` : ""}<button class="sw" data-ch="${esc(c.key)}" aria-pressed="${c.on}" aria-label="${esc(c.title)}"></button></span></div>`).join("");
   $$("[data-ch]").forEach((b) => (b.onclick = () => change({ type: "channel", key: b.dataset.ch, on: b.getAttribute("aria-pressed") !== "true" })));
@@ -628,8 +675,8 @@ function showReset() {
       <li>загруженное резюме удалится;</li>
       <li>стиль сбросится, обучение покажется снова.</li>
     </ul>
-    <p class="hint" style="font-size:14px">Найденные вакансии, избранное и «в работе» останутся, если не отметить ниже.</p>
-    <label class="check"><input type="checkbox" id="reset-jobs"> Удалить и все мои вакансии: ленту, избранное, «в работе», скрытые</label>
+    <p class="hint" style="font-size:14px">Найденные вакансии, избранное и отклики останутся, если не отметить ниже.</p>
+    <label class="check"><input type="checkbox" id="reset-jobs"> Удалить и все мои вакансии: ленту, избранное, отклики, скрытые</label>
     <div class="btns"><button class="bad" id="reset-yes">Да, начать заново</button><button id="reset-no">Отмена</button></div>`;
   $("#sheet").hidden = $("#sheet-bg").hidden = false;
   $("#reset-no").onclick = closeSheet;
@@ -667,10 +714,11 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 </ul>
 <h4>Как пользоваться</h4>
 <ul>
-<li><b>Лента:</b> свайп вправо — в работу, влево — скрыть, ★ — в избранное, тап — полный текст и ссылка.</li>
+<li><b>Лента:</b> свайп вправо или ★ — в избранное, влево — скрыть, тап — полный текст и ссылка. Сверху: сортировка (новые, зарплата, оценка ИИ) и «✨ Оценить новые ИИ» — оценит только те, что ещё без оценки.</li>
+<li><b>Шапка:</b> ваша воронка — сколько вакансий найдено (без дублей), откликов, собеседований и офферов. Отклики считаются по этапам в «📋 Мои отклики».</li>
 <li><b>Поиск 🎯 Точно:</b> ищет фразу один в один, например «бизнес аналитик».</li>
 <li><b>Поиск 🕸 Похожие:</b> добавляет синонимы и смежные роли по графу. Лишнюю роль можно выключить нажатием.</li>
-<li><b>Мои:</b> избранное, взятое в работу и скрытое (его можно вернуть).</li>
+<li><b>Мои:</b> избранное и скрытое (скрытое можно вернуть).</li>
 <li><b>↻</b> на главной: проверить каналы прямо сейчас. <b>☰</b> рядом: вся лента списком, а не карточками.</li>
 <li><b>✨ Оценить ИИ</b> на карточке: насколько вакансия подходит именно вам (1–5) и почему. Сравнивает с вашим резюме.</li>
 <li><b>💰 и 🕒</b> на карточке: зарплата и часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну.</li>
@@ -701,7 +749,7 @@ const SLIDES = [
   () => `<div class="pic"><div class="big">📡</div></div><h2>Привет, ${esc(st.me.name)}! Это Радар</h2>
     <p>Я собираю удалённые вакансии из Telegram-каналов, с сайтов и с hh.ru в одну ленту. Проверяю сам, каждые 15 минут, пока включён компьютер.</p>`,
   () => `<div class="pic"><div class="demo-card back"></div><div class="demo-card"><b>Data Analyst</b><span class="co">Uzum</span><i></i><i style="width:70%"></i></div></div>
-    <h2>Свайпай карточки</h2><p><b>Вправо</b> — в работу, <b>влево</b> — скрыть, <b>★</b> — в избранное. Тап по карточке открывает полный текст и ссылку.</p>`,
+    <h2>Свайпай карточки</h2><p><b>Вправо</b> или <b>★</b> — в избранное, <b>влево</b> — скрыть. Тап по карточке открывает полный текст и ссылку.</p>`,
   () => `<div class="pic"><div class="big">🎯 🕸</div></div><h2>Ищи точно или похоже</h2>
     <p><b>Точно</b> — фраза один в один. <b>Похожие роли</b> — граф: синонимы и смежные профессии, например «бизнес-аналитик → системный, продуктовый».</p>`,
   () => `<div class="pic" style="height:auto"><div class="skins" id="onb-skins">${skinsHtml()}</div></div><h2>Выбери стиль</h2>
@@ -766,14 +814,8 @@ $("#view-toggle").onclick = () => {
 $$("#s-saved .seg button").forEach((b) => (b.onclick = () => { st.saved = b.dataset.v; loadSaved(); }));
 $("#b-yes").onclick = () => topCard() && decide(topCard(), true);
 $("#b-no").onclick = () => topCard() && decide(topCard(), false);
-$("#b-fav").onclick = async () => {
-  const c = topCard(); if (!c) return;
-  const item = byKey(c.dataset.key);
-  try {
-    const d = await api(`/api/jobs/${encodeURIComponent(item.key)}/fav`, {});
-    item.fav = d.item.fav; haptic(); toast(d.note); renderStack();
-  } catch (e) { fail(e); }
-};
+$("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); loadFeed().catch(fail); };
+$("#score-new").onclick = scoreNew;
 $("#refresh").onclick = refresh;
 $("#search-form").onsubmit = (e) => { e.preventDefault(); st.off.clear(); runSearch(); };
 $("#m-exact").onclick = () => { st.mode = "exact"; renderMode(); runSearch(); };

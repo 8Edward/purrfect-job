@@ -448,3 +448,21 @@ html[data-skin="tropic"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big,
 .remark li[data-ex] { text-decoration: underline dotted; text-underline-offset: 3px; }
 .remark li .ex-pen { font-size: 11px; text-decoration: none; display: inline; }
 .rs-design .twobtn button:disabled { opacity: .45; }
+
+/* feed: funnel header, sort + «Оценить новые», summary lines, paging, folding settings */
+.stats.funnel { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.stats.funnel .stat span { font-size: 10.5px; }
+.feedbar { display: flex; gap: 8px; align-items: center; margin: -4px 0 10px; }
+.feedbar .inp.sm { width: auto; flex: 1 1 auto; min-width: 0; padding: 7px 10px; font-size: 13px; }
+.ai-btn.sm { flex: 0 1 auto; padding: 7px 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .sum, .sheet .sum { display: grid; gap: 2px; font-size: 12.5px; line-height: 1.35; }
+.card .sum span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.more-load { text-align: center; color: var(--muted); font-size: 12.5px; padding: 12px 0; }
+details.fold { padding: 0; }
+details.fold > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-size: 14px; font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
+details.fold[open] > summary::after { transform: rotate(180deg); }
+details.fold > summary small { color: var(--muted); font-weight: 400; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.fold .words { padding: 0 14px 8px; }
+.stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 495px), 420px); }  /* room for the sort bar */

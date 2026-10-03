@@ -285,6 +285,35 @@ async def main():
                 await c.post("/api/track", headers=auth, json={"key": "us", "stage": ""})
                 assert "track" not in g.load_inbox()["us"]
 
+                # 📊 funnel, pages, sorting, chips, «Оценить новые»
+                me = await (await c.get("/api/me", headers=auth)).json()
+                assert me["funnel"]["applied"] >= 1 and me["funnel"]["interview"] >= 1 and me["funnel"]["jobs"] >= 3, me["funnel"]
+                inbox = g.load_inbox()
+                for n in range(7):
+                    inbox[f"p{n}"] = {"source": "web", "title": f"Analyst {n}", "company": f"Co{n}", "link": f"https://p/{n}", "site": "X",
+                                      "text": "", "comp": f"${(n + 1) * 1000}", "status": "new", "fav": False, "tags": [],
+                                      "date": (now - timedelta(minutes=n)).isoformat()}
+                g.save_inbox(inbox)
+                await c.post("/api/sources", headers=auth, json={"type": "tz", "on": False})
+                p1 = await (await c.get("/api/jobs?view=new&limit=3&offset=0", headers=auth)).json()
+                p2 = await (await c.get("/api/jobs?view=new&limit=3&offset=3", headers=auth)).json()
+                assert len(p1["items"]) == 3 and p1["total"] == 7 and not {i["key"] for i in p1["items"]} & {i["key"] for i in p2["items"]}
+                top = await (await c.get("/api/jobs?view=new&sort=salary&limit=2", headers=auth)).json()
+                assert [i["key"] for i in top["items"]] == ["p6", "p5"]
+                assert (await (await c.get("/api/jobs?view=new&f=hh", headers=auth)).json())["total"] == 0
+                assert p1["unscored"] == 7
+                reg = guests.load_registry()
+                reg["users"]["5"]["ai"] = True
+                guests.save_registry(reg)
+                app.ai = FakeClaude([json.dumps({"score": 4.0, "verdict": "ok", "pros": [], "cons": []})] * 7)
+                job = await (await c.post("/api/score/new", headers=auth, json={})).json()
+                assert job["total"] == 7
+                j = await wait(c, auth, job["job"])
+                assert j["status"] == "done" and j["result"]["scored"] == 7 and j["progress"]["done"] == 7, j
+                assert (await (await c.get("/api/jobs?view=new", headers=auth)).json())["unscored"] == 0
+                assert (await c.post("/api/score/new", headers=auth, json={})).status == 400  # nothing left: no tokens spent
+                assert extras.summary({"title": "Data Analyst", "text": "Удалёнка. Задачи: строить отчёты в Power BI; SQL"})[0] == "🛠 SQL, Power BI"
+
                 # 🧭 career plan
                 assert (await c.post("/api/plan", headers=auth, json={"goal": "role"})).status == 400   # no target
                 app.ai = FakeClaude([json.dumps({"now": "Аналитик в банке, пишет SQL-запросы к PostgreSQL", "target": "Product Analyst",

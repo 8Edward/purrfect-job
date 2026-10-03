@@ -432,7 +432,8 @@ def job_action(member, key, item, action):
                 job = dict(item, date=datetime.fromisoformat(item["date"]))
                 tc.add_to_pipeline([tc.pipeline_line(job, tc.save_jd(job))])
         item["status"] = "taken"
-        return True, "👍 В работе! Оценка: /career-ops pipeline" if member.is_owner else "👍 В работе"
+        item["fav"] = True  # «в работе» is gone: what you take is starred
+        return True, "★ В избранном"
     if action == "hide":
         if member.is_owner:
             with DISCARD_LOG.open("a", encoding="utf-8") as f:

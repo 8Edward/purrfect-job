@@ -24,10 +24,11 @@
       </div>
       <div class="hello" id="hello">Загружаю…</div>
       <div class="sub" id="checked"></div>
-      <div class="stats">
-        <div class="stat"><b id="st-ch">–</b><span>каналов</span></div>
-        <div class="stat"><b id="st-web">–</b><span>сайтов</span></div>
-        <div class="stat"><b id="st-taken">–</b><span>в работе</span></div>
+      <div class="stats funnel" aria-label="Воронка">
+        <div class="stat"><b id="fn-jobs">–</b><span>вакансий</span></div>
+        <div class="stat"><b id="fn-applied">–</b><span>откликов</span></div>
+        <div class="stat"><b id="fn-interview">–</b><span>собесед.</span></div>
+        <div class="stat"><b id="fn-offer">–</b><span>офферов</span></div>
       </div>
     </header>
     <div class="chips" id="filters" role="group" aria-label="Фильтр">
@@ -38,19 +39,42 @@
       <button class="chip" data-f="hh" aria-pressed="false">hh.ru</button>
       <button class="chip" data-f="pt" aria-pressed="false">Part-time</button>
     </div>
+    <div class="feedbar">
+      <select class="inp sm" id="sort" aria-label="Сортировка">
+        <option value="date">Сначала новые</option><option value="salary">По зарплате</option>
+        <option value="ai">По оценке ИИ</option><option value="fav">Сначала избранное</option>
+      </select>
+      <button class="ai-btn sm" id="score-new" hidden>✨ Оценить новые</button>
+    </div>
     <div class="stack" id="stack"></div>
     <div id="feed-list" hidden></div>
     <div class="left" id="left"></div>
     <div class="acts" id="acts" hidden>
       <button class="act no" id="b-no" aria-label="Скрыть">✕</button>
-      <button class="act yes" id="b-yes" aria-label="В работу">✓</button>
-      <button class="act" id="b-fav" aria-label="В избранное">★</button>
+      <button class="act yes" id="b-yes" aria-label="В избранное">★</button>
     </div>
   </section>
 
   <!-- ПОИСК -->
   <section class="screen" id="s-search" hidden>
     <h2 class="h2">Поиск</h2>
+    <h3 class="feed-set">📥 Что попадает в ленту</h3>
+    <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск ниже они не влияют. Нажмите на блок, чтобы открыть.</div>
+    <details class="group fold" id="g-words"><summary>🎯 Что ищу <small id="sum-role"></small></summary><div class="words" id="w-role"></div>
+      <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></details>
+    <details class="group fold"><summary>🚫 Стоп-слова <small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
+      <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></details>
+    <details class="group fold" id="g-ch"><summary id="ch-head">📡 Каналы</summary><div id="ch-list"></div>
+      <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></details>
+    <details class="group fold"><summary>🌐 Сайты и hh.ru <small id="sum-sites"></small></summary><div id="site-list"></div>
+      <div class="hh" id="hh-box"><label for="hhq">Запрос на hh.ru</label>
+        <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
+        <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
+      </div></details>
+    <details class="group fold" id="g-tz"><summary>🕒 Часовой пояс <small id="sum-tz"></small></summary>
+      <div class="tg"><span>Скрывать вакансии не под мой пояс<small>где пояс не указан, вакансия остаётся в ленте</small></span><button class="sw" id="tz-on" aria-pressed="false" aria-label="Фильтр по часовому поясу"></button></div>
+      <div class="tzrow"><label>Мой пояс<select class="inp" id="tz-mine"></select></label><label>Разница до<select class="inp" id="tz-spread"></select></label></div></details>
+    <h3 class="feed-set">⌕ Поиск по всем источникам</h3>
     <form class="field" id="search-form">
       <span aria-hidden="true">⌕</span>
       <input id="q" placeholder="Например: бизнес аналитик" autocomplete="off" enterkeyhint="search" maxlength="80">
@@ -67,22 +91,6 @@
     </div>
     <div class="res-head" id="res-head"></div>
     <div id="results"></div>
-    <h3 class="feed-set">📥 Что попадает в ленту</h3>
-    <div class="hint">Эти настройки — для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск выше («Точно» / «Похожие») они не влияют.</div>
-    <div class="group" id="g-words"><h4>🎯 Что ищу</h4><div class="words" id="w-role"></div>
-      <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></div>
-    <div class="group"><h4>🚫 Стоп-слова</h4><div class="words" id="w-negative"></div>
-      <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></div>
-    <div class="group" id="g-ch"><h4 id="ch-head">📡 Каналы</h4><div id="ch-list"></div>
-      <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></div>
-    <div class="group"><h4>🌐 Сайты и hh.ru</h4><div id="site-list"></div>
-      <div class="hh" id="hh-box"><label for="hhq">Запрос на hh.ru</label>
-        <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
-        <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
-      </div></div>
-    <div class="group" id="g-tz"><h4>🕒 Часовой пояс</h4>
-      <div class="tg"><span>Скрывать вакансии не под мой пояс<small>где пояс не указан, вакансия остаётся в ленте</small></span><button class="sw" id="tz-on" aria-pressed="false" aria-label="Фильтр по часовому поясу"></button></div>
-      <div class="tzrow"><label>Мой пояс<select class="inp" id="tz-mine"></select></label><label>Разница до<select class="inp" id="tz-spread"></select></label></div></div>
   </section>
 
   <!-- РЕЗЮМЕ -->
@@ -96,9 +104,8 @@
   <!-- СОХРАНЁННОЕ -->
   <section class="screen" id="s-saved" hidden>
     <h2 class="h2">Мои вакансии</h2>
-    <div class="seg three" role="group" aria-label="Список">
+    <div class="seg" role="group" aria-label="Список">
       <button data-v="fav" aria-pressed="true">★ Избранное</button>
-      <button data-v="taken" aria-pressed="false">✓ В работе</button>
       <button data-v="hidden" aria-pressed="false">✕ Скрытые</button>
     </div>
     <div id="saved"></div>

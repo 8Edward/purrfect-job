@@ -441,3 +441,87 @@ def parse_plan(text, md):
 
 def dumps(x):
     return json.dumps(x, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------- 🔢 sorting by pay, 📝 short summary, 📊 funnel
+
+RATE = [  # rough conversion to USD per month, only to put cards in order (never shown)
+    (r"₽|руб|rub|\bр\.", 1 / 90), (r"€|eur|евро", 1.1), (r"£|gbp", 1.27), (r"₸|kzt|тенге", 1 / 480),
+    (r"so'?m|сум|uzs", 1 / 12700), (r"\$|usd|долл", 1.0),
+]
+
+
+def salary_value(item):
+    """Upper pay figure of a vacancy in ~USD a month, or 0 when there is none (for sorting only)."""
+    s = salary_of(item)
+    if not s:
+        return 0.0
+    low = s.lower()
+    nums = []
+    for m in re.finditer(r"(\d{1,3}(?:[  .,]\d{3})+|\d+(?:[.,]\d+)?)\s?(k|к|тыс\.?|млн)?", low):
+        raw = m.group(1)
+        v = float(re.sub(r"[  .,](?=\d{3}\b)", "", raw).replace(",", "."))
+        v *= {"k": 1e3, "к": 1e3, "тыс": 1e3, "тыс.": 1e3, "млн": 1e6}.get(m.group(2) or "", 1)
+        nums.append(v)
+    if not nums:
+        return 0.0
+    value = max(nums)
+    rate = next((r for pat, r in RATE if re.search(pat, low)), 1 / 90 if value > 20000 else 1.0)
+    value *= rate
+    if re.search(r"/\s?(h|hr|hour|час)|в час|per hour|hourly", low):
+        value *= 160
+    elif re.search(r"year|год|annum|annual|/\s?yr", low) or value > 30000:
+        value /= 12
+    return round(value, 2)
+
+
+STACK = ["SQL", "Python", "R", "Excel", "Google Sheets", "Power BI", "Tableau", "Looker", "Metabase", "Superset", "DataLens",
+         "Airflow", "dbt", "Spark", "Hadoop", "Kafka", "ClickHouse", "PostgreSQL", "Greenplum", "MySQL", "BigQuery",
+         "Snowflake", "Redshift", "Pandas", "NumPy", "scikit-learn", "PyTorch", "TensorFlow", "AWS", "GCP", "Azure",
+         "Docker", "Kubernetes", "Git", "Linux", "Java", "Kotlin", "Go", "JavaScript", "TypeScript", "React", "Node.js",
+         "C++", "C#", ".NET", "PHP", "1С", "Figma", "Jira", "Confluence", "A/B", "ETL", "DWH", "ROS", "MATLAB"]
+STACK_RE = [(name, re.compile(r"(?<![\w+#.])" + re.escape(name) + r"(?![\w+#])", 0 if len(name) <= 2 else re.IGNORECASE))
+            for name in STACK]
+FORMAT = [(r"удал[её]н|remote|из любой точки|anywhere", "удалёнка"), (r"гибрид|hybrid", "гибрид"),
+          (r"\bофис\b|on-?site|in office", "офис"), (r"полн\w* (день|занятост)|full[- ]time", "полный день"),
+          (r"частичн\w* занятост|неполн\w* (день|занятост)|part[- ]time|\d{2}\s?(ч|час\w*)\s*/?\s*(в\s*)?нед", "частичная"),
+          (r"\bконтракт\b|contract|\bb2b\b|фриланс|freelance|проектн\w* работ", "контракт / проект")]
+DUTY_HEAD = re.compile(r"(обязанност\w*|задачи|чем (предстоит|нужно|будешь|будете) заниматься|что (нужно )?делать|"
+                       r"responsibilit\w*|what you.?ll do|your role|you will)\s*[:—–-]?\s*", re.IGNORECASE)
+
+
+def summary(item, size=2):
+    """2–3 short lines about a vacancy, taken from its own text (no AI): stack, format, the first duties."""
+    title, text = item.get("title") or "", item.get("text") or ""
+    blob = f"{title}\n{text}"
+    lines = []
+    stack = [name for name, rx in STACK_RE if rx.search(blob)][:7]
+    if stack:
+        lines.append("🛠 " + ", ".join(stack))
+    fmt = list(dict.fromkeys(label for pat, label in FORMAT if re.search(pat, blob, re.IGNORECASE)))
+    if fmt:
+        lines.append("🏠 " + " · ".join(fmt[:3]))
+    m = DUTY_HEAD.search(text)
+    if m:
+        rest = text[m.end():m.end() + 600]
+        parts = [re.sub(r"^[\s\-–—•*·▪●◦✓✔️▫️🔹🔸]+", "", p).strip() for p in re.split(r"\n|;|•|(?<=\.)\s", rest)]
+        parts = [p for p in parts if len(p) > 12 and not re.match(r"(требовани|мы предлагаем|условия|requirements|резюме|контакт|пиши|отклик|apply|send|зарплат|salary)", p, re.I)][:size]
+        if parts:
+            lines.append("📌 " + "; ".join(p[:90].rstrip(" ,.;") for p in parts))
+    return lines[:3]
+
+
+def funnel(inbox):
+    """Numbers for the feed header: vacancies found (duplicates merged), responses, interviews, offers.
+    A stage counts once it has been reached, so an interview is also a response."""
+    reached = {"applied": 0, "interview": 0, "offer": 0}
+    for item in inbox.values():
+        log = {s for s, _ in (item.get("track") or {}).get("log", [])} | {(item.get("track") or {}).get("stage")}
+        log.discard(None)
+        if log:
+            reached["applied"] += 1
+        if log & {"interview", "offer"}:
+            reached["interview"] += 1
+        if "offer" in log:
+            reached["offer"] += 1
+    return {"jobs": len(groups(list(inbox.items()))), **reached}
