@@ -349,7 +349,7 @@ async function loadSources(data) {
   const on = s.channels.filter((c) => c.on).length;
   $("#ch-head").textContent = `📡 Каналы · отмечено ${on} · в общем списке ${s.channels.length} из ${s.max_pool}`;
   $("#ch-list").innerHTML = s.channels.map((c) => `<div class="tg"><span>${esc(c.title)}<small>@${esc(c.key)}</small></span>
-      <span>${c.removable ? `<button class="x" data-rm="${esc(c.key)}" aria-label="Убрать из общего списка">🗑</button>` : ""}<button class="sw" data-ch="${esc(c.key)}" aria-pressed="${c.on}" aria-label="${esc(c.title)}"></button></span></div>`).join("");
+      <span class="ctl">${c.removable ? `<button class="x" data-rm="${esc(c.key)}" aria-label="Убрать из общего списка">🗑</button>` : ""}<button class="sw" data-ch="${esc(c.key)}" aria-pressed="${c.on}" aria-label="${esc(c.title)}"></button></span></div>`).join("");
   $$("[data-ch]").forEach((b) => (b.onclick = () => change({ type: "channel", key: b.dataset.ch, on: b.getAttribute("aria-pressed") !== "true" })));
   $$("[data-rm]").forEach((b) => (b.onclick = () => {
     if (b.dataset.sure) return change({ type: "channel_remove", key: b.dataset.rm }, "Убрал из общего списка");
@@ -503,14 +503,14 @@ const MEMO = () => `<div class="grip"></div><h3>📖 Памятка</h3><div cla
 <li><b>#ru_company:</b> метка на вакансиях русскоязычных компаний: Plata, Salmon, Uzum, Kaspi, Яндекс, Ozon, Avito и др.</li>
 <li><b>Стоп-слова:</b> стажировки, «только офис», «только для США», резюме соискателей.</li>
 </ul>
-<p>Это <b>пример</b>. Если вы ищете другое, проще всего загрузить резюме во вкладке «▤ Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или поменяйте всё вручную во вкладке «Ещё»: слова, каналы, сайты, запрос для hh.ru.</p>
+<p>Это <b>пример</b>. Если вы ищете другое, проще всего загрузить резюме во вкладке «▤ Резюме». Я найду в нём ваши роли и навыки и предложу слова, запрос для hh.ru и каналы, а вы подтвердите. Или поменяйте всё вручную во вкладке «Поиск», в блоке «Что попадает в ленту»: слова, каналы, сайты, запрос для hh.ru.</p>
 <h4>Резюме</h4>
 <ul>
 <li><b>Загрузить</b> готовое (PDF, DOCX, TXT), <b>вставить текстом</b> или <b>собрать с нуля</b> по шагам с подсказками.</li>
 <li><b>Проверка:</b> оценка и конкретные замечания: нет цифр, слабые глаголы, нет контактов, пустые слова.</li>
 <li><b>Точная правка:</b> резюме показано так, как будет в PDF. Нажмите на любую строку и поправьте её.</li>
 <li><b>Под вакансию:</b> вставьте текст вакансии и увидите, каких слов из неё нет в резюме.</li>
-<li><b>✨ ИИ</b> (если включён): улучшить формулировки, написать «О себе», подогнать под вакансию, перевести на английский, написать сопроводительное. Все правки — предложения: вы принимаете каждую сами. Новые факты и цифры ИИ не придумывает.</li>
+<li><b>✨ ИИ</b>: улучшить формулировки, написать «О себе», подогнать под вакансию, перевести на английский, написать сопроводительное. Все правки — предложения: вы принимаете каждую сами. Новые факты и цифры ИИ не придумывает.</li>
 <li><b>Скачать:</b> PDF, HTML или текст — файл придёт в чат с ботом.</li>
 </ul>
 <h4>Как пользоваться</h4>
@@ -548,7 +548,7 @@ const SLIDES = [
   () => `<div class="pic"><div class="big">🎯 🕸</div></div><h2>Ищи точно или похоже</h2>
     <p><b>Точно</b> — фраза один в один. <b>Похожие роли</b> — граф: синонимы и смежные профессии, например «бизнес-аналитик → системный, продуктовый».</p>`,
   () => `<div class="pic" style="height:auto"><div class="skins" id="onb-skins">${skinsHtml()}</div></div><h2>Выбери стиль</h2>
-    <p>Каналы, сайты и слова для поиска — во вкладке «Ещё». Там же можно сменить стиль в любой момент.</p>
+    <p>Каналы, сайты и слова для ленты — во вкладке «Поиск», внизу. Стиль меняется во вкладке «Ещё» в любой момент.</p>
     <button class="cta" id="onb-cv">📄 Настроить поиск по моему резюме</button>
     <button class="link" id="onb-memo">📖 Памятка: что уже настроено и как всё устроено</button>`,
 ];
@@ -591,7 +591,7 @@ function show(name) {
   $$(".screen").forEach((s) => (s.hidden = s.id !== "s-" + name));
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
-  if (name === "more") loadSources().catch(fail);
+  if (name === "more" || name === "search") loadSources().catch(fail);
   if (name === "resume") loadResume(true);
   if (name === "search" && !st.results.length) setTimeout(() => $("#q").focus(), 150);
 }

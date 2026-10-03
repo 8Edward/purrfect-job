@@ -146,6 +146,10 @@ html[data-skin="tropic"] .row { border-radius: 18px; }
 .group h4 { margin: 0; padding: 12px 14px 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .tg { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 14px; }
 .tg > span { min-width: 0; overflow-wrap: anywhere; }
+.tg > span:first-child { flex: 1; }
+.tg > .ctl { flex: none; display: flex; align-items: center; gap: 4px; }
+.feed-set { margin: 22px 0 4px; font-size: 16px; }
+.feed-set + .hint { margin-bottom: 10px; }
 .tg small { display: block; color: var(--muted); font-size: 11.5px; }
 .tg .x { border: none; background: none; color: var(--muted); font-size: 16px; padding: 4px; }
 .sw { width: 44px; height: 26px; border-radius: 99px; border: none; background: var(--line); position: relative; flex: none; }

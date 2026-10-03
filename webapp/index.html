@@ -65,6 +65,19 @@
     </div>
     <div class="res-head" id="res-head"></div>
     <div id="results"></div>
+    <h3 class="feed-set">📥 Что попадает в ленту</h3>
+    <div class="hint">Эти настройки — для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск выше («Точно» / «Похожие») они не влияют.</div>
+    <div class="group" id="g-words"><h4>🎯 Что ищу</h4><div class="words" id="w-role"></div>
+      <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></div>
+    <div class="group"><h4>🚫 Стоп-слова</h4><div class="words" id="w-negative"></div>
+      <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></div>
+    <div class="group" id="g-ch"><h4 id="ch-head">📡 Каналы</h4><div id="ch-list"></div>
+      <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></div>
+    <div class="group"><h4>🌐 Сайты и hh.ru</h4><div id="site-list"></div>
+      <div class="hh" id="hh-box"><label for="hhq">Запрос на hh.ru</label>
+        <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
+        <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
+      </div></div>
   </section>
 
   <!-- РЕЗЮМЕ -->
@@ -89,17 +102,6 @@
   <section class="screen" id="s-more" hidden>
     <h2 class="h2">Настройки</h2>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
-    <div class="group" id="g-words"><h4>🎯 Что ищу</h4><div class="words" id="w-role"></div>
-      <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></div>
-    <div class="group"><h4>🚫 Стоп-слова</h4><div class="words" id="w-negative"></div>
-      <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></div>
-    <div class="group" id="g-ch"><h4 id="ch-head">📡 Каналы</h4><div id="ch-list"></div>
-      <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></div>
-    <div class="group"><h4>🌐 Сайты и hh.ru</h4><div id="site-list"></div>
-      <div class="hh" id="hh-box"><label for="hhq">Запрос на hh.ru</label>
-        <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
-        <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
-      </div></div>
     <button class="row" id="memo"><b>📖 Памятка</b><span class="m">что это и как работает</span><span class="s">Что уже настроено, как пользоваться, что важно знать</span></button>
     <button class="link block" id="again">Показать обучение снова</button>
     <button class="danger-btn" id="reset">♻️ Начать заново</button>
