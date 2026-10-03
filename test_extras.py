@@ -335,6 +335,15 @@ async def main():
                 saved_plan = (await (await c.get("/api/plan", headers=auth)).json())["plan"]
                 assert saved_plan["goal"] == "role" and saved_plan["steps"][0]["weeks"] == "3–4 нед."
 
+                # 🗑 deleting the last résumé version sticks (it used to come back from cv.txt)
+                import cv_reader
+                cv_reader.cv_path(g).parent.mkdir(parents=True, exist_ok=True)
+                cv_reader.cv_path(g).write_text("Иван Иванов\nАналитик данных\n" + "Писал SQL-запросы для отчётов. " * 10, encoding="utf-8")
+                for v in resume.load_index(g)["list"]:
+                    await c.post("/api/resume/version", headers=auth, json={"action": "delete", "vid": v["id"]})
+                left = await (await c.get("/api/resume", headers=auth)).json()
+                assert left["versions"] == [] and left["active"] is None, left.get("versions")
+
                 # someone without AI
                 reg = guests.load_registry()
                 reg["users"]["5"]["ai"] = False

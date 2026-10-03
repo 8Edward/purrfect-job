@@ -1057,8 +1057,9 @@ async def to_pdf(html_path, timeout=120):
 
 
 def import_legacy(member):
-    """A résumé uploaded before versions existed (cv.txt) becomes «Основное»."""
-    if load_index(member)["list"]:
+    """A résumé uploaded before versions existed (cv.txt) becomes «Основное» — once: after the person
+    deletes their versions the list stays empty (it used to come back from cv.txt, so «Удалить» did nothing)."""
+    if "resumes" in member.load_state() or load_index(member)["list"]:
         return
     old = cv_reader.cv_path(member)
     if old.exists():
