@@ -255,7 +255,7 @@ async def main():
                 # sources
                 src = await (await c.get("/api/sources", headers=auth)).json()
                 assert src["channels"][0] == {"key": "datajob", "title": "Data Jobs", "on": True, "removable": True}
-                assert not any(x["id"] == "hh" for x in src["sites"])  # hh.ru is out of the sites block
+                assert any(x["id"] == "hh" and x["on"] for x in src["sites"])
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "channels_all", "on": True})).json()
                 assert all(x["on"] for x in src["channels"])
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "channels_all", "on": False})).json()

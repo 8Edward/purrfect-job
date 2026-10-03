@@ -718,7 +718,7 @@ async function loadSources(data) {
   $$(".word").forEach((b) => (b.onclick = () => change({ type: "words", group: b.dataset.g, remove: +b.dataset.n }, "Удалил")));
   const on = s.channels.filter((c) => c.on).length;
   $("#ch-head").innerHTML = `<span class="sn">📡 Каналы</span><small>${on} из ${s.channels.length} · максимум ${s.max_pool}</small>`;
-  $("#sum-role").textContent = s.words.role.length ? s.words.role.slice(0, 3).join(", ") + (s.words.role.length > 3 ? ` +${s.words.role.length - 3}` : "") : "пусто";
+  $("#sum-role").textContent = s.words.role.length ? s.words.role[0] + (s.words.role.length > 1 ? ` +${s.words.role.length - 1}` : "") : "пусто";
   $("#sum-negative").textContent = s.words.negative.length ? `${s.words.negative.length}` : "пусто";
   $("#sum-sites").textContent = `${s.sites.filter((x) => x.on).length} из ${s.sites.length}`;
   $("#sum-tz").textContent = s.tz.on ? `UTC${s.tz.mine >= 0 ? "+" : "−"}${Math.abs(s.tz.mine)} ±${s.tz.spread} ч` : "выключено";
