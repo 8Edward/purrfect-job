@@ -133,7 +133,7 @@ function keep(i) {
 function renderStack() {
   const items = st.feed.filter(keep), box = $("#stack");
   const list = st.view === "list";
-  $("#view-toggle").textContent = list ? "🃏" : "☰";
+  $("#view-toggle").textContent = list ? "❏" : "☰";
   $("#view-toggle").setAttribute("aria-label", list ? "Показать карточками" : "Показать списком");
   box.hidden = list;
   $("#feed-list").hidden = !list;

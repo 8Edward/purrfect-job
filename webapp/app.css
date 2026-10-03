@@ -438,3 +438,5 @@ html[data-skin="tropic"] .lrow { border-radius: 18px; }
 .lacts .yes { color: var(--ok); border-left: 1px solid var(--line); }
 .lacts .no { color: var(--bad); }
 .icon-btn + .icon-btn { margin-left: 0; }
+.screen > .hero { max-width: none; }  /* full bleed: the hero's negative margins need room, or its right side falls short */
+#view-toggle { font-variant-emoji: text; font-family: "Segoe UI Symbol", system-ui, sans-serif; }
