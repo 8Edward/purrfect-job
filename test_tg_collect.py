@@ -149,7 +149,9 @@ for view in ("new", "all", "fav"):
         assert bot.visible_len(bot.list_screen(inbox, view, page)[0]) <= 1024
 
 caption, rows = bot.home_screen(inbox, next_check=7)
-assert "<b>11</b> новых вакансий" in caption and "через 7 мин" in caption and data(rows[0][0]) == "l:new:0"
+assert "<b>11</b> новых вакансий" in caption and "через 7 мин" in caption and data(rows[0][0]) == "rf:1"  # no app yet
+caption, rows = bot.home_screen(inbox, owner=True, app_url="https://x.trycloudflare.com")
+assert len(rows) == 2 and data(rows[1][0]) == "u"  # the app button + 👥 Близкие, nothing else
 assert bot.plural(1, "a", "b", "c") == "a" and bot.plural(3, "a", "b", "c") == "b" and bot.plural(12, "a", "b", "c") == "c"
 assert "2 новые вакансии" in bot.found_screen([item, web_item])[0]
 assert "за 3 дн. нет" in bot.found_screen([], 3)[0]
@@ -209,8 +211,8 @@ s = {"keywords": {"role": [f"w{i}" for i in range(guests.MAX_WORDS)]}}
 assert guests.add_words(s, "role", "ещё")[0] == []
 
 caption, rows = bot.home_screen({}, owner=True)
-assert data(rows[-1][0]) == "u" and ["p:v:0", "w"] == [data(b) for b in rows[3]]
-assert [data(b) for b in bot.home_screen({})[1][-1]] == ["s", "help"]  # guests have no 👥 button
+assert data(rows[-1][0]) == "u"
+assert "u" not in [data(b) for r in bot.home_screen({})[1] for b in r]  # guests have no 👥 button
 assert "✅ <b>В работе</b>" == bot.card_screen("k", dict(item, status="taken"), status_lines=bot.GUEST_STATUS_LINE)[0].split("\n\n")[-1]
 
 with tempfile.TemporaryDirectory() as d:
@@ -240,7 +242,7 @@ with tempfile.TemporaryDirectory() as d:
     guests.save_registry(reg)
     assert (Path(d) / "101_mama" / "search.yml").exists() and papa.dir.name == "202_Папа_Петров"
     assert guests.get(guests.load_registry(), 101).name == "@mama" and papa.name == "Папа Петров"
-    assert mama.load_state()["step"] == "role" and any("data analyst" in p for p in mama.cfg()["keywords"]["role"])
+    assert mama.load_state()["step"] is None and any("data analyst" in p for p in mama.cfg()["keywords"]["role"])
     assert "ru-company" in mama.cfg()["keywords"]["tags"] and "hh" in mama.load_search()["sites"]
     assert "#резюме" in mama.cfg()["keywords"]["negative"]
     for g, words in ((mama, "бухгалт, 1С, accountant"), (papa, "водител")):

@@ -8,11 +8,12 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-const SKINS = {
-  radar: { name: "Радар", bg: "#0d1524", colors: ["#0d1524", "#1c2c47", "#f2a93b"] },
-  dossier: { name: "Досье", bg: "#e9edf2", colors: ["#e9edf2", "#ffffff", "#2440d0"] },
-  tropic: { name: "Тропики", bg: "#e6f4ef", colors: ["#e6f4ef", "#0f3b37", "#ff6650"] },
+const SKINS = {  // three cat themes; the old skin names still open the closest new one
+  hybrid: { name: "Гибрид", bg: "#f2f0ec", colors: ["#f2f0ec", "#7d8590", "#2f8f83"] },
+  remote: { name: "Удалёнка", bg: "#fff3d6", colors: ["#fff3d6", "#26b6a6", "#ff7a2f"] },
+  office: { name: "Офис", bg: "#eceff3", colors: ["#eceff3", "#3c4656", "#1d3a6e"] },
 };
+const OLD_SKINS = { radar: "hybrid", tropic: "remote", dossier: "office" };
 const MATCH = { exact: "точно" };
 const st = { me: null, feed: [], total: 0, sort: "date", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
 try { if (localStorage.getItem("jr-feed") === "list") st.view = "list"; } catch (e) { /* blocked */ }
@@ -88,7 +89,8 @@ function openLink(url) {
 /* ---------------------------------------------------------------- skins */
 
 function setSkin(skin, save) {
-  if (!SKINS[skin]) skin = "radar";
+  skin = OLD_SKINS[skin] || skin;
+  if (!SKINS[skin]) skin = "hybrid";
   document.documentElement.dataset.skin = skin;
   try { tg.setHeaderColor(SKINS[skin].bg); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { tg.setBottomBarColor(SKINS[skin].bg); } catch (e) { /* old client */ }
@@ -923,7 +925,7 @@ $("#memo").onclick = showMemo;
 $("#reset").onclick = showReset;
 
 async function start() {
-  try { setSkin(localStorage.getItem("jr-skin") || "radar"); } catch (e) { setSkin("radar"); }
+  try { setSkin(localStorage.getItem("jr-skin") || "hybrid"); } catch (e) { setSkin("hybrid"); }
   if (!INIT) { $("#gate").hidden = false; return; }
   tg.ready();
   tg.expand();

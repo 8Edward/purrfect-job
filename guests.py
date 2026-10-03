@@ -299,7 +299,7 @@ def register(reg, user):
     guest = Guest(user.id, info)
     if not guest.search_path.exists():  # a returning guest keeps old settings
         guest.save_search(preset_search())
-    guest.update_state(step="role")
+    guest.update_state(step=None)  # set up in the app (onboarding + «Что попадает в ленту»), not in the chat
     return guest
 
 

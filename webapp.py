@@ -39,7 +39,8 @@ WEB_DIR = tc.TG_DIR / "webapp"
 GRAPH_PATH = tc.TG_DIR / "rolegraph.yml"
 FEED_CACHE_PATH = tc.ROOT / "data" / "tg-feed-cache.json"
 HOST, PORT = "127.0.0.1", 8787
-SKINS = ("radar", "dossier", "tropic")
+SKINS = ("hybrid", "remote", "office")  # cat themes; old names map onto them
+OLD_SKINS = {"radar": "hybrid", "tropic": "remote", "dossier": "office"}
 INIT_MAX_AGE = timedelta(days=1)  # how long one app launch stays valid
 SEARCH_DAYS = 21                  # how far back search reads channels (job channels post a few a week)
 POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this often
@@ -426,7 +427,7 @@ class WebApp:
         return web.json_response({
             "name": "Эдуард" if m.is_owner else (m.info.get("name") or m.name).split(" ")[0],
             "owner": m.is_owner,
-            "skin": state.get("skin") if state.get("skin") in SKINS else None,
+            "skin": OLD_SKINS.get(state.get("skin"), state.get("skin")) if OLD_SKINS.get(state.get("skin"), state.get("skin")) in SKINS else None,
             "onboarded": bool(state.get("app_onboarded")),
             "digest": not state.get("digest_off"),
             "alerts": not state.get("alerts_off"),

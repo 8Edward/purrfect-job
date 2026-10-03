@@ -224,26 +224,23 @@ def app_button(url, text="📱 Открыть приложение"):
 
 
 def home_screen(inbox, next_check=None, owner=False, app_url=None):
+    """The chat's only screen: the radar animation, a line about new vacancies and the app button.
+    Everything else (feed, search, settings, résumé) lives in the app; the owner keeps 👥 Близкие here."""
     s = stats_of(inbox)
     if s["new"]:
         n = s["new"]
         hello = f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя"
     else:
         hello = "✨ Всё разобрано — новых вакансий пока нет"
-    lines = [hello]
+    lines = ["🐾 <b>Job Radar</b>", hello]
     if next_check:
         lines.append(f"⏱ Следующая проверка через {next_check} мин")
-    rows = [
-        [btn(f"🆕 Новые · {s['new']}", "l:new:0"), btn(f"⭐ Избранное · {s['fav']}", "l:fav:0")],
-        [btn(f"📋 Все вакансии · {len(inbox)}", "l:all:0")],
-        [btn("🔄 Обновить за сутки", "rf:1"), btn("🔄 За 3 дня", "rf:3")],
-        [btn("📡 Каналы", "p:v:0"), btn("🌐 Сайты", "w")],
-        [btn("⚙️ Настройки", "s"), btn("❓ Как это работает", "help")],
-    ]
+    rows = [[app_button(app_url, "📱 Открыть Радар")]] if app_url else \
+        [[btn("🔄 Проверить сейчас", "rf:1")]]
+    if not app_url:
+        lines.append("<i>Приложение сейчас подключается — кнопка появится через минуту.</i>")
     if owner:
         rows.append([btn("👥 Близкие", "u")])
-    if app_url:
-        rows.insert(0, [app_button(app_url)])
     return "\n".join(lines), rows
 
 
@@ -615,6 +612,9 @@ class JobRadar:
             raise SystemExit("Нет входа в Telegram: сначала запусти telegram\\login.bat")
         self.owner = (await self.user.get_me()).id
         self.me = guests.Owner(self.owner)
+        for g in guests.all_guests(guests.load_registry()):  # the chat setup questions are gone: the app sets people up
+            if g.load_state().get("step"):
+                g.update_state(step=None, prompt_msg=None)
         try:
             moved = await guests.migrate_owner_channels(self.user, self.me)
             if moved:
@@ -664,7 +664,7 @@ class JobRadar:
         try:
             await self.bot(functions.bots.SetBotCommandsRequest(
                 scope=types.BotCommandScopeDefault(), lang_code="",
-                commands=[types.BotCommand("start", "🏠 Главный экран"), types.BotCommand("scan", "🔄 Проверить сейчас")]))
+                commands=[types.BotCommand("start", "🐾 Радар")]))
             await self.bot(functions.bots.SetBotInfoRequest(
                 lang_code="", about="Радар удалённых вакансий: чаты Telegram + сайты",
                 description="Job Radar находит вакансии в твоих Telegram-чатах и на сайтах удалённой работы "
@@ -702,11 +702,15 @@ class JobRadar:
                      checked_at=datetime.fromisoformat(last).astimezone().replace(second=0, microsecond=0) if last else None)
         return screens.render_dashboard(stats, guest.screens_dir, subtitle=GUEST_SUBTITLE)
 
-    async def send_screen(self, caption, buttons, silent=False, guest=None):
+    async def send_screen(self, caption, buttons, silent=False, guest=None, home=False):
+        """A message to you or a guest: text with buttons; the home screen comes with the radar animation."""
         to = guest.id if guest else self.owner
-        picture = self.guest_dashboard(guest) if guest else self.dashboard()
         try:
-            msg = await self.bot.send_file(to, picture, caption=fit(caption), buttons=buttons, silent=silent)
+            if home:
+                anim = screens.radar_animation(SCREENS_DIR, self.cfg.get("brand") or screens.BRAND)
+                msg = await self.bot.send_file(to, str(anim), caption=fit(caption), buttons=buttons, silent=silent)
+            else:
+                msg = await self.bot.send_message(to, fit(caption, 4000), buttons=buttons, silent=silent, link_preview=False)
         except Exception:
             log.exception("cannot message %s — did they press Start in the bot chat?", to)
             return None
@@ -716,9 +720,7 @@ class JobRadar:
     async def edit_screen(self, target, caption, buttons, refresh_picture=False, guest=None):
         """target: a CallbackQuery event or a message id."""
         caption = fit(caption)
-        kw = {"buttons": buttons, "link_preview": False}
-        if refresh_picture:
-            kw["file"] = self.guest_dashboard(guest) if guest else self.dashboard()
+        kw = {"buttons": buttons, "link_preview": False}  # pictures are gone; the home animation stays as it is
         chat = guest.id if guest else self.owner
         self.remember_app_button(chat, target if isinstance(target, int) else target.message_id, buttons)
         if isinstance(target, int):
@@ -771,7 +773,7 @@ class JobRadar:
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True)
         state = tc.load_state()
-        msg = await self.send_screen(caption, buttons)
+        msg = await self.send_screen(caption, buttons, home=True)
         if msg and state.get("home_msg"):
             try:  # keep the chat tidy: one home screen at a time
                 await self.bot.delete_messages(self.owner, state["home_msg"])
@@ -1432,7 +1434,7 @@ class JobRadar:
         caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url)
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
-        msg = await self.send_screen(caption, buttons, guest=guest)
+        msg = await self.send_screen(caption, buttons, guest=guest, home=True)
         old = guest.load_state().get("home_msg")
         if msg and old:
             try:
@@ -1508,7 +1510,7 @@ class JobRadar:
                 log.info("guest joined: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
                 await self.send_screen(f"👥 <b>{esc(guest.name)}</b> подключился по приглашению.",
                                        [[btn("👥 Близкие", "u")], [HOME_BTN]], silent=True)
-                return await self.guest_prompt(guest, ONBOARD_ROLE, ROLE_KEEP_BUTTONS)
+                return await self.guest_show_home(guest)  # setup happens in the app (its own onboarding)
             guests.save_registry(reg)  # expired invites were dropped
             if code:
                 return await event.respond("Ссылка-приглашение недействительна: она одноразовая и работает 7 дней. Попроси новую.")
