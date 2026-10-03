@@ -231,8 +231,11 @@ def analyze(text, graph, pool):
             words += [w for w, _ in sorted(counts.items(), key=lambda kv: -kv[1]) if w not in words][:2]
 
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
-    top = ranked[0][1] if ranked else 0
-    primary = [rid for rid, s in ranked if s >= max(4, top * 0.5)][:3]
+    # a role is proposed only when the résumé names it; tools alone (SQL, Python…) fit many jobs and used to
+    # make everyone a «аналитик данных». Skill-only roles stay as unticked suggestions.
+    named = [(rid, s) for rid, s in ranked if any(w.startswith("в резюме есть") for w in why.get(rid, []))]
+    top = named[0][1] if named else 0
+    primary = [rid for rid, s in named if s >= max(4, top * 0.5)][:3]
     nearby = []
     for rid in primary:
         for other, kind in graph[rid]["links"].items():
