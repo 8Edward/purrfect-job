@@ -103,6 +103,48 @@ const FETCHERS = {
     const xml = await getText(`https://${c.slug}.teamtailor.com/jobs.rss`);
     return xml.split('<item>').slice(1).map((b) => ({ title: xmlText(b, 'title'), url: xmlText(b, 'link'), location: xmlText(b, 'remoteStatus') || '', posted: xmlText(b, 'pubDate') }));
   },
+  async workday(c) {  // public Workday job-board API: host (semrush.wd5), tenant, site
+    const base = `https://${c.host}.myworkdayjobs.com`;
+    const out = [];
+    for (let offset = 0; offset < 400; offset += 20) {
+      const r = await fetch(`${base}/wday/cxs/${c.tenant}/${c.site}/jobs`, {
+        method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appliedFacets: {}, limit: 20, offset, searchText: '' }), signal: AbortSignal.timeout(25_000),
+      });
+      if (!r.ok) throw new Error(`workday ${c.tenant}: HTTP ${r.status}`);
+      const j = await r.json();
+      for (const x of j.jobPostings || []) {
+        out.push({ title: x.title, url: `${base}/${c.site}${x.externalPath}`, location: x.locationsText || '', posted: x.postedOn || '' });
+      }
+      if (!(j.jobPostings || []).length || offset + 20 >= (j.total || 0)) break;
+    }
+    return out;
+  },
+  async comeet(c) {  // the careers page embeds COMPANY_POSITIONS_DATA = [...]
+    const html = await getText(c.url);
+    const i = html.indexOf('COMPANY_POSITIONS_DATA = ');
+    if (i < 0) throw new Error('comeet: no positions data');
+    let depth = 0, start = html.indexOf('[', i), end = start;
+    for (; end < html.length; end++) {
+      const ch = html[end];
+      if (ch === '"') { for (end++; html[end] !== '"'; end++) if (html[end] === '\\') end++; }
+      else if (ch === '[') depth++;
+      else if (ch === ']' && --depth === 0) break;
+    }
+    return JSON.parse(html.slice(start, end + 1)).map((x) => ({
+      title: x.name, url: x.url_active_page || x.url_comeet_hosted_page || c.url,
+      location: [x.location?.city, x.location?.country].filter(Boolean).join(', ') + (x.workplace_type ? ` · ${x.workplace_type}` : ''),
+      posted: x.time_updated || '',
+    }));
+  },
+  async hcareers(c) {  // h.careers company page: cards with aria-label "Открыть вакансию <title>" + /job/<uuid>
+    const html = await getText(`https://h.careers/jobs/company/${c.slug}`);
+    const out = [];
+    for (const m of html.matchAll(/aria-label="Открыть вакансию ([^"]+)"[^>]*href="\/job\/([0-9a-f-]{36})"/g)) {
+      out.push({ title: m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"'), url: `https://h.careers/job/${m[2]}`, location: '', posted: '' });
+    }
+    return out;
+  },
   async hh(c) {
     const out = [];
     const seen = new Set();

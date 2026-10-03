@@ -1,5 +1,6 @@
 # Company career pages, each is its own site in «Сайты» (read by telegram/board-feed.mjs).
-# kind: greenhouse | ashby | lever | workable | personio | teamtailor (slug) = the company's own public feed.
+# kind: greenhouse | ashby | lever | workable | personio | teamtailor (slug), workday (host, tenant, site),
+# comeet (url of the careers page), hcareers (slug on h.careers) = the company's own public feed.
 # ru: true -> every vacancy gets the #ru_company tag. Free public feeds only, no logins.
 companies:
   - {id: co-plata, name: Plata, kind: greenhouse, slug: platacard, ru: true}
@@ -12,6 +13,9 @@ companies:
   - {id: co-vivid, name: Vivid Money, kind: personio, slug: vivid, ru: true}
   - {id: co-praktika, name: Praktika, kind: teamtailor, slug: praktika, ru: true}
   - {id: co-ostrovok, name: Ostrovok (ETG), kind: personio, slug: etg, ru: true}
+  - {id: co-salmon, name: Salmon, kind: hcareers, slug: salmon, ru: true}
+  - {id: co-semrush, name: Semrush, kind: workday, host: semrush.wd5, tenant: semrush, site: semrushcareers, ru: true}
+  - {id: co-tripleten, name: TripleTen, kind: comeet, url: "https://www.comeet.com/jobs/tripleten/98.008", ru: true}
 
 # NOT connected: no own public feed found, only hh.ru (employer ids below) or nothing. Not read by the bot;
 # to be connected another way (their own career page). hh employer ids are kept for reference.
@@ -33,9 +37,6 @@ pending:
   - {name: Nexters, hh: 9058498}
   - {name: Freedom Holding, hh: 11319821}
   - {name: Контур, hh: 41862}
-  - {name: Salmon}
-  - {name: Semrush}
-  - {name: TripleTen}
-  - {name: Techwill}
-  - {name: Отелло}
-  - {name: Garage8}
+  - {name: Techwill}  # techwill.ru does not answer from here
+  - {name: Отелло}  # otello.ru redirects to Sber ID login; vacancies only on Habr Career/hh
+  - {name: Garage8}  # page opens in a browser but shows no vacancy list (none open?)
