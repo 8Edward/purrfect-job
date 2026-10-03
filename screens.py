@@ -110,15 +110,17 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------- 🐾 the chat's home: a cat radar animation
 
 BRAND = "Purrfect Job"   # the word the radar finds at the end; config.yml `brand:` overrides it
-ANIM_VERSION = 1
-AW, AH = 480, 320
-AC = (240, 150)          # radar centre
-AR = 118                 # radar radius
+ANIM_VERSION = 2
+OUT_W, OUT_H = 640, 400  # the GIF; frames are drawn twice as big and scaled down, so edges stay smooth
+K = 2                    # drawing scale
+AW, AH = OUT_W * K, OUT_H * K
+AC = (AW // 2, 186 * K)  # radar centre
+AR = 150 * K             # radar radius
 A_BG = ((14, 38, 44), (32, 30, 58))
-A_RING, A_SWEEP, A_GOLD, A_MINT, A_PINK = (88, 190, 170), (120, 230, 200), (242, 169, 59), (90, 214, 150), (255, 140, 160)
-BLIPS = [  # (angle in degrees clockwise from north, distance 0..1, kind)
-    (35, .55, "paw"), (80, .82, "dollar"), (125, .45, "whiskers"), (170, .75, "offer"), (215, .6, "tail"),
-    (255, .38, "dollar"), (300, .7, "paw"), (335, .85, "offer"), (15, .3, "whiskers"),
+A_RING, A_SWEEP, A_MINT, A_PINK, A_WHITE = (88, 190, 170), (120, 230, 200), (90, 214, 150), (255, 140, 160), (238, 242, 250)
+CAT, CAT_DARK, CAT_LIGHT, CAT_EYE = (138, 146, 158), (96, 104, 116), (196, 202, 212), (120, 214, 160)
+BLIPS = [  # (angle in degrees clockwise from north, distance 0..1 — icons stay well inside the rim, kind)
+    (40, .55, "paw"), (110, .62, "dollar"), (175, .45, "offer"), (235, .6, "whiskers"), (300, .5, "dollar"), (345, .66, "tail"),
 ]
 
 
@@ -137,9 +139,9 @@ def _pt(angle, dist):
     return AC[0] + math.cos(a) * AR * dist, AC[1] + math.sin(a) * AR * dist
 
 
-def _icon(d, kind, x, y, alpha, scale=1.0):
+def _icon(d, kind, x, y, alpha):
     c = lambda col: (*col, alpha)  # noqa: E731
-    s = scale
+    s = 1.5 * K
     if kind == "paw":
         d.ellipse([x - 7 * s, y - 2 * s, x + 7 * s, y + 9 * s], fill=c(A_PINK))
         for dx, dy in ((-9, -7), (-3, -11), (3, -11), (9, -7)):
@@ -147,33 +149,42 @@ def _icon(d, kind, x, y, alpha, scale=1.0):
     elif kind == "whiskers":
         d.ellipse([x - 3 * s, y - 3 * s, x + 3 * s, y + 3 * s], fill=c(A_PINK))
         for dy in (-5, 0, 5):
-            d.line([x - 5 * s, y, x - 18 * s, y + dy * s], fill=c((235, 240, 250)), width=2)
-            d.line([x + 5 * s, y, x + 18 * s, y + dy * s], fill=c((235, 240, 250)), width=2)
+            d.line([x - 5 * s, y, x - 18 * s, y + dy * s], fill=c(A_WHITE), width=int(1.5 * K))
+            d.line([x + 5 * s, y, x + 18 * s, y + dy * s], fill=c(A_WHITE), width=int(1.5 * K))
     elif kind == "tail":
-        d.arc([x - 14 * s, y - 14 * s, x + 14 * s, y + 14 * s], 200, 20, fill=c(A_GOLD), width=int(4 * s))
-        d.ellipse([x + 9 * s, y - 9 * s, x + 16 * s, y - 2 * s], fill=c(A_GOLD))
+        d.arc([x - 14 * s, y - 14 * s, x + 14 * s, y + 14 * s], 200, 20, fill=c(CAT_LIGHT), width=int(4 * s))
+        d.ellipse([x + 9 * s, y - 9 * s, x + 16 * s, y - 2 * s], fill=c(CAT_LIGHT))
     elif kind == "dollar":
         d.ellipse([x - 12 * s, y - 12 * s, x + 12 * s, y + 12 * s], fill=c(A_MINT))
-        f = font("bold", int(18 * s))
-        d.text((x, y), "$", font=f, fill=(14, 38, 44, alpha), anchor="mm")
+        d.text((x, y + 1 * s), "$", font=font("bold", int(17 * s)), fill=(14, 38, 44, alpha), anchor="mm")
     elif kind == "offer":
-        d.rounded_rectangle([x - 13 * s, y - 16 * s, x + 13 * s, y + 16 * s], radius=3, fill=c((245, 247, 255)))
+        d.rounded_rectangle([x - 13 * s, y - 16 * s, x + 13 * s, y + 16 * s], radius=int(3 * s), fill=c(A_WHITE))
         for k in range(3):
-            d.line([x - 8 * s, y + (-8 + k * 6) * s, x + 8 * s, y + (-8 + k * 6) * s], fill=c((150, 158, 196)), width=2)
-        d.line([x - 6 * s, y + 9 * s, x - 1 * s, y + 13 * s, x + 8 * s, y + 4 * s], fill=c(A_MINT), width=3)
+            d.line([x - 8 * s, y + (-8 + k * 6) * s, x + 8 * s, y + (-8 + k * 6) * s], fill=c((150, 158, 196)), width=int(1.5 * K))
+        d.line([x - 6 * s, y + 9 * s, x - 1 * s, y + 13 * s, x + 8 * s, y + 4 * s], fill=c(A_MINT), width=int(2.5 * K))
 
 
 def _cat(d, x, y, s, alpha=255):
-    col = (*A_GOLD, alpha)
-    d.polygon([(x - 26 * s, y - 10 * s), (x - 20 * s, y - 40 * s), (x - 4 * s, y - 22 * s)], fill=col)
-    d.polygon([(x + 26 * s, y - 10 * s), (x + 20 * s, y - 40 * s), (x + 4 * s, y - 22 * s)], fill=col)
-    d.ellipse([x - 30 * s, y - 28 * s, x + 30 * s, y + 26 * s], fill=col)
-    for ex in (-11, 11):
-        d.ellipse([x + (ex - 5) * s, y - 8 * s, x + (ex + 5) * s, y + 4 * s], fill=(14, 38, 44, alpha))
-    d.polygon([(x - 4 * s, y + 8 * s), (x + 4 * s, y + 8 * s), (x, y + 13 * s)], fill=(*A_PINK, alpha))
+    """A grey cat's face: ears with pink insides, green eyes, pink nose, white whiskers."""
+    a = lambda col: (*col, alpha)  # noqa: E731
     for side in (-1, 1):
-        for dy in (6, 12):
-            d.line([x + side * 9 * s, y + 11 * s, x + side * 40 * s, y + dy * s], fill=(245, 247, 255, alpha), width=2)
+        d.polygon([(x + side * 27 * s, y - 8 * s), (x + side * 21 * s, y - 42 * s), (x + side * 4 * s, y - 24 * s)], fill=a(CAT))
+        d.polygon([(x + side * 22 * s, y - 14 * s), (x + side * 20 * s, y - 33 * s), (x + side * 10 * s, y - 23 * s)], fill=a(A_PINK))
+    d.ellipse([x - 32 * s, y - 30 * s, x + 32 * s, y + 28 * s], fill=a(CAT))
+    d.ellipse([x - 14 * s, y + 2 * s, x + 14 * s, y + 24 * s], fill=a(CAT_LIGHT))  # muzzle
+    for side in (-1, 1):  # forehead stripes
+        d.line([x + side * 6 * s, y - 28 * s, x + side * 4 * s, y - 18 * s], fill=a(CAT_DARK), width=max(2, int(3 * s)))
+    d.line([x, y - 29 * s, x, y - 17 * s], fill=a(CAT_DARK), width=max(2, int(3 * s)))
+    for ex in (-12, 12):
+        d.ellipse([x + (ex - 7) * s, y - 10 * s, x + (ex + 7) * s, y + 3 * s], fill=a(CAT_EYE))
+        d.ellipse([x + (ex - 2) * s, y - 9 * s, x + (ex + 2) * s, y + 2 * s], fill=a((20, 26, 30)))
+        d.ellipse([x + (ex - 4.5) * s, y - 8 * s, x + (ex - 2) * s, y - 5 * s], fill=a(A_WHITE))
+    d.polygon([(x - 4 * s, y + 7 * s), (x + 4 * s, y + 7 * s), (x, y + 12 * s)], fill=a(A_PINK))
+    d.line([x, y + 12 * s, x - 4 * s, y + 16 * s], fill=a(CAT_DARK), width=max(2, int(2 * s)))
+    d.line([x, y + 12 * s, x + 4 * s, y + 16 * s], fill=a(CAT_DARK), width=max(2, int(2 * s)))
+    for side in (-1, 1):
+        for dy in (8, 14):
+            d.line([x + side * 12 * s, y + 12 * s, x + side * 44 * s, y + dy * s], fill=a(A_WHITE), width=max(2, int(1.6 * s)))
 
 
 def _frame(base, sweep, seen, final=0.0, brand=BRAND):
@@ -182,20 +193,21 @@ def _frame(base, sweep, seen, final=0.0, brand=BRAND):
     d = ImageDraw.Draw(layer)
     box = [AC[0] - AR, AC[1] - AR, AC[0] + AR, AC[1] + AR]
     if final < 1:
-        for k in range(16):  # the fading wedge behind the sweep line
-            d.pieslice(box, sweep - 90 - (k + 1) * 3, sweep - 90 - k * 3, fill=(*A_SWEEP, int(70 * (1 - k / 16) * (1 - final))))
+        for k in range(20):  # the fading trail behind the sweep line
+            d.pieslice(box, sweep - 90 - (k + 1) * 2.5, sweep - 90 - k * 2.5, fill=(*A_SWEEP, int(60 * (1 - k / 20) * (1 - final))))
     for r in (1, .66, .33):
-        d.ellipse([AC[0] - AR * r, AC[1] - AR * r, AC[0] + AR * r, AC[1] + AR * r], outline=(*A_RING, 110), width=2)
-    d.line([AC[0] - AR, AC[1], AC[0] + AR, AC[1]], fill=(*A_RING, 60), width=1)
-    d.line([AC[0], AC[1] - AR, AC[0], AC[1] + AR], fill=(*A_RING, 60), width=1)
+        d.ellipse([AC[0] - AR * r, AC[1] - AR * r, AC[0] + AR * r, AC[1] + AR * r], outline=(*A_RING, 110), width=2 * K)
+    d.line([AC[0] - AR, AC[1], AC[0] + AR, AC[1]], fill=(*A_RING, 55), width=K)
+    d.line([AC[0], AC[1] - AR, AC[0], AC[1] + AR], fill=(*A_RING, 55), width=K)
     if final < 1:
         x, y = _pt(sweep, 1)
-        d.line([AC, (x, y)], fill=(*A_SWEEP, 230), width=3)
+        d.line([AC, (x, y)], fill=(*A_SWEEP, 230), width=3 * K)
     for angle, dist, kind in BLIPS:
         age = seen.get((angle, dist))
         if age is None:
             continue
-        alpha = int(max(60, 255 - age * 9) * (1 - final))
+        alpha = int(min(255, 60 + age * 50) if age < 4 else max(70, 255 - (age - 4) * 4))  # fade in, then glow down slowly
+        alpha = int(alpha * (1 - final))
         if alpha > 4:
             _icon(d, kind, *_pt(angle, dist), alpha)
     img = Image.alpha_composite(img, layer)
@@ -203,18 +215,16 @@ def _frame(base, sweep, seen, final=0.0, brand=BRAND):
         top = Image.new("RGBA", img.size, (0, 0, 0, 0))
         t = ImageDraw.Draw(top)
         a = int(255 * final)
-        t.ellipse([AC[0] - 54, AC[1] - 66, AC[0] + 54, AC[1] + 42], fill=(*A_MINT, int(60 * final)))
-        _cat(t, AC[0], AC[1] - 14, 1.25 * (0.6 + 0.4 * final), a)
-        f = font("black", 40)
-        t.text((AW // 2, AH - 44), brand, font=f, fill=(*A_GOLD, a), anchor="mm", stroke_width=2, stroke_fill=(14, 38, 44, a))
-        t.text((AW // 2, AH - 14), "found by Job Radar", font=font("regular", 15), fill=(235, 240, 250, int(a * .8)), anchor="mm")
+        t.ellipse([AC[0] - 70 * K, AC[1] - 80 * K, AC[0] + 70 * K, AC[1] + 60 * K], fill=(*A_MINT, int(45 * final)))
+        _cat(t, AC[0], AC[1] - 8 * K, 1.6 * K * (0.7 + 0.3 * final), a)
+        t.text((AW // 2, AH - 34 * K), brand, font=font("black", 44 * K), fill=(*A_WHITE, a), anchor="mm")
         img = Image.alpha_composite(img, top)
-    return img.convert("RGB")
+    return img.convert("RGB").resize((OUT_W, OUT_H), Image.LANCZOS)
 
 
 def radar_animation(out_dir, brand=BRAND):
-    """The home-screen animation (GIF, cached): the radar sweeps, paws, whiskers, tails, dollars and
-    offers light up, then it finds «brand». Telegram plays a GIF as a silent looping video."""
+    """The home-screen animation (GIF, cached): the radar sweeps slowly, paws, whiskers, a tail, dollars and
+    an offer light up one by one, then a grey cat appears with «brand». Telegram plays it as a looping video."""
     brand = (brand or BRAND)[:22]
     key = hashlib.sha1(f"{ANIM_VERSION}|{brand}".encode()).hexdigest()[:10]
     path = Path(out_dir) / f"radar-{key}.gif"
@@ -223,18 +233,24 @@ def radar_animation(out_dir, brand=BRAND):
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     base = _bg()
     frames, durations, seen = [], [], {}
-    for n in range(36):  # one full turn
-        sweep = n * 10
+    for n in range(72):  # one slow turn: 5° a frame
+        sweep = n * 5
         for k in seen:
             seen[k] += 1
         for angle, dist, _ in BLIPS:
-            if (angle, dist) not in seen and (angle - sweep) % 360 < 10:
+            if (angle, dist) not in seen and (angle - sweep) % 360 < 5:
                 seen[(angle, dist)] = 0
         frames.append(_frame(base, sweep, seen, brand=brand))
-        durations.append(70)
-    for n in range(1, 9):  # the find
-        frames.append(_frame(base, 0, seen, final=n / 8, brand=brand))
         durations.append(60)
-    durations[-1] = 2200
-    frames[0].save(path, save_all=True, append_images=frames[1:], duration=durations, loop=0, optimize=True)
+    for n in range(1, 13):  # the find
+        frames.append(_frame(base, 0, seen, final=n / 12, brand=brand))
+        durations.append(55)
+    durations[-1] = 2600
+    # one shared palette for every frame: no colour flicker between frames, clean flat edges
+    sheet = Image.new("RGB", (OUT_W, OUT_H * 3))
+    for i, f in enumerate((frames[20], frames[60], frames[-1])):
+        sheet.paste(f, (0, OUT_H * i))
+    palette = sheet.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+    gif = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
+    gif[0].save(path, save_all=True, append_images=gif[1:], duration=durations, loop=0, optimize=False, disposal=1)
     return path
