@@ -499,3 +499,17 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 .ap-btns button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-sm); padding: 11px; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
 .ap-btns button.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 #ap-text { min-height: 34vh; }
+
+/* ✉️ batch responses */
+.batchbar { display: grid; gap: 6px; margin-bottom: 10px; }
+.srow { display: flex; align-items: center; gap: 8px; }
+.srow .row { flex: 1; min-width: 0; }
+.srow .bpick { width: 20px; height: 20px; flex: none; margin-bottom: 7px; accent-color: var(--accent); }
+.srow .sdone { width: 20px; flex: none; text-align: center; color: var(--ok); font-weight: 700; margin-bottom: 7px; }
+.bitem { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; margin: 8px 0; background: var(--surface); }
+.bitem small { display: block; color: var(--muted); font-size: 12px; }
+.bitem details summary { cursor: pointer; color: var(--accent); font-weight: 700; font-size: 13px; margin-top: 6px; }
+.bitem details .inp { margin-top: 6px; }
+.bitem.done { opacity: .5; }
+.bsum p { font-size: 13px; line-height: 1.45; margin: 6px 0; }
+html[data-skin="remote"] .bitem { border-radius: 16px; }

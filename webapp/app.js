@@ -447,6 +447,89 @@ function renderApply(item, r) {
     try { await navigator.clipboard.writeText(text()); toast("Письмо скопировано"); } catch (e) { toast("Не получилось скопировать — выделите текст вручную"); }
   }));
 }
+/* ✉️ «Откликнуться на все»: drafts in the background → one review list → one confirmation */
+async function batchFlow(keys) {
+  st.sheet = { batch: true };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Готовлю отклики</h3>
+    <div class="empty"><div class="spinner"></div><b id="bt-prog">0 из ${keys.length}</b>Пишу письмо под каждую вакансию, только по фактам из резюме.</div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+  try {
+    const d = await api("/api/apply/batch", { keys });
+    let j;
+    for (let n = 0; n < 600; n++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      j = await api("/api/resume/ai/" + d.job);
+      if (j.progress && $("#bt-prog")) $("#bt-prog").textContent = `${j.progress.done} из ${j.progress.total}`;
+      if (j.status !== "running") break;
+    }
+    if (j.status === "error") throw new Error(j.error);
+    renderBatch(j.result);
+  } catch (e) { closeSheet(); fail(e); }
+}
+function renderBatch(res) {
+  const ds = res.drafts, auto = (r) => (r.smtp || r.dry) && r.channels.email.length;
+  const where = (r) => auto(r) ? "📧 " + r.channels.email[0] : r.channels.email.length ? "📧 " + r.channels.email[0] + " (черновик)"
+    : r.channels.tg.length ? "💬 @" + r.channels.tg[0] : "🔗 сайт вакансии";
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклики готовы: ${ds.length}</h3>
+    <p class="hint">Проверьте письма (нажмите «Письмо», чтобы прочитать и поправить) и снимите галочки с лишних.${ds[0] && ds[0].dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
+    ${res.failed.length ? `<p class="hint">⚠️ Не получилось: ${res.failed.map((f) => esc(f.title) + " — " + esc(f.error)).join("; ")}</p>` : ""}
+    ${ds.map((r, n) => `<div class="bitem"><label class="check"><input type="checkbox" class="bsel" data-n="${n}" checked>
+        <span><b>${esc(r.title)}</b>${r.company ? " · " + esc(r.company) : ""}<small>${esc(where(r))} · резюме «${esc(r.resume.name)}»</small></span></label>
+      <details><summary>Письмо</summary>${r.channels.email.length ? `<input class="inp" data-subj="${n}" value="${esc(r.subject)}" maxlength="200">` : ""}
+        <textarea class="inp" data-text="${n}" rows="8">${esc(r.letter)}</textarea>${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}</details></div>`).join("")}
+    <div class="bsum" id="bt-sum"></div>
+    <div class="btns"><button class="yes" id="bt-send">Отправить выбранные</button><button id="bt-cancel">Отмена</button></div>`;
+  const chosen = () => $$(".bsel").filter((c) => c.checked).map((c) => +c.dataset.n);
+  const summary = () => {
+    const sel = chosen(), mail = sel.filter((n) => auto(ds[n])), hand = sel.filter((n) => !auto(ds[n]));
+    $("#bt-sum").innerHTML = (mail.length ? `<p><b>Уйдёт по почте (${mail.length}):</b> ${mail.map((n) => esc(ds[n].channels.email[0]) + " — " + esc(ds[n].title)).join("; ")}</p>` : "")
+      + (hand.length ? `<p><b>Откроем вручную (${hand.length}):</b> ${hand.map((n) => esc(ds[n].title)).join("; ")} — письмо уже будет готово, останется вставить.</p>` : "");
+    $("#bt-send").textContent = `Отправить выбранные (${sel.length})`;
+    delete $("#bt-send").dataset.sure;
+  };
+  $$(".bsel").forEach((c) => (c.onchange = summary));
+  summary();
+  $("#bt-cancel").onclick = closeSheet;
+  $("#bt-send").onclick = async () => {
+    const b = $("#bt-send"), sel = chosen();
+    if (!sel.length) return toast("Ничего не выбрано");
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = `Точно отправить ${sel.length}? Нажмите ещё раз`; return; }
+    b.disabled = true; b.textContent = "Отправляю…";
+    const items = sel.map((n) => ({ key: ds[n].key, to: auto(ds[n]) ? ds[n].channels.email[0] : "", vid: ds[n].resume.vid,
+      subject: ($(`[data-subj="${n}"]`) || {}).value || ds[n].subject, text: $(`[data-text="${n}"]`).value }));
+    try {
+      const d = await api("/api/apply/batch/send", { items });
+      const byKey = Object.fromEntries(d.report.map((r) => [r.key, r]));
+      const sent = d.report.filter((r) => r.result === "sent" || r.result === "dry").length;
+      const manual = sel.filter((n) => (byKey[ds[n].key] || {}).result === "manual");
+      haptic("ok");
+      toast(`Отправлено: ${sent}` + (manual.length ? ` · вручную: ${manual.length}` : ""));
+      if (manual.length) renderManualQueue(manual.map((n) => ({ ...ds[n], text: items[sel.indexOf(n)].text })));
+      else { closeSheet(); loadSaved(); loadMe().catch(() => {}); }
+    } catch (e) { b.disabled = false; fail(e); }
+  };
+}
+function renderManualQueue(list) {
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>Осталось вручную: ${list.length}</h3>
+    <p class="hint">Нажмите — откроется вакансия, чат или почта, письмо уже скопировано, а письмо и PDF придут в чат с ботом. Вакансия отметится «Откликнулся».</p>
+    ${list.map((r, n) => `<div class="bitem"><b>${esc(r.title)}</b>${r.company ? " · " + esc(r.company) : ""}
+      <div class="ap-btns">${r.channels.email.map((m) => `<button data-q="${n}" data-how="mail" data-to="${esc(m)}">📧 Письмо на ${esc(m)}</button>`).join("")}
+        ${r.channels.tg.map((t) => `<button data-q="${n}" data-how="tg" data-to="${esc(t)}">💬 Открыть чат @${esc(t)}</button>`).join("")}
+        ${r.channels.link ? `<button data-q="${n}" data-how="site">🔗 Открыть вакансию</button>` : ""}</div></div>`).join("")}
+    <div class="btns"><button class="wide" id="mq-close">Готово</button></div>`;
+  $("#mq-close").onclick = () => { closeSheet(); loadSaved(); loadMe().catch(() => {}); };
+  $$("[data-q]").forEach((b) => (b.onclick = async () => {
+    const r = list[+b.dataset.q], how = b.dataset.how, to = b.dataset.to;
+    try { await navigator.clipboard.writeText(r.text); } catch (e) { /* copying may be blocked */ }
+    if (how === "mail") openLink(`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(r.subject)}&body=${encodeURIComponent(r.text)}`);
+    else if (how === "tg") openLink("https://t.me/" + to);
+    else openLink(r.channels.link);
+    try { await api("/api/apply/done", { key: r.key, how: how === "site" ? "на сайте" : how === "tg" ? "Telegram @" + to : "письмо " + to, text: r.text, vid: r.resume.vid }); }
+    catch (e) { fail(e); }
+    b.closest(".bitem").classList.add("done");
+  }));
+}
 function afterApply(item, fresh) {
   closeSheet();
   if (fresh) st.feed = st.feed.filter((i) => i.key !== item.key);
@@ -600,10 +683,23 @@ async function loadSaved() {
   try {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
     const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет." };
-    box.innerHTML = items.length ? items.map((i, n) =>
-      `<button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")
-      : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`;
+    const batch = st.saved === "fav" && st.me && st.me.owner;  // «Откликнуться на все»: only the owner, for now
+    const open = items.filter((i) => !(i.track && i.track.stage));
+    box.innerHTML = (batch && open.length ? `<div class="batchbar"><span class="hint">Отметьте вакансии — я подготовлю письма, вы проверите и отправите одним нажатием.</span>
+        <button class="cta" id="batch-go">✉️ Откликнуться на отмеченные (<b id="batch-n">${Math.min(open.length, 10)}</b>)</button></div>` : "")
+      + (items.length ? items.map((i, n) => {
+        const done = i.track && i.track.stage;
+        return `<div class="srow">${batch ? (done ? '<span class="sdone" title="Отклик уже есть">✓</span>'
+          : `<input type="checkbox" class="bpick" data-k="${esc(i.key)}" ${open.indexOf(i) < 10 ? "checked" : ""} aria-label="Откликнуться">`) : ""}
+          <button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "отклик: " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button></div>`;
+      }).join("") : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`);
     $$("#saved .row").forEach((r) => (r.onclick = () => openSheet(items[+r.dataset.n], false)));
+    const picked = () => $$("#saved .bpick").filter((c) => c.checked).map((c) => c.dataset.k);
+    $$("#saved .bpick").forEach((c) => (c.onchange = () => {
+      if (picked().length > 10) { c.checked = false; toast("Не больше 10 за раз"); }
+      $("#batch-n").textContent = picked().length;
+    }));
+    if ($("#batch-go")) $("#batch-go").onclick = () => (picked().length ? batchFlow(picked()) : toast("Отметьте хотя бы одну вакансию"));
   } catch (e) { fail(e); }
 }
 
