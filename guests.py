@@ -65,6 +65,7 @@ DEFAULTS = {"lookback_days": 1, "min_length": 120}
 # hh.ru: its official RSS feed of a vacancy search (no login, no API key; the
 # API for job seekers was closed in Dec 2025). Up to 20 newest per query.
 HH_ID = "hh"
+HH_FEED = True  # hh.ru stays a feed source (Eduard, 2026-10-03: only the block title lost «hh.ru»)
 HH_NAME = "hh.ru"
 HH_RSS = "https://hh.ru/search/vacancy/rss"
 HH_EVERY = timedelta(minutes=30)
@@ -674,7 +675,7 @@ def is_own_site(pid):
 def listed_sites():
     """Sites in the shared list that the bot can serve: {id: name}. hh.ru is always there."""
     boards_ = {b["provider"]: SITE_CATALOG[b["provider"]][0] for b in read_boards() if b["provider"] in SITE_CATALOG}
-    return {HH_ID: HH_NAME, **{k: "🏢 " + c["name"] for k, c in read_companies().items()}, **boards_}
+    return {HH_ID: HH_NAME, **{k: c["name"] for k, c in read_companies().items()}, **boards_}
 
 
 def _board_block(lines):

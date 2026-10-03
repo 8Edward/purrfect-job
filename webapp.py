@@ -696,6 +696,18 @@ class WebApp:
                              + [f"{w} — {why}" for w, why in refused])
         elif kind == "channel_remove" and guests.can_remove(pool, data.get("key"), m):
             guests.remove_from_pool(pool, data["key"])
+        elif kind == "channels_all":  # «Включить все» / «Выключить все»
+            m.set_selected(list(pool["channels"]) if data.get("on") else [])
+        elif kind == "sites_all":
+            on = bool(data.get("on"))
+            ids = list(listed)
+            if m.is_owner:
+                for pid in ids:
+                    if not guests.is_own_site(pid):
+                        guests.set_board_enabled(pid, on)
+            m.set_sites(ids if on else [])
+            if on and not guests.hh_settings(m)["query"]:
+                guests.set_hh(m, query=guests.default_hh_query(m))
         elif kind == "site" and data.get("id") in listed:
             pid, on = data["id"], bool(data.get("on"))
             mine = m.sites(listed)

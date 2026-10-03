@@ -66,18 +66,18 @@
     <h2 class="h2">Поиск</h2>
     <h3 class="feed-set">📥 Что попадает в ленту</h3>
     <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск ниже они не влияют. Нажмите на блок, чтобы открыть.</div>
-    <details class="group fold" id="g-words"><summary>🎯 Что ищу <small id="sum-role"></small></summary><div class="words" id="w-role"></div>
+    <details class="group fold" id="g-words"><summary><span class="sn">🎯 Что ищу</span><small id="sum-role"></small></summary><div class="words" id="w-role"></div>
       <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></details>
-    <details class="group fold"><summary>🚫 Стоп-слова <small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
+    <details class="group fold"><summary><span class="sn">🚫 Стоп-слова</span><small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
       <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></details>
-    <details class="group fold" id="g-ch"><summary id="ch-head">📡 Каналы</summary><div id="ch-list"></div>
+    <details class="group fold" id="g-ch"><summary id="ch-head"><span class="sn">📡 Каналы</span></summary><div class="bulk"><button type="button" data-bulk="channels_all" data-on="1">Включить все</button><button type="button" data-bulk="channels_all" data-on="0">Выключить все</button></div><div id="ch-list"></div>
       <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></details>
-    <details class="group fold"><summary>🌐 Сайты и hh.ru <small id="sum-sites"></small></summary><div id="site-list"></div>
+    <details class="group fold"><summary><span class="sn">🌐 Сайты</span><small id="sum-sites"></small></summary><div class="bulk"><button type="button" data-bulk="sites_all" data-on="1">Включить все</button><button type="button" data-bulk="sites_all" data-on="0">Выключить все</button></div><div id="site-list"></div>
       <div class="hh" id="hh-box"><label for="hhq">Запрос на hh.ru</label>
         <form class="add" id="hh-form"><input id="hhq" maxlength="200"><button>✓</button></form>
         <div class="tg"><span>Только удалёнка</span><button class="sw" id="hh-remote" aria-pressed="true" aria-label="Только удалёнка"></button></div>
       </div></details>
-    <details class="group fold" id="g-tz"><summary>🕒 Часовой пояс <small id="sum-tz"></small></summary>
+    <details class="group fold" id="g-tz"><summary><span class="sn">🕒 Часовой пояс</span><small id="sum-tz"></small></summary>
       <div class="tg"><span>Скрывать вакансии не под мой пояс<small>где пояс не указан, вакансия остаётся в ленте</small></span><button class="sw" id="tz-on" aria-pressed="false" aria-label="Фильтр по часовому поясу"></button></div>
       <div class="tzrow"><label>Мой пояс<select class="inp" id="tz-mine"></select></label><label>Разница до<select class="inp" id="tz-spread"></select></label></div></details>
     <h3 class="feed-set">⌕ Поиск по всем источникам</h3>

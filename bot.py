@@ -506,7 +506,7 @@ def sites_screen(member):
                if hh["query"] else "🔎 <b>hh.ru</b>: запрос не задан")
     lines += ["", hh_line + ". Проверяю раз в 30 минут, до 20 свежих вакансий за раз."]
     rows = []
-    order = sorted(listed.items(), key=lambda kv: (kv[0] != guests.HH_ID, kv[1].lower()))
+    order = sorted(listed.items(), key=lambda kv: (kv[0] != guests.HH_ID, kv[0].startswith(guests.CO_PREFIX), kv[1].lower()))
     for pid, name in order:
         row = [btn(("✓ " if pid in mine else "◻️ ") + name, f"w:t:{pid}")]
         if member.is_owner and not guests.is_own_site(pid):
@@ -1173,6 +1173,8 @@ class JobRadar:
                 await self.notify(g, items)
 
     async def hh_pass(self):
+        if not guests.HH_FEED:
+            return
         listed = guests.listed_sites()
         people = [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
         for m in people:

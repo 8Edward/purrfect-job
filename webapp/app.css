@@ -462,9 +462,13 @@ html[data-skin="remote"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big,
 details.fold { padding: 0; }
 details.fold > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-size: 14px; font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
 details.fold > summary::-webkit-details-marker { display: none; }
-details.fold > summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
+details.fold > summary::after { content: "▾"; margin-left: 6px; color: var(--muted); transition: transform .15s; }
 details.fold[open] > summary::after { transform: rotate(180deg); }
-details.fold > summary small { color: var(--muted); font-weight: 400; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.fold > summary .sn { flex: none; white-space: nowrap; }
+details.fold > summary small { flex: 1 1 0; min-width: 0; text-align: right; padding-left: 8px; color: var(--muted); font-weight: 400; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.fold > summary::after { flex: none; }
+.bulk { display: flex; gap: 8px; padding: 0 14px 10px; }
+.bulk button { flex: 1; border: 1px solid var(--line); background: var(--surface2); color: var(--fg); border-radius: var(--r-sm); padding: 8px 6px; font-size: 13px; }
 details.fold .words { padding: 0 14px 8px; }
 .stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 495px), 420px); }  /* room for the sort bar */
 
