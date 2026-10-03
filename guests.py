@@ -98,6 +98,9 @@ SITE_CATALOG = {
     "agentic-jobs": ("Agentic Jobs", "AI / ML"),
     "flowxtra": ("Flowxtra", "Европа, разные профессии"),
 }
+COMPANIES_ID = "companies"  # not a board: career pages listed in companies.yml (board-feed.mjs)
+COMPANIES_NAME = "Компании"
+SITE_CATALOG[COMPANIES_ID] = (COMPANIES_NAME, "Plata, Авито, Ozon, Точка, Miro, Toloka… (список в companies.yml)")
 
 log = logging.getLogger("job-radar.guests")
 
@@ -257,11 +260,12 @@ class Owner(Member):
 
     def sites(self, listed):
         mine = [b["provider"] for b in read_boards() if b.get("enabled", True) and b["provider"] in listed]
-        return ([HH_ID] if HH_ID in self.load_search().get("sites", []) else []) + mine
+        own = [s for s in (HH_ID, COMPANIES_ID) if s in self.load_search().get("sites", [])]
+        return own + mine
 
     def set_sites(self, ids):  # only hh.ru lives here; job boards are `enabled:` in portals.yml
         search = self.load_search()
-        search["sites"] = [HH_ID] if HH_ID in ids else []
+        search["sites"] = [s for s in (HH_ID, COMPANIES_ID) if s in ids]
         self.save_search(search)
 
 
@@ -342,7 +346,7 @@ def reset_member(member, wipe_jobs=False):
         search = member.load_search()
         search["keywords"] = fresh["keywords"]
         search["pool"] = fresh["pool"]
-        search["sites"] = [HH_ID] if HH_ID in fresh["sites"] else []  # job boards = portals.yml, untouched
+        search["sites"] = [s for s in (HH_ID, COMPANIES_ID) if s in fresh["sites"]]  # job boards = portals.yml, untouched
         search["hh"] = fresh.get("hh", {})
         member.save_search(search)
     else:
@@ -374,10 +378,12 @@ def load_preset():
     return {}
 
 
-def web_tags(member, text):
-    """Tags for a site vacancy (e.g. ru-company), from the person's own tag patterns."""
+def web_tags(member, text, ru=False):
+    """Tags for a site vacancy (e.g. ru-company), from the person's own tag patterns;
+    ru=True: the feed itself says it's a Russian-speaking company (companies.yml)."""
     tags = member.cfg().get("keywords", {}).get("tags") or {}
-    return tc.JobFilter({"tags": tags}, 0).tags_for(text)
+    found = tc.JobFilter({"tags": tags}, 0).tags_for(text)
+    return found + [RU_TAG] if ru and RU_TAG not in found else found
 
 
 def parse_posted(text):
@@ -399,7 +405,7 @@ def web_job(j, site, member=None):
     line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
     return {"source": "web", "key": boards.board_key(j["url"]), "title": title, "company": company,
             "location": j.get("location", ""), "comp": j.get("comp", ""), "site": site, "link": j["url"],
-            "date": date, "tags": web_tags(member, f"{title} {company}") if member else [],
+            "date": date, "tags": web_tags(member, f"{title} {company}", j.get("ru")) if member else [],
             "pipeline_line": line}
 
 
@@ -659,7 +665,7 @@ def read_boards():
 def listed_sites():
     """Sites in the shared list that the bot can serve: {id: name}. hh.ru is always there."""
     boards_ = {b["provider"]: SITE_CATALOG[b["provider"]][0] for b in read_boards() if b["provider"] in SITE_CATALOG}
-    return {HH_ID: HH_NAME, **boards_}
+    return {HH_ID: HH_NAME, COMPANIES_ID: COMPANIES_NAME, **boards_}
 
 
 def _board_block(lines):

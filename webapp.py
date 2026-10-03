@@ -699,7 +699,7 @@ class WebApp:
         elif kind == "site" and data.get("id") in listed:
             pid, on = data["id"], bool(data.get("on"))
             mine = m.sites(listed)
-            if m.is_owner and pid != guests.HH_ID:
+            if m.is_owner and pid not in (guests.HH_ID, guests.COMPANIES_ID):
                 guests.set_board_enabled(pid, on)
             else:
                 m.set_sites(mine + [pid] if on and pid not in mine else [s for s in mine if s != pid or on])

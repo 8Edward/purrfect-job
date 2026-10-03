@@ -509,7 +509,7 @@ def sites_screen(member):
     order = sorted(listed.items(), key=lambda kv: (kv[0] != guests.HH_ID, kv[1].lower()))
     for pid, name in order:
         row = [btn(("✓ " if pid in mine else "◻️ ") + name, f"w:t:{pid}")]
-        if member.is_owner and pid != guests.HH_ID:
+        if member.is_owner and pid not in (guests.HH_ID, guests.COMPANIES_ID):
             row.append(btn("🗑", f"w:d:{pid}"))
         rows.append(row)
         if pid == guests.HH_ID and pid in mine:
@@ -1343,7 +1343,7 @@ class JobRadar:
             if sub == "t" and pid in listed:
                 mine = member.sites(listed)
                 on = pid not in mine
-                if member.is_owner and pid != guests.HH_ID:
+                if member.is_owner and pid not in (guests.HH_ID, guests.COMPANIES_ID):
                     guests.set_board_enabled(pid, on)
                 else:
                     member.set_sites(mine + [pid] if on else [s for s in mine if s != pid])

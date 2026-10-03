@@ -1,0 +1,31 @@
+# Company career pages for the «🏢 Компании» site (read by telegram/board-feed.mjs).
+# kind: greenhouse | ashby | lever | workable | personio | teamtailor (slug) or hh (employer ids on hh.ru,
+# remote-only RSS; q: extra search words, one request each, title only, for big employers whose 20 newest
+# remote vacancies would hide analytics ones). ru: true -> every vacancy gets the #ru_company tag. Free public feeds only, no logins.
+companies:
+  - {name: Plata, kind: greenhouse, slug: platacard, ru: true}
+  - {name: Toloka, kind: greenhouse, slug: toloka, ru: true}
+  - {name: Flo Health, kind: greenhouse, slug: flohealth, ru: true}
+  - {name: Trivago, kind: greenhouse, slug: trivago}
+  - {name: Miro, kind: ashby, slug: miro, ru: true}
+  - {name: Adapty, kind: ashby, slug: adapty-io, ru: true}
+  - {name: Joom, kind: workable, slug: joom, ru: true}
+  - {name: Vivid Money, kind: personio, slug: vivid, ru: true}
+  - {name: Praktika, kind: teamtailor, slug: praktika, ru: true}
+  - {name: Ostrovok (ETG), kind: personio, slug: etg, ru: true}
+  - {name: Авито, kind: hh, ids: [84585], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
+  - {name: Ozon, kind: hh, ids: [2180], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
+  - {name: Точка Банк, kind: hh, ids: [2324020], q: [аналитик, analyst, данных, BI, fraud, антифрод], ru: true}
+  - {name: Островок, kind: hh, ids: [697715], ru: true}
+  - {name: Aviasales, kind: hh, ids: [588914], ru: true}
+  - {name: Dodo Brands, kind: hh, ids: [1520838], q: [аналитик, analyst, данных, BI], ru: true}
+  - {name: Flowwow, kind: hh, ids: [10256320], ru: true}
+  - {name: Twinby, kind: hh, ids: [5775055], ru: true}
+  - {name: Ясно, kind: hh, ids: [4841748], ru: true}
+  - {name: 2ГИС, kind: hh, ids: [64174], q: [аналитик, analyst, данных, BI], ru: true}
+  - {name: hh.ru, kind: hh, ids: [1455], q: [аналитик, analyst, данных], ru: true}
+  - {name: Uzum, kind: hh, ids: [9173883], q: [аналитик, analyst, данных, BI], ru: true}
+  - {name: Playrix, kind: hh, ids: [9056925], ru: true}
+  - {name: inDrive, kind: hh, ids: [9506652], ru: true}
+  - {name: Nexters, kind: hh, ids: [9058498], ru: true}
+  - {name: Freedom Holding, kind: hh, ids: [11319821], q: [аналитик, analyst, данных, BI], ru: true}
