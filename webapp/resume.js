@@ -186,11 +186,11 @@ function renderMain() {
         <span class="muted">${doc.stats.words} слов · пунктов в опыте ${doc.stats.bullets}, с цифрами ${doc.stats.with_numbers}</span>
         ${doc.good.length ? `<div class="oks">${doc.good.map((g) => `<span>✓ ${esc(g)}</span>`).join("")}</div>` : ""}</div>
     </div>
-    ${doc.remarks.length ? `<div class="rs-remarks">${remarks.map((r) => `<div class="remark ${r.level}">
+    ${doc.remarks.length ? `<div class="rs-remarks">${remarks.map((r, ri) => `<div class="remark ${r.level}">
         <div class="rh"><i></i><b>${esc(r.title)}</b><small>${LEVEL[r.level]}</small></div>
         <p>${esc(r.detail)}</p>
-        ${r.examples.length ? `<ul>${r.examples.map((x) => `<li>${esc(x.length > 110 ? x.slice(0, 110) + "…" : x)}</li>`).join("")}</ul>` : ""}
-        ${r.ai ? aiBtn(r.ai, r.ai === "summary" ? "✨ Написать с ИИ" : "✨ Исправить с ИИ", `data-focus="${esc(r.title)}"`) : ""}
+        ${r.examples.length ? `<ul>${r.examples.map((x, n) => `<li data-ex="${ri}:${n}" title="Поправить эту строку">${esc(x.length > 110 ? x.slice(0, 110) + "…" : x)} <span class="go">✏️</span></li>`).join("")}</ul>` : ""}
+        <div class="rfix">${r.ai ? aiBtn(r.ai, r.ai === "summary" ? "✨ Написать с ИИ" : "✨ Исправить с ИИ", `data-focus="${esc(r.title)}"`) : ""}<button class="rs-act" data-hand="${ri}">✏️ Поправить вручную</button></div>
       </div>`).join("")}
       ${doc.remarks.length > 3 ? `<button class="link" id="rs-all">${rs.showAll ? "Свернуть" : `Показать все замечания (${doc.remarks.length})`}</button>` : ""}</div>`
       : `<p class="hint">Замечаний нет — резюме в хорошей форме. 🎉</p>`}
@@ -210,6 +210,8 @@ function renderMain() {
     <div class="group" style="margin-top:14px"><h4>🔎 Настроить поиск вакансий по этому резюме</h4><div id="cv-box"></div></div>`;
   bindCommon();
   if ($("#rs-all")) $("#rs-all").onclick = () => { rs.showAll = !rs.showAll; renderMain(); };
+  $$("[data-hand]").forEach((b) => (b.onclick = () => fixByHand(remarks[+b.dataset.hand], 0)));
+  $$("[data-ex]").forEach((li) => (li.onclick = () => { const [ri, n] = li.dataset.ex.split(":").map(Number); fixByHand(remarks[ri], n); }));
   $$("[data-cover]").forEach((b) => (b.onclick = () => { rs.coverMode = true; go("match"); }));
   $("[data-go=match]").onclick = () => { rs.coverMode = false; go("match"); };
   $("#rs-export").onclick = exportSheet;
@@ -220,6 +222,44 @@ function renderMain() {
   $("#rs-addline").onclick = () => { rs.blocks.push({ t: "li", x: "" }); editBlock(rs.blocks.length - 1, true); };
   $("#rs-addsec").onclick = sectionSheet;
   mountCvBox();
+}
+/* ✏️ «Поправить вручную» on a remark: jump to the line it is about on the page and open its editor;
+   for something missing (contacts, «О себе», a section) add an empty line in the right place. */
+const plainLine = (s) => String(s || "").replace(/[*_`#\[\]]/g, "").replace(/\(https?:[^)]*\)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+function showLine(i, isNew) {
+  const el = paperEl(i);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  haptic();
+  setTimeout(() => editBlock(i, isNew), el ? 350 : 0);
+}
+function headEnd() {  // the line after the name and the contact lines under it
+  let e = rs.blocks.findIndex((b) => b.t === "h1") + 1;
+  while (e > 0 && e < rs.blocks.length && rs.blocks[e].t === "p") e++;
+  return e || 0;
+}
+function fixByHand(r, n) {
+  if (!r) return;
+  const ex = r.examples[n] || r.examples[0];
+  if (ex) {
+    const want = plainLine(ex), word = want.length < 30;
+    const i = rs.blocks.findIndex((b) => (word ? plainLine(b.x).includes(want) : plainLine(b.x) === want));
+    const j = i >= 0 ? i : rs.blocks.findIndex((b) => plainLine(b.x).startsWith(want.slice(0, 40)));
+    if (j >= 0) return showLine(j);
+  }
+  const en = rs.data.active.lang === "en";
+  if (r.id === "name") return rs.blocks[0] && rs.blocks[0].t === "h1" ? showLine(0) : (rs.blocks.unshift({ t: "h1", x: "" }), editBlock(0, true));
+  if (r.id === "contacts" || r.id === "where") { const at = headEnd(); rs.blocks.splice(at, 0, { t: "p", x: "" }); return editBlock(at, true); }
+  if (r.id === "summary") {
+    const at = headEnd();
+    rs.blocks.splice(at, 0, { t: "h2", x: en ? "Summary" : "О себе" }, { t: "p", x: "" });
+    return editBlock(at + 1, true);
+  }
+  if (["experience", "skills", "education", "no-bullets"].includes(r.id)) return sectionSheet();
+  if (r.id === "dates") { const i = rs.blocks.findIndex((b) => b.t === "h3"); if (i >= 0) return showLine(i); }
+  if (r.id.startsWith("summary")) { const i = rs.blocks.findIndex((b, k) => k > 0 && rs.blocks[k - 1].t === "h2" && /о себе|summary|about/i.test(rs.blocks[k - 1].x)); if (i >= 0) return showLine(i); }
+  const host = $("#paper-host");  // everything else: the whole text is the place to fix it
+  if (host) host.scrollIntoView({ behavior: "smooth", block: "start" });
+  toast("Нажмите на строку в резюме, чтобы её поправить");
 }
 async function mountCvBox() {
   if (rs.data.cv) return setCv(rs.data.cv);

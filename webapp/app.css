@@ -443,3 +443,6 @@ html[data-skin="tropic"] .lrow { border-radius: 18px; }
 .icon-btn { display: grid; place-items: center; padding: 0; line-height: 1; transform-origin: 50% 50%; color: var(--fg); }
 /* «Тропики» rounds controls into pills (--r-sm: 999px); blocks of several lines must stay cards, not ovals */
 html[data-skin="tropic"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big, #be-text, .card .ai, .aibox, .skeleton, .stat, .lrow, .verdict) { border-radius: 18px; }
+.remark .rfix { display: flex; flex-wrap: wrap; gap: 6px; }
+.remark li[data-ex] { cursor: pointer; }
+.remark li .go { opacity: .7; font-size: 11px; }
