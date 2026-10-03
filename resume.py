@@ -64,7 +64,8 @@ CLICHES = re.compile(
     r"без вредных привычек|высок\w+ работоспособност\w+|креативн\w+|"
     r"team player|hard[- ]working|fast learner|quick learner|results[- ]driven|self[- ]motivated|"
     r"detail[- ]oriented|go[- ]getter|think outside the box|dynamic|passionate)\b", re.IGNORECASE)
-PERSONAL = re.compile(r"(дата рождения|date of birth|\bborn\b|семейное положение|marital status|женат|замужем|"
+PERSONAL = re.compile(r"(дата рождения|date of birth|\bborn\b|семейное положение|marital status|женат|замужем|родил(?:ся|ась)|"
+                      r"\bмужчина\b|\bженщина\b|\bgender\b|"
                       r"\bдети\b|children|вероисповедан|religion|\bвес\b|\bрост\b)", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE = re.compile(r"\+?\d[\d\s()\-]{8,}\d")
@@ -242,17 +243,52 @@ def section_key(title):
     return None
 
 
+INLINE_HEAD = re.compile(r"^(обо мне|о себе|about me|summary|знание языков|languages)[:\s—–-]+(?=\S)(.{10,})$", re.IGNORECASE)
+DURATION = re.compile(r"^(\d+\s*(год|года|лет|месяц\w*|мес\.?|years?|months?|yrs?|mos?)\s*){1,2}$", re.IGNORECASE)
+LINE_END = re.compile(r"[.!?:;»\")]$")
+DANGLING = re.compile(r"(\s(и|в|во|на|с|со|по|для|к|от|до|из|за|а|но|или|and|or|of|the|to|for|with|in|on|at|by|a|an))$", re.IGNORECASE)
+NOT_TEXT = re.compile(r"^(\S+@\S+|https?:|www\.|[\w-]+\.(com|ru|io|me|org|net)(?![\w]))", re.IGNORECASE)
+
+
+def heading_of(line):
+    """The section a line names: «Опыт работы — 4 года 2 месяца» is «Опыт работы» too."""
+    bare = line.rstrip(":").strip()
+    m = HEADING_TAIL.match(bare)
+    if m:
+        bare = m.group(1)
+    return (section_key(bare), bare) if len(bare) <= 40 else (None, bare)
+
+
+def unwrap(lines):
+    """PDF text breaks sentences at the page width. A line that starts in lower case (or with a
+    bracket / dash continuation) goes back onto the line before it, unless that one ends a sentence
+    or is a heading. «Март 2023 —» + «настоящее время» become one date line the same way."""
+    out = []
+    for line in lines:
+        prev = out[-1] if out else ""
+        cont = (re.match(r"^[a-zа-яё(]", line) and not NOT_TEXT.match(line)) or DANGLING.search(prev)             or (prev.endswith(("—", "–", "-", ",")) and not BULLET.match(line))
+        if prev and cont and not LINE_END.search(prev) and not heading_of(prev)[0] and not BULLET.match(line):
+            out[-1] = prev + " " + line
+        else:
+            out.append(line)
+    return out
+
+
 def from_text(text):
     """Plain text from a PDF/DOCX/TXT résumé -> tidy Markdown: name, section headings,
     job titles inside «experience», bullets. The person can fix the rest in the editor."""
     if re.search(r"^#{1,3} ", text or "", re.MULTILINE):
         return text.strip() + "\n"  # already Markdown
     lines = [re.sub(r"\s+", " ", l).strip() for l in (text or "").splitlines()]
-    lines = [l for l in lines if l]
+    split = []
+    for l in lines:  # «Обо мне Увлекаюсь…», «Навыки Python SQL…» (hh.ru puts the heading and the text on one line)
+        m = INLINE_HEAD.match(l) or re.match(r"^([Нн]авыки|[Ss]kills)\s+(?=[A-ZА-ЯЁ])(\S+\s+\S+.*)$", l)  # «Навыки: …» of one job stays
+        split += [m.group(1), m.group(2)] if m else [l]
+    lines = unwrap([l for l in split if l])
     out, section = [], None
+    hh_style = sum(1 for l in lines if DURATION.match(l)) >= 2  # hh.ru export: «3 года 1 месяц» under each date
     for i, line in enumerate(lines):
-        bare = line.rstrip(":").strip()
-        key = section_key(bare) if len(bare) <= 40 else None
+        key, bare = heading_of(line)
         if i == 0 and not key and len(line) <= 60 and not EMAIL.search(line) and not NUMBER.search(line):
             out.append({"t": "h1", "x": line})
             continue
@@ -264,11 +300,17 @@ def from_text(text):
             out.append({"t": "li", "x": BULLET.sub("", line, count=1)})
             continue
         nxt = lines[i + 1] if i + 1 < len(lines) else ""
-        if section == "experience" and len(line) <= 90 and not line.endswith(".") and not DATE_RANGE.fullmatch(line) \
+        before = lines[i - 1] if i else ""
+        if section == "experience" and len(line) <= 90 and DURATION.match(before) and not DATE_RANGE.search(line):
+            out.append({"t": "h3", "x": line})  # hh.ru: dates, «3 года 1 месяц», then the company
+            continue
+        if section == "experience" and not hh_style and len(line) <= 90 and not line.endswith(".") and not DATE_RANGE.fullmatch(line) \
                 and (BULLET.match(nxt) or DATE_RANGE.search(nxt)) and not DATE_RANGE.search(line[:4]):
             out.append({"t": "h3", "x": line})
             continue
         out.append({"t": "p", "x": line})
+    out = [b for k, b in enumerate(out)  # a heading with nothing under it (hh.ru's «Навыки» before «Знание языков…»)
+           if not (b["t"] == "h2" and (k + 1 == len(out) or out[k + 1]["t"] in ("h1", "h2")))]
     return markdown_of(out)
 
 
@@ -360,7 +402,7 @@ def clean_export(text):
         "linkedin" if ("top skills" in low or re.search(r"page \d+ of \d+", low)) else None
     out = []
     for line in text.splitlines():
-        s = line.strip()
+        s = re.sub(r"\s*[—–-]\s*предпочитаемый способ связи.*$", "", line.strip(), flags=re.IGNORECASE)  # keep the phone
         if HH_JUNK.search(s):
             continue
         m = HEADING_TAIL.match(s)
@@ -612,11 +654,17 @@ def photo_uri(member):
 # ---------------------------------------------------------------- doctor: score and remarks
 
 def sections(markdown):
-    """[(key or None, title, [blocks])] — the blocks under each ## heading; the top part has key 'head'."""
+    """[(key or None, title, [blocks])] — the blocks under each ## heading; the top part has key 'head'.
+    A plain line that is a section name on its own («Опыт работы — 4 года», «Обо мне») starts a section
+    too: résumés imported from PDFs often have those as text."""
     out = [("head", "", [])]
     for b in blocks(markdown):
-        if b["t"] == "h2":
-            out.append((section_key(b["x"]), b["x"], []))
+        key = heading_of(b["x"])[0] if b["t"] in ("p", "h3") and len(b["x"]) <= 60 else None
+        m = INLINE_HEAD.match(b["x"]) if b["t"] == "p" else None
+        if b["t"] == "h2" or key:
+            out.append((section_key(b["x"]) if b["t"] == "h2" else key, b["x"], []))
+        elif m:
+            out.append((heading_of(m.group(1))[0], m.group(1), [dict(b, x=m.group(2))]))
         else:
             out[-1][2].append(b)
     return out
@@ -657,7 +705,12 @@ def doctor(markdown):
                "Для удалёнки это спрашивают первым: добавьте строку вроде «Таиланд, UTC+7 · готов к любому часовому поясу · удалённо».")
     if not any(b["t"] == "h1" for b in bl):
         remark("name", "should", "Нет имени заголовком", "Первая строка резюме — ваше имя крупно.")
-    if "summary" not in keys:
+    # «О себе» without a heading: a paragraph of real text right under the name and contacts
+    intro = " ".join(b["x"] for b in secs[0][2] if b["t"] == "p" and not EMAIL.search(b["x"]) and not PHONE.search(b["x"])
+                     and len(b["x"]) > 60)
+    if "summary" not in keys and len(intro) >= 150:
+        good.append("Есть вступление «о себе» (без заголовка)")
+    elif "summary" not in keys:
         remark("summary", "should", "Нет блока «О себе»",
                "2–3 предложения сверху: кто вы, сколько лет опыта, с чем работаете и что ищете. Его читают первым.",
                ai="summary")

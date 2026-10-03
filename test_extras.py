@@ -84,6 +84,47 @@ assert tc.looks_like_article(ARTICLE) and tc.looks_like_article(DIGEST) and not 
 flt = tc.JobFilter({"job": ["ваканси", "зарплат"], "role": ["аналитик", "analyst"]}, 50)
 assert not flt.is_job(ARTICLE + " аналитик") and not flt.is_job_like(DIGEST) and flt.is_job(OFFER)
 
+# -- newcomers start with an empty feed setup
+empty = guests.preset_search()
+assert empty["keywords"]["role"] == [] and empty["keywords"]["negative"] == [] and empty["pool"] == [] and empty["sites"] == []
+assert "hh" not in empty and empty["keywords"]["job"] and "ru-company" in empty["keywords"]["tags"]
+
+# -- hh.ru PDF export read right: wrapped lines, «Опыт работы — 4 года», «Обо мне …» on one line, phone kept
+HH = """Иванов Иван
+Мужчина, 24 года, родился 2 октября 2001
++7 (999) 1234567 — предпочитаемый способ связи
+ivan@mail.ru
+Опыт работы — 4 года 2 месяца
+Март 2023 —
+настоящее время
+3 года 1 месяц
+Robosculptor
+Robotics Software Engineer
+- Разработка модулей планирования пути для роботов Han's и
+AUBO
+- Внедрение ПО на базе Docker Compose, сократил время
+развёртывания с 2 часов до 10 минут
+Образование
+2025 МГТУ им. Баумана
+Навыки
+Знание языков Русский — Родной
+Навыки Python SQL Git Linux ROS
+Дополнительная информация
+Обо мне Увлекаюсь робототехникой с 7 класса, быстро учусь новому, веду командные проекты.
+Иванов Иван • Резюме обновлено 7 июня 2025 в 13:33"""
+md = resume.from_text(resume.clean_export(HH)[0])
+assert "+7 (999) 1234567" in md and "Резюме обновлено" not in md
+assert "- Разработка модулей планирования пути для роботов Han's и AUBO" in md
+assert "с 2 часов до 10 минут" in md.split("сократил время")[1][:40]
+assert "Март 2023 — настоящее время" in md and "### Robosculptor" in md
+keys = [k for k, _, _ in resume.sections(md)]
+assert keys == ["head", "experience", "education", "languages", "skills", "summary"], keys
+doc = resume.doctor(md)
+ids = {r["id"] for r in doc["remarks"]}
+assert not ids & {"summary", "experience", "skills"} and "personal" in ids, ids
+intro = "# Анна\n\nanna@mail.ru | Москва\n\n" + "Аналитик данных: SQL, Python, витрины и дашборды для бизнеса, качество данных. " * 3 + "\n\n## Опыт работы\n\n- Строила отчёты\n"
+assert "summary" not in {r["id"] for r in resume.doctor(intro)["remarks"]}  # «о себе» without a heading counts
+
 # -- 🕒 time zones
 assert extras.tz_offsets("Remote, US only") == [-8, -7, -6, -5, -4, -3]
 assert extras.tz_offsets("overlap with EST hours") == [-5]

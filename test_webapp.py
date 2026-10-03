@@ -20,6 +20,7 @@ import aiohttp  # noqa: E402
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
 import guests  # noqa: E402
+guests.START_EMPTY = False  # the preset machinery is what is tested here
 import webapp  # noqa: E402
 
 TOKEN = "123:TEST"
@@ -50,6 +51,11 @@ assert webapp.phrase_re("системный аналитик").search("ищем 
 assert webapp.phrase_re("аналитик данных").search("аналитиков данных") and not webapp.phrase_re("sql").search("mysql")
 assert webapp.phrase_re("data analyst").search("Senior Data Analysts")
 assert webapp.phrase_re("  ") is None
+words = webapp.load_words()
+rx = webapp.title_re("антифрод аналитик", words)
+assert all(rx.search(webapp.norm(t)) for t in ("Fraud Analyst", "Аналитик (антифрод)", "аналитик по антифроду", "Senior Anti-Fraud Analyst"))
+assert not rx.search("аналитик данных") and not rx.search("antifraud manager")
+assert webapp.hh_variants("антифрод аналитик", words) == ["антифрод аналитик", "antifraud analyst"]
 graph = webapp.load_graph()
 assert webapp.find_role(graph, "Бизнес-аналитик") == "business-analyst"
 assert webapp.find_role(graph, "senior data analyst remote") == "data-analyst"
@@ -232,7 +238,9 @@ async def main():
                 s = await (await c.get("/api/search?q=бизнес аналитик&mode=similar", headers=auth)).json()
                 kinds = [i["match"]["kind"] for i in s["items"]]
                 assert kinds == sorted(kinds, key=["exact", "syn", "adj", "far", "text"].index), kinds
-                assert {"syn", "adj", "far"} <= set(kinds) and s["graph"]["root"]["label"] == "бизнес аналитик"
+                # «Business Analyst» is the same words in English, so it counts as exact now
+                assert {"adj", "far"} <= set(kinds) and s["graph"]["root"]["label"] == "бизнес аналитик"
+                assert any(i["title"] == "Business Analyst" and i["match"]["kind"] == "exact" for i in s["items"])
                 assert not any(i["title"] == "Welder" for i in s["items"])
                 # switching a role off removes it
                 s2 = await (await c.get("/api/search?q=бизнес аналитик&mode=similar&off=product-manager", headers=auth)).json()

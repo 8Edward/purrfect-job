@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import secrets
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -69,6 +70,7 @@ HH_RSS = "https://hh.ru/search/vacancy/rss"
 HH_EVERY = timedelta(minutes=30)
 HH_PAUSE = 3  # seconds between people's queries
 HH_QUERY_MAX = 200
+HH_PARTS_MAX = 6  # requests per hh.ru query (one per OR part)
 HH_VACANCY_RE = re.compile(r"^https://([a-z0-9-]+\.)?hh\.ru/vacancy/\d+")
 
 # Job boards that work as a whole board with no extra settings (each one checked
@@ -301,8 +303,12 @@ def register(reg, user):
     return guest
 
 
+START_EMPTY = True  # since 2026-10-03: newcomers start with an empty feed setup (no words, channels, sites, hh)
+
+
 def preset_search():
-    """The settings a newcomer starts with: search.default.yml + the preset file."""
+    """The settings a newcomer starts with: empty (START_EMPTY), or search.default.yml + the preset file.
+    The hidden parts stay either way: the «is this a job post» words and the #ru_company tag."""
     defaults = yaml.safe_load(tc.SEARCH_DEFAULT_PATH.read_text(encoding="utf-8")) or {}
     kw = defaults.get("keywords", {})
     preset = load_preset()
@@ -320,6 +326,10 @@ def preset_search():
     if HH_ID in preset.get("sites", []) and preset.get("hh"):
         search["sites"].append(HH_ID)
         search["hh"] = preset["hh"]
+    if START_EMPTY:
+        search["keywords"].update(role=[], negative=[])
+        search.update(pool=[], sites=[])
+        search.pop("hh", None)
     return search
 
 
@@ -838,16 +848,33 @@ def parse_hh_rss(data):
 
 
 def hh_url(query, remote):
-    params = {"text": query, "order_by": "publication_time"}
+    # search_field=name: hh.ru otherwise matches the description too, and its RSS holds only
+    # the 20 newest hits, so a few lucky words in descriptions crowded out every real title match
+    params = {"text": query, "search_field": "name", "order_by": "publication_time"}
     if remote:
         params["schedule"] = "remote"
     return HH_RSS + "?" + urlencode(params)
 
 
+def hh_parts(query):
+    """«a OR "b c" OR d» -> separate queries: hh.ru RSS has no pages (20 items per query),
+    so one request per part lets every role word get its own 20."""
+    parts = [x.strip() for x in re.split(r"\s+OR\s+", query) if x.strip()]
+    return list(dict.fromkeys(parts))[:HH_PARTS_MAX] or [query]
+
+
 def _hh_get(query, remote):
-    req = Request(hh_url(query, remote), headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"})
-    with urlopen(req, timeout=30) as resp:
-        return parse_hh_rss(resp.read(3_000_000))
+    jobs, seen = [], set()
+    for i, part in enumerate(hh_parts(query)):
+        if i:
+            time.sleep(0.7)
+        req = Request(hh_url(part, remote), headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"})
+        with urlopen(req, timeout=30) as resp:
+            for j in parse_hh_rss(resp.read(3_000_000)):
+                if j["url"] not in seen:
+                    seen.add(j["url"])
+                    jobs.append(j)
+    return jobs
 
 
 async def fetch_hh(query, remote):

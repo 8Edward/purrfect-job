@@ -106,6 +106,53 @@ def phrase_re(phrase):
     return re.compile(r"(?<![\w])" + r"[\s\-–—/]+".join(parts) + r"(?![\w])", re.IGNORECASE)
 
 
+FILLER = {"по", "в", "на", "и", "для", "с", "of", "and", "the", "for", "in", "&", "/"}
+
+
+def word_pat(term):
+    """One word (or a short hyphenated term) with the same forgiving rules as phrase_re."""
+    words = re.findall(r"[\w+#&.]+", norm(term))
+    parts = [re.escape(ru_stem(w)) + r"[а-я]{0,4}" if re.search(r"[а-я]", w) else re.escape(w) + r"(?:s|es)?"
+             for w in words]
+    return r"[\s\-–—/]*".join(parts)
+
+
+def load_words():
+    """Word equivalents from rolegraph.yml `words:` (антифрод = antifraud = fraud…): stem -> [terms]."""
+    if not GRAPH_PATH.exists():
+        return {}
+    groups = (yaml.safe_load(GRAPH_PATH.read_text(encoding="utf-8")) or {}).get("words") or []
+    out = {}
+    for group in groups:
+        terms = [str(t) for t in group or [] if str(t).strip()]
+        for t in terms:
+            out.setdefault(ru_stem(" ".join(re.findall(r"[\w+#&.]+", norm(t)))), terms)
+    return out
+
+
+def title_re(phrase, words=None):
+    """Search match: every word of the phrase somewhere on one line, in any order, each word
+    also by its equivalents — «антифрод аналитик» finds «Аналитик (антифрод)», «Fraud Analyst»,
+    «аналитик по антифроду». Prepositions are skipped. None for an empty phrase."""
+    words = load_words() if words is None else words
+    tokens = [w for w in re.findall(r"[\w+#&.]+", norm(phrase)) if w not in FILLER]
+    if not tokens:
+        return None
+    looks = []
+    for w in tokens:
+        alts = dict.fromkeys([word_pat(w)] + [word_pat(t) for t in words.get(ru_stem(w), [])])
+        looks.append(r"(?=[^\n]*?(?<![\w])(?:" + "|".join(a for a in alts if a) + r")(?![\w]))")
+    return re.compile(r"^" + "".join(looks), re.IGNORECASE | re.MULTILINE)
+
+
+def hh_variants(phrase, words=None):
+    """The phrase for hh.ru plus its English twin («антифрод аналитик» -> «antifraud analyst»)."""
+    words = load_words() if words is None else words
+    tokens = [w for w in re.findall(r"[\w+#&.]+", norm(phrase)) if w not in FILLER]
+    latin = [next((t for t in words.get(ru_stem(w), []) if not re.search(r"[а-я]", norm(t))), w) for w in tokens]
+    return list(dict.fromkeys([" ".join(tokens), " ".join(latin)]))
+
+
 def load_graph():
     if not GRAPH_PATH.exists():
         return {}
@@ -406,23 +453,25 @@ class WebApp:
         if now_ - self.last_search.get(m.id, 0) < SEARCH_COOLDOWN:
             await asyncio.sleep(SEARCH_COOLDOWN)
         self.last_search[m.id] = time.monotonic()
-        if not phrase_re(query):
+        words = load_words()
+        if not title_re(query, words):
             return web.json_response({"query": query, "mode": mode, "graph": None, "items": [], "sources": {}})
 
         graph, view = load_graph(), None
-        terms = [("exact", "точно", phrase_re(query))]
-        if mode == "similar":
-            rid = find_role(graph, query)
-            if rid:
-                view = graph_view(graph, rid, query)
-                for node in view["nodes"]:
-                    if node["id"] in off:
-                        continue
-                    label = {"syn": "синоним", "adj": "смежная", "far": "дальняя"}[node["kind"]] + ": " + node["label"]
-                    for name in node["names"]:
-                        rx = phrase_re(name) if len(name.strip()) > 3 else None  # «BA», «PM»: too noisy
-                        if rx:
-                            terms.append((node["kind"], label, rx))
+        terms = [("exact", "точно", title_re(query, words))]
+        rid = find_role(graph, query)
+        if rid:  # the role's own synonyms count in both modes: «аналитик данных» = «data analyst»
+            nodes = graph_view(graph, rid, query)
+            if mode == "similar":
+                view = nodes
+            for node in nodes["nodes"]:
+                if node["id"] in off or (mode == "exact" and node["kind"] != "syn"):
+                    continue
+                label = {"syn": "синоним", "adj": "смежная", "far": "дальняя"}[node["kind"]] + ": " + node["label"]
+                for name in node["names"]:
+                    rx = title_re(name, words) if len(name.strip()) > 3 else None  # «BA», «PM»: too noisy
+                    if rx:
+                        terms.append((node["kind"], label, rx))
 
         jobs, counts = await self.gather(m, query, terms, mode)
         hits, rank = [], {"exact": 0, "syn": 1, "adj": 2, "far": 3, "text": 4}
@@ -481,10 +530,10 @@ class WebApp:
                     add(guests.web_job(j, listed.get(provider, provider), m), "sites")
         try:
             hh = guests.hh_settings(m)
-            names = [query]  # hh.ru gets the phrase itself, plus synonyms and close roles in «similar»
-            if mode == "similar":
-                names += [label.split(": ", 1)[1] for kind, label, _ in terms[1:] if kind in ("syn", "adj")]
-            q = " OR ".join(dict.fromkeys(f'"{n}"' for n in names))[:guests.HH_QUERY_MAX]
+            # hh.ru gets the phrase (words in any order, in the title) and its English twin, plus
+            # synonyms (and close roles in «similar»); one request per variant, 20 hits each
+            names = hh_variants(query) + [label.split(": ", 1)[1] for kind, label, _ in terms[1:] if kind in ("syn", "adj")]
+            q = " OR ".join(dict.fromkeys(n for n in names if n.strip()))[:guests.HH_QUERY_MAX]
             for j in await guests.fetch_hh(q, hh["remote"]):
                 add(guests.web_job(j, guests.HH_NAME, m), "hh")
         except Exception as e:
@@ -661,7 +710,8 @@ class WebApp:
         cv_reader.save(m, field.filename, text, analysis)
         try:  # the uploaded résumé also becomes an editable version in the «Резюме» tab
             first = not resume.load_index(m)["list"]
-            resume.save_version(m, resume.from_text(text), name=resume.unique_name(m, "Основное" if first else "Загруженное"))
+            resume.save_version(m, resume.from_text(resume.clean_export(text)[0]),
+                                name=resume.unique_name(m, "Основное" if first else "Загруженное"))
         except ValueError as e:
             log.info("cv for %s: not kept as a version: %s", m.name, e)
         log.info("cv for %s: %d chars, roles %s", m.name, len(text), [r["id"] for r in analysis["roles"] if r["primary"]])

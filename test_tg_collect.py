@@ -174,6 +174,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import guests
+guests.START_EMPTY = False  # these checks cover the Data Analyst preset machinery (kept for «example» setups)
 
 
 def all_data(rows):
