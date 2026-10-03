@@ -446,3 +446,4 @@ html[data-skin="tropic"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big,
 .remark .rfix { display: flex; flex-wrap: wrap; gap: 6px; }
 .remark li[data-ex] { cursor: pointer; }
 .remark li .go { opacity: .7; font-size: 11px; }
+.rs-design .twobtn button:disabled { opacity: .45; }

@@ -87,10 +87,19 @@ function designHtml() {
   return `<div class="group pad rs-design"><h4>🎨 Оформление</h4>
     <div class="tpls">${rs.data.templates.map((t) => `<button class="tpl" data-tpl="${t.id}" aria-pressed="${d.tpl === t.id}"><i class="tp-${t.id}"></i><b>${esc(t.name)}</b><span>${esc(t.about)}</span></button>`).join("")}</div>
     <div class="dots">${Object.entries(rs.data.colors).map(([k, c]) => `<button class="dot" data-color="${k}" style="--c:${c}" aria-pressed="${d.color === k}" aria-label="Цвет"></button>`).join("")}</div>
-    <button class="rs-act wide" id="rs-photo">📷 ${d.has_photo ? (d.photo ? "Фото: изменить или убрать" : "Фото скрыто — показать или изменить") : "Добавить фото (по желанию)"}</button></div>`;
+    <button class="rs-act wide" id="rs-photo">📷 ${d.has_photo ? (d.photo ? "Фото: изменить или убрать" : "Фото скрыто — показать или изменить") : "Добавить фото (по желанию)"}</button>
+    <div class="twobtn"><button class="ghost" id="rs-undo" ${rs.prevDesign && rs.prevDesign.vid === rs.data.active.id ? "" : "disabled"}>↶ Отменить</button>
+      <button class="ghost" id="rs-orig" ${isOriginal(d) ? "disabled" : ""}>↺ Исходный вид</button></div></div>`;
 }
-async function setDesign(change) {
-  try { rs.data = await api("/api/resume/design", { vid: rs.data.active.id, ...change }); rs.blocks = rs.data.blocks; haptic(); renderResume(); } catch (e) { fail(e); }
+const ORIGINAL = { tpl: "classic", color: "blue", photo: false };  // how every résumé looks before any design change
+const isOriginal = (d) => Object.entries(ORIGINAL).every(([k, v]) => d[k] === v);
+async function setDesign(change, undo) {
+  const d = rs.data.design, vid = rs.data.active.id;
+  try {
+    rs.data = await api("/api/resume/design", { vid, ...change });
+    rs.prevDesign = undo ? null : { vid, tpl: d.tpl, color: d.color, photo: d.photo };
+    rs.blocks = rs.data.blocks; haptic(); renderResume();
+  } catch (e) { fail(e); }
 }
 
 /* ---------------------------------------------------------------- start: no résumé yet */
@@ -219,6 +228,8 @@ function renderMain() {
   $$("[data-tpl]").forEach((b) => (b.onclick = () => setDesign({ tpl: b.dataset.tpl })));
   $$("[data-color]").forEach((b) => (b.onclick = () => setDesign({ color: b.dataset.color })));
   $("#rs-photo").onclick = photoSheet;
+  $("#rs-orig").onclick = () => { setDesign(ORIGINAL); toast("Вернул исходный вид: Классика, синий, без фото"); };
+  $("#rs-undo").onclick = () => { const p = rs.prevDesign; if (p) setDesign({ tpl: p.tpl, color: p.color, photo: p.photo }, true); };
   $("#rs-addline").onclick = () => { rs.blocks.push({ t: "li", x: "" }); editBlock(rs.blocks.length - 1, true); };
   $("#rs-addsec").onclick = sectionSheet;
   mountCvBox();
