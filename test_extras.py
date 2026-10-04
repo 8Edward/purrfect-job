@@ -178,6 +178,10 @@ _g = extras.funnel({"n": dict(_d, title="New", link="n"), "f": dict(_d, title="F
                     "a": dict(_d, title="Arch", link="a", archived=True), "t": dict(_d, title="Tracked", link="t", track={"stage": "applied", "log": []})})
 assert _g["jobs"] == 1, _g  # only the undecided one is still in the pool
 
+# -- a tag a source sets itself (companies.yml `tags`) reaches the card
+_wj = guests.web_job({"title": "BI Engineer", "url": "https://x/1", "company": "Agoda", "location": "Bangkok", "tags": ["офис_бангкок"]}, "Agoda", None, lambda t, r: [])
+assert _wj["tags"] == ["офис_бангкок"]
+
 # -- 🎚 grade
 assert extras.grade_of({"title": "Senior Data Analyst"}) == "senior" and extras.grade_of({"title": "Data Analyst"}) == ""
 assert extras.grade_of({"title": "Middle/Senior BI Analyst"}) == "senior,middle" and extras.grade_of({"title": "Ведущий аналитик"}) == "senior"

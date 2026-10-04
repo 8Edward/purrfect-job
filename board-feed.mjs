@@ -137,7 +137,7 @@ const FETCHERS = {
     return (j.jobs || []).map((x) => ({ title: x.title, url: x.jobUrl, location: x.location || '', posted: x.publishedAt || '' }));
   },
   async lever(c) {
-    const j = await getJson(`https://api.lever.co/v0/postings/${c.slug}?mode=json`);
+    const j = await getJson(`https://api.lever.co/v0/postings/${c.slug}?mode=json`, c.timeout || 25_000);  // Binance's answer is huge: companies.yml gives it more time
     return j.map((x) => ({ title: x.text, url: x.hostedUrl, location: x.categories?.location || '', posted: x.createdAt ? new Date(x.createdAt).toISOString() : '' }));
   },
   async workable(c) {
@@ -204,6 +204,20 @@ const FETCHERS = {
       location: [x.location?.city, x.location?.name].filter(Boolean).join(', ') + (x.workplace_type_text ? ` · ${x.workplace_type_text}` : ''),
       posted: '',
     }));
+  },
+  async himalayas_country(c) {  // Himalayas jobs open to one country (c.country, e.g. TH), per search word, a few pages each
+    const seen = new Map();
+    for (const q of c.queries || ['analyst']) {
+      for (let page = 1; page <= (c.pages || 4); page++) {
+        const url = `https://himalayas.app/jobs/api/search?country=${encodeURIComponent(c.country)}&q=${encodeURIComponent(q)}&page=${page}`;
+        const j = await getJson(url);
+        const got = parseHimalayasWithCountries(j);
+        for (const x of got) if (!seen.has(x.url)) seen.set(x.url, x);
+        if ((j.jobs || []).length < 20) break;
+        await pause(250);
+      }
+    }
+    return [...seen.values()];
   },
   async tierb() {  // «tier B» (telegram/tierb.yml): remote companies hiring worldwide / APAC, their own boards, 6 at a time
     const list = (yaml.load(fs.readFileSync(path.join(ROOT, 'telegram', 'tierb.yml'), 'utf8'))?.companies || [])
@@ -683,7 +697,8 @@ async function fetchCompanies(id) {
     try {
       const got = await FETCHERS[c.kind](c);
       for (const j of got) {
-        if (j.title && /^https?:\/\//.test(j.url || '')) jobs.push({ ...j, company: j.company || c.name, ru: !!c.ru });
+        if (c.only_loc && !new RegExp(c.only_loc, 'i').test(j.location || '')) continue;  // e.g. one city of a company with many offices
+        if (j.title && /^https?:\/\//.test(j.url || '')) jobs.push({ ...j, company: j.company || c.name, ru: !!c.ru, ...(c.tags ? { tags: c.tags } : {}) });
       }
     } catch (err) {
       errors.push(`${c.name}: ${String(err?.message || err).slice(0, 80)}`);
@@ -736,6 +751,7 @@ async function fetchBoard(id) {
           posted: clean(j.postedAt || j.posted || j.date || '', 40),
           ...(j.ru ? { ru: true } : {}),
           ...(Array.isArray(j.countries) ? { countries: j.countries.map((c) => clean(c, 60)) } : {}),
+          ...(Array.isArray(j.tags) ? { tags: j.tags.map((t) => clean(t, 30)) } : {}),
         })),
     };
   } catch (err) {

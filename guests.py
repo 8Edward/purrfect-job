@@ -417,7 +417,8 @@ def web_job(j, site, member=None, tagger=None):
     line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
     return {"source": "web", "key": boards.board_key(j["url"]), "title": title, "company": company,
             "location": j.get("location", ""), "comp": j.get("comp", ""), "site": site, "link": j["url"],
-            "date": date, "tags": (tagger or (lambda t, r: web_tags(member, t, r)))(f"{title} {company}", j.get("ru")) if member else [],
+            "date": date, "tags": ((tagger or (lambda t, r: web_tags(member, t, r)))(f"{title} {company}", j.get("ru")) if member else [])
+                                  + [t for t in (j.get("tags") or []) if isinstance(t, str)],  # a tag the source itself sets (companies.yml `tags`)
             "pipeline_line": line, **({"countries": j["countries"]} if isinstance(j.get("countries"), list) else {})}
 
 

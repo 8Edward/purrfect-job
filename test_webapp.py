@@ -287,6 +287,11 @@ async def main():
                 return [{"title": "Системный аналитик", "url": "https://hh.ru/vacancy/9", "company": "Avito",
                          "location": "Москва", "comp": "", "posted": "2026-10-02T10:00:00+03:00"}]
             guests.fetch_hh = fake_hh
+            real_hima = guests.fetch_himalayas
+
+            async def fake_hima(queries, country=""):  # the live site changes by the hour: a test must not depend on it
+                return []
+            guests.fetch_himalayas = fake_hima
 
             webapp.utils.get_peer_id = lambda entity: -1000000000777  # a real Channel would give this
             app = webapp.WebApp(FakeRadar(reg))
@@ -555,6 +560,7 @@ async def main():
                 assert (await c.get("/static/../config.yml")).status in (403, 404)
         finally:
             guests.USERS_DIR, guests.REGISTRY_PATH, guests.POOL_PATH, webapp.FEED_CACHE_PATH, guests.fetch_hh = saved
+            guests.fetch_himalayas = real_hima
 
 
 asyncio.run(main())

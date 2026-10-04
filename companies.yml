@@ -49,6 +49,14 @@ companies:
   - {id: co-geekjob, name: GeekJob (IT), kind: geekjob}
   - {id: co-trudvsem, name: Работа России (только удалёнка), kind: trudvsem}
   - {id: co-djinni, name: "Djinni (IT, Украина и удалёнка)", kind: djinni}
+  # 2026-10-04, from the Thailand research: jobs open to Thailand (all off until ticked in «Поиск → Сайты»)
+  - {id: co-himalayas-th, name: "Himalayas: открыто для Таиланда", kind: himalayas_country, country: TH, pages: 4, queries: [analyst, data, bi, sql, "business intelligence"]}
+  - {id: co-binance, name: "Binance (Asia, remote)", kind: lever, slug: binance, timeout: 90000}
+  - {id: co-okx, name: "OKX (APAC, часть remote)", kind: greenhouse, slug: okx}
+  - {id: co-bybit, name: "Bybit (Азия, remote)", kind: greenhouse, slug: bybit}
+  - {id: co-canonical, name: "Canonical (Home based, весь мир)", kind: greenhouse, slug: canonical}
+  # in-office in Bangkok: only the Bangkok vacancies, each tagged #офис_бангкок (shown, not archived: the text names no office)
+  - {id: co-agoda, name: "Agoda (офис в Бангкоке)", kind: greenhouse, slug: agoda, only_loc: bangkok, tags: [офис_бангкок]}
   # 2026-10-04: «tier B» = remote companies from remoteintech/remote-jobs that hire worldwide / in APAC (telegram/tierb.yml)
   - {id: co-tierb, name: "Тир B: удалённые компании (remoteintech, весь мир)", kind: tierb}
 
