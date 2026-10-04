@@ -842,6 +842,49 @@ async function loadSaved() {
   } catch (e) { fail(e); }
 }
 
+/* ---------------------------------------------------------------- 🧾 profile for responses («Ещё») */
+
+let pf = null;
+function pfRender() {
+  const f = pf.fields, p = pf.profile;
+  $("#pf-list").innerHTML = f.map((x) => `<div class="pf-row"><label>${esc(x.ru)}</label>
+      ${x.key === "about" ? `<textarea class="inp" data-pk="${x.key}" rows="3" maxlength="700">${esc(p.values[x.key] || "")}</textarea>` : `<input class="inp" data-pk="${x.key}" maxlength="700" value="${esc(p.values[x.key] || "")}">`}
+      <label class="pf-use"><input type="checkbox" data-pu="${x.key}" ${p.use.includes(x.key) ? "checked" : ""}> в письмо</label></div>`).join("")
+    + p.custom.map((c, n) => `<div class="pf-row own"><input class="inp" data-cl="${n}" maxlength="40" placeholder="Название поля" value="${esc(c.label)}">
+      <input class="inp" data-cv="${n}" maxlength="700" placeholder="Значение" value="${esc(c.value)}">
+      <label class="pf-use"><input type="checkbox" data-cu="${n}" ${c.use ? "checked" : ""}> в письмо</label><button class="rm" data-cx="${n}" aria-label="Убрать поле">✕</button></div>`).join("");
+  $("#sum-profile").textContent = Object.keys(p.values).length ? `заполнено ${Object.keys(p.values).length}` : "пусто";
+  $("#pf-add").hidden = p.custom.length >= pf.custom_max;
+  $$("[data-cx]").forEach((b) => (b.onclick = () => { pfRead(); pf.profile.custom.splice(+b.dataset.cx, 1); pfRender(); }));
+}
+function pfRead() {   // the form -> pf.profile (before it is saved or redrawn)
+  const p = pf.profile;
+  $$("[data-pk]").forEach((e) => { const v = e.value.trim(); if (v) p.values[e.dataset.pk] = v; else delete p.values[e.dataset.pk]; });
+  p.use = $$("[data-pu]").filter((c) => c.checked).map((c) => c.dataset.pu);
+  p.custom = $$("[data-cl]").map((e) => ({ label: e.value, value: $(`[data-cv="${e.dataset.cl}"]`).value, use: $(`[data-cu="${e.dataset.cl}"]`).checked }));
+}
+async function loadProfile() {
+  const g = $("#g-profile");
+  if (!st.me || !st.me.owner) { g.hidden = true; return; }
+  try { pf = await api("/api/apply/profile"); } catch (e) { return; }
+  g.hidden = false;
+  pfRender();
+}
+$("#pf-add").onclick = () => { pfRead(); pf.profile.custom.push({ label: "", value: "", use: true }); pfRender(); };
+$("#pf-save").onclick = async () => {
+  pfRead();
+  try { pf = await api("/api/apply/profile", pf.profile); pfRender(); haptic("ok"); toast("Профиль сохранён"); } catch (e) { fail(e); }
+};
+$("#pf-fill").onclick = async () => {
+  pfRead();
+  try {
+    await api("/api/apply/profile", pf.profile);
+    pf = await api("/api/apply/profile", { fill: true });
+    pfRender(); haptic("ok");
+    toast(pf.found && pf.found.length ? `Нашёл в резюме и вписал: ${pf.found.length}. Проверьте и сохраните` : "Всё, что нашлось в резюме, уже заполнено");
+  } catch (e) { fail(e); }
+};
+
 /* ---------------------------------------------------------------- settings */
 
 const TRASH = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
@@ -1278,7 +1321,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); }
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); loadProfile(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

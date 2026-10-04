@@ -427,6 +427,16 @@ async def main():
                 again = await (await c.post("/api/apply/compose", headers=auth, json={"key": "mail1", "tone": "short", "about": "Мой абзац."})).json()
                 assert "Мой абзац." in again["letter"] and again["tone"] == "short"
                 assert (await c.post("/api/apply/presets", headers=auth, json={"name": "x", "text": "коротко"})).status == 400
+                # 🧾 profile for responses: saved, shown in the letter, filled from the résumé by rules
+                pf0 = await (await c.get("/api/apply/profile", headers=auth)).json()
+                assert [f["key"] for f in pf0["fields"]][:2] == ["fio", "location"] and pf0["profile"]["values"] == {}
+                saved = await (await c.post("/api/apply/profile", headers=auth, json={"values": {"fio": "Эдуард Дунаев", "salary": "3000 USD", "junk": "x"},
+                                                                                  "custom": [{"label": "Виза", "value": "не нужна"}], "use": ["fio", "salary"]})).json()
+                assert saved["profile"]["values"] == {"fio": "Эдуард Дунаев", "salary": "3000 USD"} and saved["profile"]["custom"][0]["label"] == "Виза"
+                withp = await (await c.post("/api/apply/compose", headers=auth, json={"key": "mail1", "tone": "short"})).json()
+                assert "Ожидаемая зарплата: 3000 USD" in withp["letter"] and "Виза: не нужна" in withp["letter"] and withp["letter"].rstrip().endswith("не нужна")
+                filled = await (await c.post("/api/apply/profile", headers=auth, json={"fill": True})).json()
+                assert "fio" not in (filled["found"] or []) and filled["profile"]["values"]["fio"] == "Эдуард Дунаев"  # what is filled stays
                 job = await (await c.post("/api/apply/prepare", headers=auth, json={"key": "mail1", "mode": "ai"})).json()
                 j = await wait(c, auth, job["job"])
                 assert j["status"] == "done", j

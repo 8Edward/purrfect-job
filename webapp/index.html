@@ -139,6 +139,11 @@
   <!-- ЕЩЁ -->
   <section class="screen" id="s-more" hidden>
     <h2 class="h2">Ещё</h2>
+    <details class="group fold" id="g-profile" hidden><summary><span class="sn">🧾 Профиль для откликов</span><small id="sum-profile"></small></summary>
+      <div class="pad"><p class="hint" style="margin:0 0 8px">Ваши данные для писем: ФИО, где живёте, зарплата, о себе. Галочка «в письмо» решает, попадёт ли поле в текст отклика (по-русски или по-английски, как у вакансии).</p>
+        <div id="pf-list"></div>
+        <div class="rl-own" style="padding:0"><button type="button" class="link" id="pf-add">＋ Своё поле</button><button type="button" class="link" id="pf-fill" style="margin-left:auto">🔍 Найти в резюме</button></div>
+        <button class="cta" id="pf-save" style="margin-top:8px;width:100%">Сохранить</button></div></details>
     <details class="group fold" id="g-track"><summary><span class="sn">📋 Мои отклики</span><small id="sum-track"></small></summary><div class="pad" id="track-list"></div>
       <button class="link block" id="track-add">＋ Добавить отклик вручную</button></details>
     <div class="group" hidden><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>

@@ -501,6 +501,8 @@ class WebApp:
         r.add_post("/api/feedback", self.api_feedback)
         r.add_post("/api/apply/compose", self.api_apply_compose)
         r.add_post("/api/apply/presets", self.api_apply_presets)
+        r.add_get("/api/apply/profile", self.api_apply_profile)
+        r.add_post("/api/apply/profile", self.api_apply_profile)
         r.add_get("/api/plan", self.api_plan)
         r.add_post("/api/plan", self.api_plan_make)
         r.add_get("/api/cv", self.api_cv)
@@ -1687,7 +1689,9 @@ class WebApp:
     def about_presets(self, m, md, lang):
         """«О себе» texts to choose from: the résumé's own + the ones the person saved (in the letter's language or any)."""
         saved = [p for p in (m.load_state().get("apply_presets") or []) if p.get("lang") in (lang, "any", None)]
-        return letters.resume_presets(md) + [{"id": p["id"], "name": p["name"], "text": p["text"]} for p in saved]
+        profile = self.apply_profile(m)
+        mine = [{"id": "profile", "name": "Из профиля", "text": profile["values"]["about"]}] if profile["values"].get("about") and "about" in profile["use"] else []
+        return mine + letters.resume_presets(md) + [{"id": p["id"], "name": p["name"], "text": p["text"]} for p in saved]
 
     async def draft_tpl(self, m, key, item, tone="", preset=""):
         """A response draft from templates (letters.py): the same fields as draft_one plus the choices shown in the sheet."""
@@ -1703,10 +1707,15 @@ class WebApp:
         _, md = resume.get_version(m, meta["id"])
         tone = tone if tone in letters.TONES else letters.DEFAULT_TONE
         presets = self.about_presets(m, md, lang)
+        if not preset and any(p["id"] == "profile" for p in presets):
+            preset = "profile"
         about = next((p["text"] for p in presets if p["id"] == preset), None)
-        name = letters.parse_resume(md)["name"]
+        profile = self.apply_profile(m)
+        name = (profile["values"].get("fio") if "fio" in profile["use"] else "") or letters.parse_resume(md)["name"]
+        manual = letters.manual_reasons(text or item.get("text"))
         return {"key": key, "title": item.get("title") or "", "company": item.get("company") or "",
-                "letter": letters.compose(md, item, head + text, lang, tone, about), "warning": "", "lang": lang,
+                "letter": letters.compose(md, item, head + text, lang, tone, about, profile),
+                "warning": ("Требует ручного ответа: " + ", ".join(manual) + ". Письмо этого не заменит.") if manual else "", "lang": lang,
                 "subject": apply.subject_for(item, name, lang), "channels": apply.contacts(item, text),
                 "resume": {"vid": meta["id"], "name": meta["name"], "lang": meta.get("lang", "ru")},
                 "smtp": bool(apply.smtp_settings(self.radar.cfg)), "dry": apply.dry_run(self.radar.cfg),
@@ -1727,10 +1736,39 @@ class WebApp:
                 _, md = resume.get_version(m, draft["resume"]["vid"])
                 tone = draft["tone"]
                 head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n"
-                draft["letter"] = letters.compose(md, item, head + (item.get("text") or ""), draft["lang"], tone, body["about"][:self.PRESET_TEXT])
+                draft["letter"] = letters.compose(md, item, head + (item.get("text") or ""), draft["lang"], tone, body["about"][:self.PRESET_TEXT],
+                                                  self.apply_profile(m))
         except ValueError as e:
             return self.bad(str(e))
         return web.json_response({"letter": draft["letter"], "tone": draft["tone"]})
+
+    @staticmethod
+    def apply_profile(m):
+        return letters.clean_profile(m.load_state().get("apply_profile") or {})
+
+    async def api_apply_profile(self, request):
+        """«Ещё → Профиль для откликов»: GET the form; POST {values, custom, use} saves it, {fill: true} fills the empty
+        fields from the active résumé by rules (no AI) and returns what it found."""
+        m = self.owner_only(request)
+        found = None
+        if request.method == "POST":
+            body = await self.body(request)
+            if body.get("fill"):
+                index = resume.load_index(m)
+                meta = next((v for v in index["list"] if v["id"] == index["active"]), None)
+                if not meta:
+                    return self.bad("Сначала добавьте резюме во вкладке «▤ Резюме».")
+                _, md = resume.get_version(m, meta["id"])
+                profile = self.apply_profile(m)
+                found = {k: v for k, v in letters.from_resume(md).items() if not profile["values"].get(k)}
+                profile["values"].update(found)
+            else:
+                profile = letters.clean_profile(body)
+            m.update_state(apply_profile=profile)
+        profile = self.apply_profile(m)
+        return web.json_response({"fields": [{"key": k, "ru": ru, "en": en} for k, ru, en, _ in letters.PROFILE_FIELDS],
+                                  "profile": profile, "found": sorted(found) if found is not None else None,
+                                  "custom_max": letters.CUSTOM_MAX})
 
     async def api_apply_presets(self, request):
         """Save / remove a «о себе» preset of the person: {name, text} or {remove: id}."""

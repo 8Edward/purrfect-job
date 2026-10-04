@@ -551,3 +551,10 @@ html[data-skin="remote"] .bitem { border-radius: 16px; }
 .rl-nav .link { margin-left: auto; }
 
 #g-feedback > .pad { padding: 2px 14px 14px; }
+
+.pf-row { display: grid; gap: 4px; margin: 0 0 10px; }
+.pf-row > label:first-child { font-size: 12.5px; color: var(--muted); }
+.pf-row.own { grid-template-columns: 1fr auto; }
+.pf-row.own > input:first-child { grid-column: 1 / -1; }
+.pf-use { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.pf-row.own .rm { justify-self: end; }

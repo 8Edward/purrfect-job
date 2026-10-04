@@ -67,6 +67,22 @@ TONES = {
 }
 DEFAULT_TONE = "neutral"
 
+# «Профиль для откликов»: the person's own details for responses. (key, Russian label, English label, in the letter by default)
+PROFILE_FIELDS = [
+    ("fio", "ФИО", "Full name", True),
+    ("location", "Где живу", "Location", False),
+    ("salary", "Ожидаемая зарплата", "Expected salary", False),
+    ("notice", "Когда могу выйти", "Available from", False),
+    ("about", "О себе", "About me", True),
+    ("email", "Почта", "Email", True),
+    ("phone", "Телефон", "Phone", False),
+    ("telegram", "Telegram", "Telegram", True),
+    ("linkedin", "LinkedIn", "LinkedIn", False),
+    ("site", "Сайт, GitHub, портфолио", "Website / GitHub / portfolio", False),
+]
+PROFILE_KEYS = [f[0] for f in PROFILE_FIELDS]
+CUSTOM_MAX, VALUE_MAX = 10, 700
+
 
 def tone_list(lang="ru"):
     return [{"id": k, "name": t["name"][lang if lang in ("ru", "en") else "ru"]} for k, t in TONES.items()]
@@ -134,8 +150,9 @@ def matched_skills(skills, vacancy_text):
     return found[:8]
 
 
-def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None):
-    """The letter text. `about` = the «о себе» paragraph to use (a preset); None = the résumé's own summary."""
+def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None, profile=None):
+    """The letter text. `about` = the «о себе» paragraph to use (a preset); None = the profile's, else the résumé's summary.
+    `profile` (clean_profile): its name signs the letter, its ticked fields end it as a contacts block."""
     lang = lang if lang in ("ru", "en") else "ru"
     t = TONES.get(tone, TONES[DEFAULT_TONE])[lang]
     info = parse_resume(md)
@@ -143,7 +160,12 @@ def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None):
     team = (f" ({company})" if lang == "ru" else f", {company} team") if company else ""
     at = (f" в {company}" if lang == "ru" else f" at {company}") if company else ""
     fill = dict(title=title, company=company, team=team, at=at)
-    about = _fit(about if about is not None else info["summary"])
+    profile = profile or {}
+    use = profile.get("use") or []
+    mine_about = (profile.get("values") or {}).get("about") if "about" in use else ""
+    about = _fit(about if about is not None else (mine_about or info["summary"]))
+    if (profile.get("values") or {}).get("fio") and "fio" in use:
+        info["name"] = profile["values"]["fio"]
     mine = matched_skills(info["skills"], f"{item.get('title') or ''}\n{vacancy_text}")
     if mine:
         skills_line = t["skills_match"].format(skills=", ".join(mine))
@@ -154,5 +176,85 @@ def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None):
     opening = t["open"].format(**fill)
     if not about:  # nothing to introduce: the opening line must not end on a colon
         opening = opening.rstrip(":").rstrip() + "."
-    parts = [t["hello"].format(**fill), opening, about, skills_line, t["close"], t["bye"] + ("\n" + info["name"] if info["name"] else "")]
+    parts = [t["hello"].format(**fill), opening, about, skills_line, t["close"], t["bye"] + ("\n" + info["name"] if info["name"] else ""),
+             "\n".join(contact_block(profile, lang))]
     return "\n\n".join(p for p in parts if p).strip()
+
+
+# ---------------------------------------------------------------- the profile
+
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}", re.I)
+PHONE = re.compile(r"\+?\d[\d ()\-]{8,}\d")
+TG = re.compile(r"(@[A-Za-z][A-Za-z0-9_]{4,31})|t\.me/([A-Za-z][A-Za-z0-9_]{4,31})", re.I)
+LINKEDIN = re.compile(r"(?:https?://)?(?:[\w.]+\.)?linkedin\.com/[\w\-/%]+", re.I)
+SITE = re.compile(r"(?:https?://)?(?:www\.)?(?:github\.com|gitlab\.com|behance\.net)/[\w\-/.]+", re.I)
+
+
+def clean_profile(data):
+    """Whatever the app sent -> {values{key: text}, custom[{label, value, use}], use[key]}; unknown keys dropped."""
+    data = data if isinstance(data, dict) else {}
+    vals = data.get("values") if isinstance(data.get("values"), dict) else {}
+    values = {k: str(vals[k]).strip()[:VALUE_MAX] for k in PROFILE_KEYS if k in vals and str(vals[k]).strip()}
+    custom = []
+    for c in (data.get("custom") if isinstance(data.get("custom"), list) else [])[:CUSTOM_MAX]:
+        if isinstance(c, dict) and str(c.get("label") or "").strip() and str(c.get("value") or "").strip():
+            custom.append({"label": str(c["label"]).strip()[:40], "value": str(c["value"]).strip()[:VALUE_MAX], "use": bool(c.get("use", True))})
+    use = data.get("use") if isinstance(data.get("use"), list) else [f[0] for f in PROFILE_FIELDS if f[3]]
+    return {"values": values, "custom": custom, "use": [k for k in use if k in PROFILE_KEYS]}
+
+
+def from_resume(md):
+    """Details found in the résumé by rules (no AI): {key: text}. Contacts come from the lines under the name."""
+    info = parse_resume(md)
+    out = {}
+    if info["name"]:
+        out["fio"] = info["name"]
+    if info["summary"]:
+        out["about"] = _fit(info["summary"], VALUE_MAX)
+    head = []
+    for b in resume.blocks(md)[1:]:  # until the first section
+        if b["t"] in ("h2", "h3"):
+            break
+        head.append(b["x"])
+    text = " | ".join(head)
+    if m := EMAIL.search(text):
+        out["email"] = m.group(0)
+    if m := PHONE.search(text):
+        out["phone"] = m.group(0).strip()
+    if m := TG.search(text):
+        out["telegram"] = "@" + (m.group(1) or m.group(2)).lstrip("@")
+    if m := LINKEDIN.search(text):
+        out["linkedin"] = m.group(0)
+    if m := SITE.search(text):
+        out["site"] = m.group(0)
+    for part in re.split(r"[|·•]", next((h for h in head if EMAIL.search(h) or PHONE.search(h)), "")):
+        part = part.strip()
+        if 2 < len(part) < 40 and not (EMAIL.search(part) or PHONE.search(part) or TG.search(part) or "http" in part.lower()
+                                       or re.match(r"(тг|tg|telegram|linkedin)", part, re.I)):
+            out["location"] = part
+            break
+    return out
+
+
+def contact_block(profile, lang):
+    """The contact lines ending a letter: the profile fields (and own fields) the person ticked; name and about are not here."""
+    lang = lang if lang in ("ru", "en") else "ru"
+    values, use = profile.get("values", {}), set(profile.get("use", []))
+    lines = [f"{ru if lang == 'ru' else en}: {values[key]}" for key, ru, en, _ in PROFILE_FIELDS
+             if key not in ("fio", "about") and key in use and values.get(key)]
+    lines += [f"{c['label']}: {c['value']}" for c in profile.get("custom", []) if c.get("use")]
+    return lines
+
+
+MANUAL = [  # a vacancy asking for more than a letter: a test, a questionnaire, real experience answers
+    (re.compile(r"тестов\w+ задани|пройдите тест|выполните тест|прикрепите тест", re.I), "тестовое задание"),
+    (re.compile(r"ответьте на (?:следующие |несколько )?вопрос|ответы на вопрос|заполните анкету|анкета кандидата|опросник", re.I), "вопросы или анкета"),
+    (re.compile(r"answer the following|please answer|application questions|screening questions|fill out the (?:form|questionnaire)|take-home|coding challenge|assessment", re.I), "questions / test"),
+    (re.compile(r"опишите (?:свой )?опыт|расскажите о (?:своём|своем) опыте|why do you want|describe your experience", re.I), "рассказ об опыте"),
+]
+
+
+def manual_reasons(text):
+    """What in the vacancy needs the person's own answer ([] = a plain letter is enough)."""
+    text = str(text or "")
+    return [label for rx, label in MANUAL if rx.search(text)]
