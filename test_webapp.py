@@ -111,6 +111,9 @@ assert roles.label_of(jobs_[0]) == ([], False)                  # ✗: never use
 roles.review(items[0]["key"], True)
 assert roles.label_of(jobs_[0]) == (["fraud-analyst"], True)
 assert roles.reset() == 1 and roles.label_of(jobs_[0]) == (["fraud-analyst"], True)  # ✓ survives a reset
+assert roles.own(items[0]["key"], ["data-analyst"], "аналитик данных")                 # ✎ the owner's own role wins
+assert roles.label_of(jobs_[0]) == (["data-analyst"], True) and roles.load()["labels"][items[0]["key"]]["own"] == "аналитик данных"
+assert roles.own("no-such-key", [], "x") is False
 
 # second look: the REAL description via a redirect chain, then Claude judges by it
 import http.server  # noqa: E402

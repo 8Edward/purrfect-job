@@ -762,7 +762,7 @@ async function loadSources(data) {
   $$(".word").forEach((b) => (b.onclick = () => change({ type: "words", group: b.dataset.g, remove: +b.dataset.n }, "Удалил")));
   $$(".reset-words").forEach((b) => { b.hidden = !s.words[b.dataset.g].length; });
   const on = s.channels.filter((c) => c.on).length;
-  $("#ch-head").innerHTML = `<span class="sn">📡 Каналы</span><small>${on} из ${s.channels.length} · максимум ${s.max_pool}</small>`;
+  $("#ch-head").innerHTML = `<span class="sn">📡 Каналы</span><small>${on} из ${s.channels.length}</small>`;
   $("#sum-role").textContent = s.words.role.length ? s.words.role[0] + (s.words.role.length > 1 ? ` +${s.words.role.length - 1}` : "") : "пусто";
   $("#sum-negative").textContent = s.words.negative.length ? `${s.words.negative.length}` : "пусто";
   $("#sum-sites").textContent = `${s.sites.filter((x) => x.on).length} из ${s.sites.length}`;
@@ -955,16 +955,34 @@ async function loadRoles(body) {
   const s = d.stats;
   const rows = d.items.slice(0, rolesShown).map((i) => `<div class="rl"><div class="t"><b>${esc(i.title)}</b>
       <small>${i.roles.map((r) => `<span class="role">${esc(r)}</span>`).join("")}${i.sure ? "" : "<span>· догадка</span>"}${i.jd ? "<span>· по описанию</span>" : ""}</small></div>
-    <div class="yn"><button class="y" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="n" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button></div></div>`).join("");
+    <div class="yn"><button class="y" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="n" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button><button class="e" data-own="${esc(i.key)}" aria-label="Написать свою роль">✎</button></div></div>
+    <form class="rl-own" data-ownform="${esc(i.key)}" hidden><input class="inp" list="role-names" maxlength="60" placeholder="Своя роль, например: аналитик данных"><button>OK</button></form>`).join("");
   const more = Math.min(d.items.length, d.pending) - rolesShown;
   $("#roles-list").innerHTML = `<p class="hint">Вакансии, которые словарь не узнал, ИИ относит к роли сам (в поиске они с 🤖 и ниже точных).
-      ✓ верно, ✗ ошибка: ошибка больше не используется.</p>
+      ✓ верно, ✗ ошибка: ошибка больше не используется, ✎ — написать роль самому.</p>
+    <datalist id="role-names">${(d.names || []).map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
     <div class="stats"><span>в поиске ${s.used}</span><span>✓ ${s.checked}</span><span>✗ ${s.rejected}</span><span>ждут проверки ${d.pending}</span></div>
     ${rows || '<p class="hint">Пока нечего проверять.</p>'}
     ${more > 0 ? '<button class="link block" id="roles-more">Показать ещё</button>' : ""}
     ${s.total ? '<button class="link block" id="roles-reset">Забыть все догадки ИИ (проверенные ✓ останутся)</button>' : ""}`;
   $("#roles-list").querySelectorAll("[data-rk]").forEach((b) => {
     b.onclick = () => { haptic(); loadRoles({ key: b.dataset.rk, ok: !!b.dataset.ok }); };
+  });
+  $("#roles-list").querySelectorAll("[data-own]").forEach((b) => {
+    b.onclick = () => {
+      const f = $("#roles-list").querySelector(`[data-ownform="${CSS.escape(b.dataset.own)}"]`);
+      f.hidden = !f.hidden;
+      if (!f.hidden) f.querySelector("input").focus();
+    };
+  });
+  $("#roles-list").querySelectorAll("[data-ownform]").forEach((f) => {
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const role = f.querySelector("input").value.trim();
+      if (!role) return;
+      haptic();
+      loadRoles({ key: f.dataset.ownform, role }).then(() => toast("Запомнил вашу роль"));
+    };
   });
   const m = $("#roles-more");
   if (m) m.onclick = () => { rolesShown += 8; loadRoles(); };

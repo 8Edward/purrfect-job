@@ -248,6 +248,17 @@ def review(key, ok):
     return True
 
 
+def own(key, role_ids, text):
+    """The owner wrote the role himself (✎): it replaces Claude's answer and counts as checked. A name the dictionary
+    doesn't know is kept as `own` with no role ids (search can't use it until rolegraph.yml gets that role)."""
+    data = load()
+    if key not in data["labels"]:
+        return False
+    data["labels"][key].update(roles=list(role_ids), ok=True, own=str(text)[:60], sure=True)
+    save(data)
+    return True
+
+
 def reset():
     """Forget Claude's answers except those the owner checked (✓)."""
     data = load()

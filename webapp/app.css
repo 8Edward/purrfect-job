@@ -524,6 +524,12 @@ html[data-skin="remote"] .bitem { border-radius: 16px; }
 
 /* 🤖 roles Claude guessed («Ещё») */
 #roles-list .hint, #roleai .hint { margin: 0 14px 10px; }
+#src-list .hint { margin: 0 14px 10px; }
+#src-list .hint:first-child { margin-top: 2px; }
+.rl .yn .e { border-color: var(--line); color: var(--muted); font-weight: 400; }
+.rl-own { display: flex; gap: 6px; padding: 0 14px 12px; }
+.rl-own input { flex: 1; min-width: 0; }
+.rl-own button { flex: none; padding: 0 14px; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 #roleai .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }
 #roleai .stats span { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--tag); }
 #roles-list .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }

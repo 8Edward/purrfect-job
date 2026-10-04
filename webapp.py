@@ -599,6 +599,11 @@ class WebApp:
             data = await self.body(request)
             if data.get("reset"):
                 roles.reset()
+            elif isinstance(data.get("key"), str) and isinstance(data.get("role"), str) and data["role"].strip():
+                typed = norm(data["role"]).strip()
+                graph = load_graph()
+                rid = next((r for r, g in graph.items() if typed in {norm(n).strip() for n in g["names"] + g["also"]}), None)
+                roles.own(data["key"], [rid] if rid else [], data["role"].strip())
             elif isinstance(data.get("key"), str):
                 roles.review(data["key"], bool(data.get("ok")))
         graph = load_graph()
@@ -606,7 +611,8 @@ class WebApp:
         return web.json_response({
             "items": [{"key": v["key"], "title": v["title"], "sure": bool(v.get("sure")), "jd": bool(v.get("jd")),
                        "roles": [graph[r]["names"][0] if r in graph else r for r in v["roles"]]} for v in items],
-            "pending": total, "stats": roles.stats()})
+            "pending": total, "stats": roles.stats(),
+            "names": sorted({g["names"][0] for g in graph.values() if g["names"]})})
 
     async def api_me(self, request):
         m = self.member(request)
