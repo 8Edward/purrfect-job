@@ -408,6 +408,15 @@ def fits_now(m):
     return fits
 
 
+def origin_name(v):
+    """Where a stored vacancy came from, as the card shows it: the site, or the Telegram chat."""
+    return (v.get("site") if v.get("source") == "web" else v.get("chat")) or ""
+
+
+def excluded_origins(m):
+    return set(m.load_state().get("feed_exclude") or [])
+
+
 def feed_pairs(m, inbox):
     """The «new» feed: newest first, the person's time zone and country filters applied. -> (pairs, filtered out)"""
     tz, cs = extras.tz_settings(m), extras.country_settings(m)
@@ -415,6 +424,9 @@ def feed_pairs(m, inbox):
     new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
     keep = [(k, v) for k, v in new if extras.tz_fits(v, tz) and extras.country_fits(v, cs)]
+    gone = excluded_origins(m)  # «Исключить источник»: whole channels / sites the person does not want in the feed
+    if gone:
+        keep = [(k, v) for k, v in keep if origin_name(v) not in gone]
     return keep, len(new) - len(keep)
 
 
@@ -499,6 +511,7 @@ class WebApp:
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
         r.add_post("/api/feedback", self.api_feedback)
+        r.add_post("/api/feed/exclude", self.api_feed_exclude)
         r.add_post("/api/apply/compose", self.api_apply_compose)
         r.add_post("/api/apply/presets", self.api_apply_presets)
         r.add_get("/api/apply/profile", self.api_apply_profile)
@@ -705,7 +718,31 @@ class WebApp:
             items = [(k, v) for k, v in items if datetime.fromisoformat(v["date"]) >= since]
         page, total = page_json(items, request.query.get("sort", "date"), offset, limit)
         unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
-        return web.json_response({"items": page, "total": total, "offset": offset, "tz_hidden": tz_hidden, "unscored": unscored})
+        origins = {}
+        if view == "new":  # the sources in today's pool, biggest first (for «Исключить источник»)
+            full, _ = feed_pairs(m, inbox)
+            for _, v in full:
+                origins[origin_name(v)] = origins.get(origin_name(v), 0) + 1
+        return web.json_response({"items": page, "total": total, "offset": offset, "tz_hidden": tz_hidden, "unscored": unscored,
+                                  "origins": [{"name": n, "n": c} for n, c in sorted(origins.items(), key=lambda kv: -kv[1]) if n][:40],
+                                  "excluded": sorted(excluded_origins(m))})
+
+    async def api_feed_exclude(self, request):
+        """{origin, on}: leave a channel / site out of the person's feed (and its counters), or bring it back."""
+        m = self.member(request)
+        data = await self.body(request)
+        name = str(data.get("origin") or "").strip()[:200]
+        if not name:
+            return self.bad("Не понял, какой источник")
+        gone = excluded_origins(m)
+        if data.get("on", True):
+            if len(gone) >= 30:
+                return self.bad("Исключено уже 30 источников")
+            gone.add(name)
+        else:
+            gone.discard(name)
+        m.update_state(feed_exclude=sorted(gone))
+        return web.json_response({"ok": True, "excluded": sorted(gone)})
 
     async def api_job(self, request):
         m = self.member(request)

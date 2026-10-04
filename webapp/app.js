@@ -129,8 +129,29 @@ async function loadFeed() {
   st.total = d.total;
   st.tzHidden = d.tz_hidden || 0;
   st.unscored = d.unscored || 0;
+  renderExclude(d);
   renderScoreNew();
   renderStack();
+}
+/* «Исключить источник»: whole channels / sites left out of the feed (kept on the server, so the counters follow) */
+const RVC = /^RVC \|/;
+function renderExclude(d) {
+  const gone = d.excluded || [];
+  $("#ex-list").innerHTML = gone.map((n) => `<button class="chip on-ex" data-exoff="${esc(n)}" aria-pressed="true">✕ ${esc(n.length > 28 ? n.slice(0, 27) + "…" : n)}</button>`).join("");
+  $("#ex-pick").innerHTML = '<option value="">Исключить источник…</option>' + (d.origins || []).filter((o) => !gone.includes(o.name))
+    .map((o) => `<option value="${esc(o.name)}">${esc(o.name.length > 34 ? o.name.slice(0, 33) + "…" : o.name)} · ${o.n}</option>`).join("");
+  const rvc = gone.find((n) => RVC.test(n)) || ((d.origins || []).find((o) => RVC.test(o.name)) || {}).name;
+  $("#ex-rvc").hidden = !rvc;
+  $("#ex-rvc").dataset.name = rvc || "";
+  $("#ex-rvc").setAttribute("aria-pressed", gone.some((n) => RVC.test(n)));
+  $$("[data-exoff]").forEach((b) => (b.onclick = () => excludeSource(b.dataset.exoff, false)));
+}
+async function excludeSource(origin, on) {
+  try {
+    haptic();
+    await api("/api/feed/exclude", { origin, on });
+    await Promise.all([loadFeed(), loadMe()]);
+  } catch (e) { fail(e); }
 }
 async function moreFeed() {
   if (st.loading || st.feed.length >= st.total) return;
@@ -1399,6 +1420,8 @@ $("#fb-form").onsubmit = async (e) => {
 };
 $("#age").onchange = () => { st.age = $("#age").value; haptic(); loadFeed().catch(fail); };
 $("#score-new").onclick = scoreNew;
+$("#ex-pick").onchange = () => { const v = $("#ex-pick").value; if (v) excludeSource(v, true); };
+$("#ex-rvc").onclick = () => { const b = $("#ex-rvc"); if (b.dataset.name) excludeSource(b.dataset.name, b.getAttribute("aria-pressed") !== "true"); };
 $("#refresh").onclick = refresh;
 $("#search-form").onsubmit = (e) => { e.preventDefault(); st.off.clear(); runSearch(); };
 $("#m-exact").onclick = () => { st.mode = "exact"; renderMode(); runSearch(); };

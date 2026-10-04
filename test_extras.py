@@ -371,6 +371,17 @@ async def main():
                                       "date": (now - timedelta(minutes=n)).isoformat()}
                 g.save_inbox(inbox)
                 await c.post("/api/sources", headers=auth, json={"type": "tz", "on": False})
+                # «Исключить источник»: a whole channel leaves the feed and its count, and comes back
+                before = await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json()
+                assert before["origins"] and before["excluded"] == [], before["origins"]
+                gone = before["origins"][0]["name"]
+                assert (await c.post("/api/feed/exclude", headers=auth, json={"origin": ""})).status == 400
+                assert (await (await c.post("/api/feed/exclude", headers=auth, json={"origin": gone, "on": True})).json())["excluded"] == [gone]
+                after = await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json()
+                assert after["total"] < before["total"] and gone not in [o["name"] for o in after["origins"]] and after["excluded"] == [gone]
+                await c.post("/api/feed/exclude", headers=auth, json={"origin": gone, "on": False})
+                assert (await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json())["total"] == before["total"]
+
                 p1 = await (await c.get("/api/jobs?view=new&limit=3&offset=0", headers=auth)).json()
                 p2 = await (await c.get("/api/jobs?view=new&limit=3&offset=3", headers=auth)).json()
                 assert len(p1["items"]) == 3 and p1["total"] == 7 and not {i["key"] for i in p1["items"]} & {i["key"] for i in p2["items"]}
