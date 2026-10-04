@@ -303,7 +303,7 @@ def from_ld(p, url):
     org = p.get("hiringOrganization") or {}
     return {"url": url, "title": str(p.get("title") or "")[:200], "company": str(org.get("name") if isinstance(org, dict) else org or "")[:120],
             "location": ", ".join(_places(p.get("jobLocation")))[:200], "remote": remote or None,
-            "only": only[:5] if remote else [], "text": fold(p.get("description"))[:20000]}
+            "only": only[:5] if remote else [], "countries": only[:60] if remote else [], "text": fold(p.get("description"))[:20000]}
 
 
 def resolve(url):
@@ -385,9 +385,30 @@ def pending(inbox, limit=ORIG_PER_PASS, now=None):
         links = post_links(item.get("text"))
         if links:
             out.append((key, links[0]))
+        elif RVC_CHAT.match(str(item.get("chat") or "")) and TME_POST.match(str(item.get("link") or "")):
+            out.append((key, "tme:" + item["link"]))  # RVC cards hide the page link behind «Contacts and Full Description»
         if len(out) >= limit:
             break
     return out
+
+
+RVC_CHAT = re.compile(r"RVC\b", re.I)
+TME_POST = re.compile(r"https://t\.me/[A-Za-z0-9_]{4,}/\d+$")
+
+
+def resolve_tme(link):
+    """A post of a public Telegram channel whose text hides its link (RVC): read the page the post points to.
+    The embed view of a post carries its links."""
+    m = TME_POST.match(link)
+    if not m:
+        return None
+    page, _ = _get(link + "?embed=1&mode=tme")
+    for u in re.findall(r'href="(https?://[^"]+)"', page):
+        u = html.unescape(u)
+        h = _host(u)
+        if h and not any(h == s or h.endswith("." + s) for s in SKIP_HOSTS):
+            return resolve(u.split("?")[0])
+    return None
 
 
 def slim(found):
@@ -395,7 +416,8 @@ def slim(found):
     if not found:
         return {"none": True}
     return {"url": found.get("url", "")[:500], "title": found.get("title", "")[:200], "mode": found.get("mode", ""),
-            "remote": found.get("remote"), "only": (found.get("only") or [])[:5], "text": (found.get("text") or "")[:3000]}
+            "remote": found.get("remote"), "only": (found.get("only") or [])[:5], "countries": (found.get("countries") or [])[:60],
+            "text": (found.get("text") or "")[:3000]}
 
 
 NOT_REMOTE_FLAGS = ("⚠️ не удалёнка: офис", "⚠️ гибрид", "⚠️ в оригинале офис", "⚠️ в оригинале гибрид")

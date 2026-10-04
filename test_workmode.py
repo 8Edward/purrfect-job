@@ -56,6 +56,24 @@ assert wm.not_remote({"title": "x", "text": post}) and wm.not_remote({"title": "
 assert not wm.not_remote({"title": "BI", "text": "Полностью удалённая работа"}) and not wm.not_remote({"title": "BI (Remote, US only)", "location": "Remote"})
 assert not wm.not_remote({"title": "Аналитик", "company": "Сбер", "location": "г Москва"})  # only a city: stays in the feed
 
+# RVC: the page behind the post says which countries the remote job is open to
+import extras  # noqa: E402
+rvc_ld = ('<html><script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Analyst","jobLocationType":"TELECOMMUTE",'
+          '"applicantLocationRequirements":[{"@type":"Country","name":"United States"}],"hiringOrganization":{"name":"Acme"},"description":"x"}</script></html>')
+orig_us = wm.slim(wm.from_ld(wm.ld_postings(rvc_ld)[0], "u"))
+assert orig_us["countries"] == ["United States"]
+card = {"title": "Analyst | IC", "chat": "RVC | Global | IT Job - Remote & Relocation", "link": "https://t.me/revacancy_global/1", "text": "Remote 📡", "orig": orig_us}
+assert extras.hires_from(card, "Thailand") is False and extras.unfit_for(card, "Thailand") is True and extras.unfit_for(dict(card, fav=True), "Thailand") is False
+worldwide = dict(card, orig=wm.slim({"remote": True, "countries": ["Thailand", "Germany"], "text": ""}))
+assert extras.hires_from(worldwide, "Thailand") is True and extras.unfit_for(worldwide, "Thailand") is False
+assert extras.unfit_for({"title": "Data Analyst [Remote-US]"}, "Thailand") and not extras.unfit_for({"title": "Data Analyst (Remote, APAC)"}, "Thailand")
+assert extras.unfit_for({"title": "BI", "text": "This position is remote within the United States"}, "Thailand")
+assert not extras.unfit_for({"title": "BI", "text": "Fully remote, work from anywhere"}, "Thailand")
+from datetime import datetime, timezone  # noqa: E402
+fresh = {k: v for k, v in card.items() if k != "orig"} | {"date": datetime.now(timezone.utc).isoformat(), "source": "tg"}
+pend = wm.pending({"k": fresh})
+assert pend == [("k", "tme:https://t.me/revacancy_global/1")], pend
+
 # links in posts and JSON-LD
 assert wm.post_links("Подробнее: https://career.habr.com/vacancies/1000.\nПиши @hr https://t.me/hr") == ["https://career.habr.com/vacancies/1000"]
 page = ('<html><script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Data Analyst",'

@@ -260,7 +260,11 @@ def hires_from(item, key):
     countries = item.get("countries")
     if isinstance(countries, list):  # Himalayas: [] = anyone, else the exact list
         return not countries or key in countries
-    loc = " ".join(str(item.get(k) or "") for k in ("location",))[:600]
+    listed = (item.get("orig") or {}).get("countries")  # the original page's own list (RVC and other JSON-LD pages)
+    if isinstance(listed, list) and listed:
+        _, names, _ = COUNTRIES[key]
+        return any(str(c).strip().lower() in names or str(c).strip().lower() == COUNTRIES[key][0].lower() for c in listed)
+    loc =" ".join(str(item.get(k) or "") for k in ("location",))[:600]
     if not loc.strip():
         return None
     _, names, regions = COUNTRIES[key]
@@ -273,6 +277,23 @@ def hires_from(item, key):
     if re.search(r"(?<!\w)(?:" + "|".join(others) + r")(?!\w)", loc, re.IGNORECASE):
         return False
     return None
+
+
+ASIA_LABELS = {"Азии", "Азии и Океании"}  # «only for …» labels of workmode that include Thailand and its neighbours
+
+
+def unfit_for(item, key):
+    """Office / hybrid, or remote only for another country: the vacancy cannot be taken from `key`'s country.
+    A starred or responded one is never unfit. Uses the original page's country list when it was read."""
+    if item.get("fav") or (item.get("track") or {}).get("stage"):
+        return False
+    orig = item.get("orig") or {}
+    if workmode.not_remote(item, orig):
+        return True
+    if orig.get("countries") and hires_from(item, key) is False:
+        return True
+    labels = [x for f in workmode.flags(item, orig) if f.startswith("🌍 только ") for x in f[len("🌍 только "):].split(", ")]
+    return bool(labels) and not (set(labels) & ASIA_LABELS)
 
 
 def country_fits(item, cs):

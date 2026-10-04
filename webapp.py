@@ -2163,11 +2163,16 @@ class WebApp:
                 return web.json_response({"busy": True, "new": 0})
         full = self.settings_hash(m) != m.load_state().get("refresh_hash")  # the words changed: look at everything again
         days = 3 if full else None
-        if m.is_owner:
+        t0, now_ = time.monotonic(), datetime.now(timezone.utc)
+        last_tg = tc.load_state().get("last_run") if m.is_owner else m.load_state().get("pool_run")
+        if not full and last_tg and now_ - datetime.fromisoformat(last_tg) < timedelta(minutes=3):
+            found = []  # the channels were read minutes ago: nothing to fetch yet
+        elif m.is_owner:
             found = await self.radar.check(tg=True, web=False, rescan_days=days, manual=True) or []
         else:
             async with self.radar.lock:
                 found = (await self.radar.check_pool([m], rescan_days=days))[m.id]
+        spent = round(time.monotonic() - t0, 1)
         now_ = datetime.now(timezone.utc)
 
         def stale(run, minutes):
@@ -2189,5 +2194,5 @@ class WebApp:
                 started.append("boards")
         m.update_state(refresh_hash=self.settings_hash(m))
         self.mark_checked(m)
-        log.info("manual refresh by %s: %d new from channels, %s, started: %s", m.name, len(found), "full" if full else "light", started or "nothing")
+        log.info("manual refresh by %s: %d new from channels in %.1f s, %s, started: %s", m.name, len(found), spent, "full" if full else "light", started or "nothing")
         return web.json_response({"busy": False, "new": len(found), "more": bool(started), "full": full, "started": started, "ages": ages})

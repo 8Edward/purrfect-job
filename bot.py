@@ -858,7 +858,7 @@ class JobRadar:
             key = job_key(job)
             if key not in inbox:
                 inbox[key] = to_inbox(job)
-                if workmode.not_remote(inbox[key], inbox[key].get("orig")):
+                if workmode.not_remote(inbox[key], inbox[key].get("orig")) or extras.unfit_for(inbox[key], extras.country_settings(self.me)["key"]):
                     inbox[key]["archived"] = True  # office / hybrid: straight into «Мои → Архив» (reversible), no alert for it
                     continue
                 items.append(inbox[key])
@@ -1286,16 +1286,23 @@ class JobRadar:
                 found = {}
                 for key, url in workmode.pending(m.load_inbox()):
                     try:
-                        found[key] = workmode.slim(await loop.run_in_executor(None, workmode.resolve, url))
+                        got = (await loop.run_in_executor(None, workmode.resolve_tme, url[4:])) if url.startswith("tme:")                             else (await loop.run_in_executor(None, workmode.resolve, url))
+                        found[key] = workmode.slim(got)
                     except Exception as e:
                         found[key] = {"fail": str(e)[:120]}  # could not check ≠ not a vacancy
                     await asyncio.sleep(1)
                 if found:
                     inbox = m.load_inbox()  # re-read: other passes may have written meanwhile
+                    gone = 0
                     for key, orig in found.items():
                         if key in inbox:
                             inbox[key]["orig"] = orig
+                            if m.is_owner and extras.unfit_for(inbox[key], extras.country_settings(m)["key"]):
+                                inbox[key]["archived"] = True  # remote only for another country / office: straight to the archive
+                                gone += 1
                     m.save_inbox(inbox)
+                    if gone:
+                        log.info("originals for %s: %d archived (office or another country only)", m.name, gone)
                     log.info("originals for %s: %d read, %d flagged", m.name, len(found),
                              sum(bool(workmode.flags(inbox[k], o)) for k, o in found.items() if k in inbox))
         except Exception:
