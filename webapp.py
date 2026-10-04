@@ -48,6 +48,8 @@ INIT_MAX_AGE = timedelta(days=1)  # how long one app launch stays valid
 SEARCH_DAYS = 21                  # how far back search reads channels (job channels post a few a week)
 POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this often
 POSTS_PER_CHANNEL = 300
+SEARCH_WAIT = 20        # seconds a search waits for channels not read yet
+SEARCH_LIVE_WAIT = 6    # seconds a search waits for hh.ru / Himalayas
 POSTS_CACHE_PATH = tc.ROOT / "data" / "tg-posts-cache.json"   # channel posts kept on disk (~4 MB), so the first search after a restart is fast
 POSTS_STALE_MAX = timedelta(days=2)  # older than this the disk copy is not used
 QUERY_MAX = 80
@@ -803,9 +805,13 @@ class WebApp:
         t0 = time.monotonic()
         hh_task = asyncio.create_task(self.hh_search(m, query, terms))  # hh.ru and Himalayas go meanwhile
         hima_task = asyncio.create_task(self.himalayas_search(m, query)) if "himalayas" in m.sites(guests.listed_sites()) else None
-        for posts in await asyncio.gather(*(read(k) for k in m.selected(guests.load_pool()))):
-            for post in posts:
-                add(post, "channels")
+        chan_tasks = [asyncio.ensure_future(read(k)) for k in m.selected(guests.load_pool())]
+        if chan_tasks:  # whatever is read within SEARCH_WAIT counts; slow channels finish in the background for next time
+            await asyncio.wait(chan_tasks, timeout=SEARCH_WAIT)
+        for task in chan_tasks:
+            if task.done() and not task.cancelled() and not task.exception():
+                for post in task.result():
+                    add(post, "channels")
         t1 = time.monotonic()
         tagger = guests.tagger_for(m)
         listed = guests.listed_sites()
@@ -816,14 +822,20 @@ class WebApp:
                     add(guests.web_job(j, listed.get(provider, provider), m, tagger), "sites")
         t2 = time.monotonic()
         if hima_task:  # its cached feed is only the newest few hundred of ~100k
-            for j in await hima_task:
+            for j in await self.within(hima_task):
                 add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m, tagger), "sites")
         t3 = time.monotonic()
-        for j in await hh_task:
+        for j in await self.within(hh_task):
             add(guests.web_job(j, guests.HH_NAME, m, tagger), "hh")
         log.info("search timing: channels %.1fs, site feeds %.1fs, himalayas wait %.1fs, hh wait %.1fs, %d candidates",
                  t1 - t0, t2 - t1, t3 - t2, time.monotonic() - t3, len(jobs))
         return jobs, counts
+
+    async def within(self, task, seconds=None):
+        """A live source (hh.ru, Himalayas) gets a few seconds; if it is slower the search goes on without it
+        (a search that waits over 100 s dies with Cloudflare's error 524)."""
+        done, _ = await asyncio.wait([task], timeout=seconds or SEARCH_LIVE_WAIT)
+        return task.result() if done and not task.exception() else []
 
     async def himalayas_search(self, m, query):
         try:
