@@ -51,6 +51,7 @@ SEARCH_DAYS = 21                  # how far back search reads channels (job chan
 POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this often
 POSTS_PER_CHANNEL = 300
 SEARCH_WAIT = 20        # seconds a search waits for channels not read yet
+TEXT_HEAD = 450          # a post counts for «в тексте поста» only when the phrase is in its first characters (digests / ads name it deep inside)
 SEARCH_LIVE_WAIT = 6    # seconds a search waits for hh.ru / Himalayas
 POSTS_CACHE_PATH = tc.ROOT / "data" / "tg-posts-cache.json"   # channel posts kept on disk (~4 MB), so the first search after a restart is fast
 POSTS_STALE_MAX = timedelta(days=2)  # older than this the disk copy is not used
@@ -799,7 +800,7 @@ class WebApp:
                 hit = next((by_role[r] for r in ids if r in by_role), None)
                 if hit and checked:
                     hit = ("role" if hit[0] == "ai" else hit[0], hit[1].replace("🤖 ", "✓ "))
-            if hit is None and job.get("source") == "tg" and terms[0][2].search(norm(searchable(job))):
+            if hit is None and job.get("source") == "tg" and terms[0][2].search(norm(searchable(job))[:TEXT_HEAD]):
                 # the phrase is only somewhere in a post (often a digest of several jobs): last, labelled
                 hit = ("text", "в тексте поста")
             if hit:
