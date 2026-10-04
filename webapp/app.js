@@ -743,6 +743,8 @@ async function loadSaved() {
 
 /* ---------------------------------------------------------------- settings */
 
+const TRASH = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
+
 async function loadSources(data) {
   const s = data || (await api("/api/sources"));
   st.sources = s;
@@ -762,11 +764,11 @@ async function loadSources(data) {
   $("#sum-sites").textContent = `${s.sites.filter((x) => x.on).length} из ${s.sites.length}`;
   $("#sum-tz").textContent = s.tz.on ? `UTC${s.tz.mine >= 0 ? "+" : "−"}${Math.abs(s.tz.mine)} ±${s.tz.spread} ч` : "выключено";
   $("#ch-list").innerHTML = s.channels.map((c) => `<div class="tg"><span>${esc(c.title)}<small>@${esc(c.key)}</small></span>
-      <span class="ctl">${c.removable ? `<button class="x" data-rm="${esc(c.key)}" aria-label="Убрать из общего списка">🗑</button>` : ""}<button class="sw" data-ch="${esc(c.key)}" aria-pressed="${c.on}" aria-label="${esc(c.title)}"></button></span></div>`).join("");
+      <span class="ctl">${c.removable ? `<button class="rm" data-rm="${esc(c.key)}" aria-label="Убрать из общего списка">${TRASH}</button>` : ""}<button class="sw" data-ch="${esc(c.key)}" aria-pressed="${c.on}" aria-label="${esc(c.title)}"></button></span></div>`).join("");
   $$("[data-ch]").forEach((b) => (b.onclick = () => change({ type: "channel", key: b.dataset.ch, on: b.getAttribute("aria-pressed") !== "true" })));
   $$("[data-rm]").forEach((b) => (b.onclick = () => {
     if (b.dataset.sure) return change({ type: "channel_remove", key: b.dataset.rm }, "Убрал из общего списка");
-    b.dataset.sure = "1"; b.textContent = "Убрать?"; setTimeout(() => { delete b.dataset.sure; b.textContent = "🗑"; }, 2500);
+    b.dataset.sure = "1"; b.textContent = "Убрать?"; setTimeout(() => { delete b.dataset.sure; b.innerHTML = TRASH; }, 3000);
   }));
   $("#site-list").innerHTML = s.sites.map((x) => `<div class="tg"><span>${esc(x.name)}</span><button class="sw" data-site="${esc(x.id)}" aria-pressed="${x.on}" aria-label="${esc(x.name)}"></button></div>`).join("");
   $$("[data-site]").forEach((b) => (b.onclick = () => change({ type: "site", id: b.dataset.site, on: b.getAttribute("aria-pressed") !== "true" })));
@@ -904,6 +906,7 @@ function renderRadar() {
 
 /* ---------------------------------------------------------------- 🤖 roles Claude guessed (owner, «Ещё») */
 
+let rolesShown = 8;
 async function loadRoles(body) {
   const g = $("#g-roles");
   if (!st.me || !st.me.owner) { g.hidden = true; return; }
@@ -911,16 +914,21 @@ async function loadRoles(body) {
   try { d = await api("/api/roles", body); } catch (e) { fail(e); return; }
   g.hidden = false;
   const s = d.stats;
-  const rows = d.items.map((i) => `<div class="tg"><span>${esc(i.title)}<small>ИИ считает: ${esc(i.roles.join(", "))}</small></span>
-    <span class="ctl"><button class="ghost sm" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="ghost sm" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button></span></div>`).join("");
-  $("#roles-list").innerHTML = `<p class="hint">Вакансии, которые словарь не узнал, ИИ относит к роли сам. Такие находки в поиске помечены 🤖 и стоят ниже точных.
-      ✓ — верно (дальше как проверенная), ✗ — ошибка (больше не используется). Новые догадки ИИ не учится на старых, поэтому ошибки не копятся.</p>
-    <p class="hint">Используется: ${s.used} · проверено ✓ ${s.checked} · отклонено ✗ ${s.rejected} · ждут проверки: ${d.pending}</p>
+  const rows = d.items.slice(0, rolesShown).map((i) => `<div class="rl"><div class="t"><b>${esc(i.title)}</b>
+      <small>${i.roles.map((r) => `<span class="role">${esc(r)}</span>`).join("")}${i.sure ? "" : "<span>· догадка</span>"}${i.jd ? "<span>· по описанию</span>" : ""}</small></div>
+    <div class="yn"><button class="y" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="n" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button></div></div>`).join("");
+  const more = Math.min(d.items.length, d.pending) - rolesShown;
+  $("#roles-list").innerHTML = `<p class="hint">Вакансии, которые словарь не узнал, ИИ относит к роли сам (в поиске они с 🤖 и ниже точных).
+      ✓ верно, ✗ ошибка: ошибка больше не используется.</p>
+    <div class="stats"><span>в поиске ${s.used}</span><span>✓ ${s.checked}</span><span>✗ ${s.rejected}</span><span>ждут проверки ${d.pending}</span></div>
     ${rows || '<p class="hint">Пока нечего проверять.</p>'}
+    ${more > 0 ? '<button class="link block" id="roles-more">Показать ещё</button>' : ""}
     ${s.total ? '<button class="link block" id="roles-reset">Забыть все догадки ИИ (проверенные ✓ останутся)</button>' : ""}`;
   $("#roles-list").querySelectorAll("[data-rk]").forEach((b) => {
     b.onclick = () => { haptic(); loadRoles({ key: b.dataset.rk, ok: !!b.dataset.ok }); };
   });
+  const m = $("#roles-more");
+  if (m) m.onclick = () => { rolesShown += 8; loadRoles(); };
   const r = $("#roles-reset");
   if (r) r.onclick = () => {
     if (!r.dataset.sure) { r.dataset.sure = "1"; r.textContent = "Точно забыть? Нажмите ещё раз"; return; }

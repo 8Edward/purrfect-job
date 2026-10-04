@@ -574,7 +574,7 @@ class WebApp:
         graph = load_graph()
         items, total = roles.review_list()
         return web.json_response({
-            "items": [{"key": v["key"], "title": v["title"],
+            "items": [{"key": v["key"], "title": v["title"], "sure": bool(v.get("sure")), "jd": bool(v.get("jd")),
                        "roles": [graph[r]["names"][0] if r in graph else r for r in v["roles"]]} for v in items],
             "pending": total, "stats": roles.stats()})
 

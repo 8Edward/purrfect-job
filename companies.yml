@@ -29,7 +29,7 @@ companies:
   - {id: co-uzum, name: Uzum, kind: uzum, ru: true}
   - {id: co-twinby, name: Twinby, kind: twinby, ru: true}
   - {id: co-yasno, name: Ясно, kind: yasno, ru: true}
-  - {id: co-agilefluent, name: AgileFluent (работа за рубежом, удалёнка), kind: agilefluent}
+  - {id: co-agilefluent, name: "AgileFluent (работа за рубежом, удалёнка)", kind: agilefluent}
   - {id: co-finder, name: Finder.work (удалёнка), kind: finder, ru: true}
   # 2026-10-04, ported from freehire (MIT): its own career APIs, list only
   - {id: co-ozon, name: Ozon, kind: ozon, ru: true}
@@ -46,10 +46,10 @@ companies:
   - {id: co-domclick, name: Домклик, kind: domclick, ru: true}
   - {id: co-flowwow, name: Flowwow, kind: huntflow, slug: flowwow, ru: true}
   - {id: co-tripster, name: Tripster, kind: huntflow, slug: tripster, ru: true}
-  - {id: co-getmatch, name: getmatch (IT, много удалёнки), kind: getmatch}
+  - {id: co-getmatch, name: "getmatch (IT, много удалёнки)", kind: getmatch}
   - {id: co-geekjob, name: GeekJob (IT), kind: geekjob}
   - {id: co-trudvsem, name: Работа России (только удалёнка), kind: trudvsem}
-  - {id: co-djinni, name: Djinni (IT, Украина и удалёнка), kind: djinni}
+  - {id: co-djinni, name: "Djinni (IT, Украина и удалёнка)", kind: djinni}
 
 # NOT connected: no public vacancy list on their own site that a script may read. Not read by the bot;
 # hh employer ids kept for reference (hh.ru is the only place that lists their vacancies).

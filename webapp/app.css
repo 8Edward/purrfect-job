@@ -152,7 +152,9 @@ html[data-skin="remote"] .row { border-radius: 18px; }
 .feed-set { margin: 22px 0 4px; font-size: 16px; }
 .feed-set + .hint { margin-bottom: 10px; }
 .tg small { display: block; color: var(--muted); font-size: 11.5px; }
-.tg .x { border: none; background: none; color: var(--muted); font-size: 16px; padding: 4px; }
+.tg .rm { display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0 8px; border-radius: 99px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.tg .rm[data-sure] { background: var(--bad); border-color: var(--bad); color: #fff; }
 .sw { width: 44px; height: 26px; border-radius: 99px; border: none; background: var(--line); position: relative; flex: none; }
 .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left .18s; }
 .sw[aria-pressed="true"] { background: var(--accent); }
@@ -518,3 +520,17 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 .bitem.done { opacity: .5; }
 .bsum p { font-size: 13px; line-height: 1.45; margin: 6px 0; }
 html[data-skin="remote"] .bitem { border-radius: 16px; }
+
+/* 🤖 roles Claude guessed («Ещё») */
+#roles-list .hint { margin: 0 14px 10px; }
+#roles-list .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }
+#roles-list .stats span { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--tag); }
+.rl { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.rl .t { flex: 1; min-width: 0; }
+.rl .t b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-weight: 500; font-size: 14px; }
+.rl .t small { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
+.rl .role { padding: 2px 7px; border-radius: 99px; background: var(--tag); color: var(--fg); font-size: 11.5px; }
+.rl .yn { flex: none; display: flex; gap: 6px; }
+.rl .yn button { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid; background: transparent; font-size: 16px; font-weight: 700; display: grid; place-items: center; }
+.rl .yn .y { border-color: var(--ok); color: var(--ok); }
+.rl .yn .n { border-color: var(--bad); color: var(--bad); }
