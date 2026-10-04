@@ -666,7 +666,7 @@ class WebApp:
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
             "roles_ai": self.roles_summary() if m.is_owner else None,
-            "funnel": extras.funnel(inbox, fits_now(m)),
+            "funnel": {**extras.funnel(inbox, fits_now(m)), "jobs": len(extras.groups(feed_pairs(m, inbox)[0]))},  # «вакансий» = the feed's own pool
             "stats": {
                 "new": len(extras.groups(feed_pairs(m, inbox)[0])),
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
