@@ -406,7 +406,22 @@ async def main():
                 await c.post("/api/settings", headers=auth, json={"skin": "<script>"})
                 me = await (await c.get("/api/me", headers=auth)).json()
                 assert me["skin"] == "remote" and me["onboarded"]
-                assert (await (await c.post("/api/refresh", headers=auth)).json()) == {"busy": False, "new": 0, "more": False}
+                r1 = await (await c.post("/api/refresh", headers=auth)).json()
+                assert r1["busy"] is False and r1["new"] == 0 and r1["more"] is False and r1["full"] is True  # first time: everything is looked at
+                r2 = await (await c.post("/api/refresh", headers=auth)).json()
+                assert r2["full"] is False  # nothing changed since: light
+                # light ↻ starts a source only when its last pass is old
+                calls = []
+
+                async def fake_task(full=None):
+                    calls.append(full)
+                radar = app.radar
+                radar.hh_task, radar.sites_task = fake_task, fake_task
+                radar.hh_run = radar.sites_run = None
+                r3 = await (await c.post("/api/refresh", headers=auth)).json()
+                assert r3["started"] == ["hh", "sites"] and r3["more"] is True and calls == [None, None], (r3, calls)
+                r4 = await (await c.post("/api/refresh", headers=auth)).json()
+                assert r4["started"] == [] and r4["ages"]["hh"] == 0 and len(calls) == 2, r4  # just started: fresh
 
                 # résumé -> preset
                 assert (await (await c.get("/api/cv", headers=auth)).json()) == {"cv": None}

@@ -367,7 +367,9 @@ async function refresh() {
     const d = await api("/api/refresh", {});
     clearTimeout(slow);
     toast(d.busy ? "Проверка уже идёт, загляни через минуту" : d.waited ? "Только что проверил все источники — лента свежая"
-      : (d.new ? `В каналах ${d.new} ${plural(d.new, "новая", "новые", "новых")}` : "В каналах новых нет") + (d.more ? " · сайты и hh.ru догружаю" : ""));
+      : (d.new ? `В каналах ${d.new} ${plural(d.new, "новая", "новые", "новых")}` : "В каналах новых нет")
+        + (d.more ? (d.full ? " · настройки менялись: проверяю всё заново, пара минут" : " · сайты и hh.ru догружаю")
+          : d.ages && d.ages.sites != null ? ` · сайты свежие, обновлены ${d.ages.sites} мин назад` : ""));
     const before = st.me ? st.me.stats.new : 0;
     await Promise.all([loadMe(), loadFeed()]);
     if (d.more) followRefresh(before);

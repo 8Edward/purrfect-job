@@ -59,7 +59,7 @@ INBOX_CAP = 500           # stored vacancies per person; oldest unstarred go fir
 SITE_JOBS_PER_RUN = 20    # new site vacancies per person per check
 REFRESH_COOLDOWN = timedelta(minutes=5)
 POOL_EVERY = timedelta(minutes=15)
-SITES_EVERY = timedelta(hours=2)
+SITES_EVERY = timedelta(hours=1)
 INVITE_TTL = timedelta(days=7)
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_]{3,31}$")
 DEFAULTS = {"lookback_days": 1, "min_length": 120}

@@ -2142,8 +2142,18 @@ class WebApp:
         else:
             m.update_state(pool_run=stamp)
 
+    REFRESH_FRESH = {"hh": 10, "sites": 30, "boards": 60}  # minutes: younger than this, ↻ does not start that source again
+
+    @staticmethod
+    def settings_hash(m):
+        """The feed settings that decide what a vacancy is (words, stop words, stop companies, sites, hh.ru query)."""
+        s = m.load_search()
+        return hashlib.md5(json.dumps([s.get("keywords"), s.get("sites"), s.get("hh")], sort_keys=True, default=str).encode()).hexdigest()[:12]
+
     async def api_refresh(self, request):
-        """Re-read the person's channels for the last day right now (like 🔄 in the chat)."""
+        """↻: the database is filled in the background (channels every 15 min, hh.ru every 30, sites hourly), so this is
+        light: channels read right now (new posts only), and a source is started only when its last pass is older than
+        REFRESH_FRESH. After the person changed their words / sites, ONE full pass checks everything again."""
         m = self.member(request)
         if self.radar.lock.locked():  # a scheduled check is running: wait for it, then do the full pass anyway
             try:
@@ -2151,16 +2161,33 @@ class WebApp:
                 self.radar.lock.release()
             except asyncio.TimeoutError:
                 return web.json_response({"busy": True, "new": 0})
+        full = self.settings_hash(m) != m.load_state().get("refresh_hash")  # the words changed: look at everything again
+        days = 3 if full else None
         if m.is_owner:
-            found = await self.radar.check(tg=True, web=False, rescan_days=3, manual=True) or []
+            found = await self.radar.check(tg=True, web=False, rescan_days=days, manual=True) or []
         else:
             async with self.radar.lock:
-                found = (await self.radar.check_pool([m], rescan_days=3))[m.id]
-        more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
-        for task in ("hh_task", "sites_task") + (("boards_task",) if m.is_owner else ()):
-            if hasattr(self.radar, task):  # hh.ru and sites: a full pass for this person, old vacancies are checked again with today's words
-                asyncio.create_task(getattr(self.radar, task)(**({} if task == "boards_task" else {"full": m.id})))
-                more = True
+                found = (await self.radar.check_pool([m], rescan_days=days))[m.id]
+        now_ = datetime.now(timezone.utc)
+
+        def stale(run, minutes):
+            return full or not run or now_ - run >= timedelta(minutes=minutes)
+        boards_run = tc.load_state().get("boards_run")
+        started, ages = [], {}  # hh.ru and the sites go on in the background (they take longer); the page reloads later
+        for name, attr, minutes in (("hh", "hh_run", self.REFRESH_FRESH["hh"]), ("sites", "sites_run", self.REFRESH_FRESH["sites"])):
+            run = getattr(self.radar, attr, None)
+            ages[name] = int((now_ - run).total_seconds() // 60) if run else None
+            if hasattr(self.radar, name + "_task") and stale(run, minutes):
+                setattr(self.radar, attr, now_)
+                asyncio.create_task(getattr(self.radar, name + "_task")(full=m.id if full else None))
+                started.append(name)
+        if m.is_owner and hasattr(self.radar, "boards_task"):
+            run = datetime.fromisoformat(boards_run) if boards_run else None
+            ages["boards"] = int((now_ - run).total_seconds() // 60) if run else None
+            if stale(run, self.REFRESH_FRESH["boards"]):
+                asyncio.create_task(self.radar.boards_task())
+                started.append("boards")
+        m.update_state(refresh_hash=self.settings_hash(m))
         self.mark_checked(m)
-        log.info("manual refresh by %s: %d new from channels", m.name, len(found))
-        return web.json_response({"busy": False, "new": len(found), "more": more})
+        log.info("manual refresh by %s: %d new from channels, %s, started: %s", m.name, len(found), "full" if full else "light", started or "nothing")
+        return web.json_response({"busy": False, "new": len(found), "more": bool(started), "full": full, "started": started, "ages": ages})
