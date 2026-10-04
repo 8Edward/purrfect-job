@@ -616,18 +616,22 @@ class WebApp:
             for post in posts:
                 add(post, "channels")
         t1 = time.monotonic()
+        tagger = guests.tagger_for(m)
         listed = guests.listed_sites()
         feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
         for provider in m.sites(listed):
             for j in (feed.get(provider) or {}).get("jobs", []):
                 if j.get("url"):
-                    add(guests.web_job(j, listed.get(provider, provider), m), "sites")
+                    add(guests.web_job(j, listed.get(provider, provider), m, tagger), "sites")
+        t2 = time.monotonic()
         if hima_task:  # its cached feed is only the newest few hundred of ~100k
             for j in await hima_task:
-                add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m), "sites")
+                add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m, tagger), "sites")
+        t3 = time.monotonic()
         for j in await hh_task:
-            add(guests.web_job(j, guests.HH_NAME, m), "hh")
-        log.info("search timing: channels %.1fs, then sites/hh %.1fs, %d candidates", t1 - t0, time.monotonic() - t1, len(jobs))
+            add(guests.web_job(j, guests.HH_NAME, m, tagger), "hh")
+        log.info("search timing: channels %.1fs, site feeds %.1fs, himalayas wait %.1fs, hh wait %.1fs, %d candidates",
+                 t1 - t0, t2 - t1, t3 - t2, time.monotonic() - t3, len(jobs))
         return jobs, counts
 
     async def himalayas_search(self, m, query):

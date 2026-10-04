@@ -377,6 +377,17 @@ def load_preset():
     return {}
 
 
+def tagger_for(member):
+    """web_tags for one person with their settings read ONCE (a search tags thousands of vacancies,
+    and reading search.yml for each of them took most of a minute)."""
+    flt = tc.JobFilter({"tags": member.cfg().get("keywords", {}).get("tags") or {}}, 0)
+
+    def tag(text, ru=False):
+        found = flt.tags_for(text)
+        return found + [RU_TAG] if ru and RU_TAG not in found else found
+    return tag
+
+
 def web_tags(member, text, ru=False):
     """Tags for a site vacancy (e.g. ru-company), from the person's own tag patterns;
     ru=True: the feed itself says it's a Russian-speaking company (companies.yml)."""
@@ -396,7 +407,7 @@ def parse_posted(text):
     return now()
 
 
-def web_job(j, site, member=None):
+def web_job(j, site, member=None, tagger=None):
     """A raw site / hh.ru vacancy {title, url, company, location, comp, posted} -> a stored job."""
     date = parse_posted(j.get("posted"))
     company, title = j.get("company") or "", j.get("title") or "Вакансия"
@@ -404,7 +415,7 @@ def web_job(j, site, member=None):
     line = "- [ ] " + " | ".join(tc.clean_cell(c) for c in cells) + f" | posted: {date:%Y-%m-%d}"
     return {"source": "web", "key": boards.board_key(j["url"]), "title": title, "company": company,
             "location": j.get("location", ""), "comp": j.get("comp", ""), "site": site, "link": j["url"],
-            "date": date, "tags": web_tags(member, f"{title} {company}", j.get("ru")) if member else [],
+            "date": date, "tags": (tagger or (lambda t, r: web_tags(member, t, r)))(f"{title} {company}", j.get("ru")) if member else [],
             "pipeline_line": line}
 
 
