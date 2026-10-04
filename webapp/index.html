@@ -70,12 +70,15 @@
     <h2 class="h2">Поиск</h2>
     <h3 class="feed-set">📥 Что попадает в ленту</h3>
     <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск ниже они не влияют. Нажмите на блок, чтобы открыть.</div>
-    <details class="group fold" id="g-words"><summary><span class="sn">🎯 Что ищу</span><small id="sum-role"></small></summary><div class="words" id="w-role"></div>
+    <details class="group fold" id="g-words"><summary><span class="sn">🎯 Что искать</span><small id="sum-role"></small></summary><div class="words" id="w-role"></div>
       <button type="button" class="link reset-words" data-g="role">Сбросить</button>
       <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></details>
-    <details class="group fold"><summary><span class="sn">🚫 Стоп-слова</span><small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
+    <details class="group fold"><summary><span class="sn">🚫 Что не искать</span><small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
       <button type="button" class="link reset-words" data-g="negative">Сбросить</button>
       <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></details>
+    <details class="group fold"><summary><span class="sn">🏢 Стоп-компании</span><small id="sum-companies"></small></summary><div class="words" id="w-companies"></div>
+      <button type="button" class="link reset-words" data-g="companies">Сбросить</button>
+      <form class="add" data-group="companies"><input placeholder="Компании, которые не показывать, через запятую" maxlength="300"><button>+</button></form></details>
     <details class="group fold" id="g-ch"><summary id="ch-head"><span class="sn">📡 Каналы</span></summary><div class="bulk"><button type="button" data-bulk="channels_all" data-on="1">Включить все</button><button type="button" data-bulk="channels_all" data-on="0">Выключить все</button></div><div id="ch-list"></div>
       <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></details>
     <details class="group fold"><summary><span class="sn">🌐 Сайты</span><small id="sum-sites"></small></summary><div class="bulk"><button type="button" data-bulk="sites_all" data-on="1">Включить все</button><button type="button" data-bulk="sites_all" data-on="0">Выключить все</button></div><div id="site-list"></div>
@@ -131,16 +134,16 @@
   <!-- ЕЩЁ -->
   <section class="screen" id="s-more" hidden>
     <h2 class="h2">Ещё</h2>
-    <div class="group" id="g-track"><h4>📋 Мои отклики</h4><div class="pad" id="track-list"></div>
-      <button class="link block" id="track-add">＋ Добавить отклик вручную</button></div>
+    <details class="group fold" id="g-track"><summary><span class="sn">📋 Мои отклики</span><small id="sum-track"></small></summary><div class="pad" id="track-list"></div>
+      <button class="link block" id="track-add">＋ Добавить отклик вручную</button></details>
     <div class="group" hidden><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
     <div class="group" id="g-radar"><h4>📡 Поиск вакансий</h4>
       <div class="tg"><span>Как часто искать<small id="int-note"></small></span><select class="inp sm" id="interval" aria-label="Как часто искать"></select></div>
       <div class="tg"><span>Сообщения в Telegram о новых вакансиях<small>короткое саммари в чат с ботом, когда что-то нашлось</small></span><button class="sw" id="alerts" aria-pressed="true" aria-label="Сообщения о новых вакансиях"></button></div></div>
-    <div class="group" id="g-roleai" hidden><h4>🧠 ИИ и словарь ролей</h4><div class="pad" id="roleai"></div></div>
-    <div class="group" id="g-src" hidden><h4>📊 Источники: кто молчит</h4><div class="pad" id="src-list"></div></div>
-    <div class="group" id="g-roles" hidden><h4>🤖 Роли, которые угадал ИИ</h4><div class="pad" id="roles-list"></div></div>
+    <details class="group fold" id="g-roleai" hidden><summary><span class="sn">🧠 ИИ и словарь ролей</span></summary><div class="pad" id="roleai"></div></details>
+    <details class="group fold" id="g-src" hidden><summary><span class="sn">📊 Источники: кто молчит</span></summary><div class="pad" id="src-list"></div></details>
+    <details class="group fold" id="g-roles" hidden><summary><span class="sn">🤖 Роли, которые угадал ИИ</span></summary><div class="pad" id="roles-list"></div></details>
     <button class="row" id="memo"><b>❓ Вопросы и ответы</b><span class="m">FAQ</span><span class="s">Как всё устроено и как пользоваться</span></button>
     <button class="link block" id="again">Показать обучение</button>
     <button class="danger-btn" id="reset">♻️ Начать заново</button>

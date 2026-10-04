@@ -841,6 +841,13 @@ def match_site_jobs(feed, member, listed, full=False):
 
 # ---------------------------------------------------------------- hh.ru (RSS)
 
+def stop_companies(member):
+    """Compiled «стоп-компании» of a person (their search.yml keywords.companies) or None. Literal, case-free."""
+    words = member.cfg().get("keywords", {}).get("companies") or []
+    pats = [re.compile(p, re.IGNORECASE) for p in words if isinstance(p, str) and p]
+    return (lambda item: any(p.search(item.get("company") or (item.get("text") or "")[:200]) for p in pats)) if pats else None
+
+
 def plain(pattern):
     """'\\bsql\\b' -> 'sql', 'power ?bi' -> 'power bi': a keyword as a person reads it."""
     text = pattern.replace("\\b", "").replace(" ?", " ").replace("-?", "-")

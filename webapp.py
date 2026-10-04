@@ -371,10 +371,13 @@ def fits_now(m):
     sites = set(m.sites(listed))
     pool = guests.load_pool()
     channels = set(m.selected(pool))
+    stopped = guests.stop_companies(m)
 
     def fits(v):
         if v.get("fav"):
             return True
+        if stopped and stopped(v):
+            return False
         if v.get("source") == "web":
             if v.get("site") in names and names[v["site"]] not in sites:
                 return False
@@ -815,9 +818,9 @@ class WebApp:
         later = part in ("chan", "hh", "hima")
         shown = self.shown.get(m.id, {"keys": set(), "twins": set()}) if later else {"keys": set(), "twins": set()}
         keep, items, same = {}, [], set(shown["twins"])
-        cs = extras.country_settings(m)
+        cs, stopped = extras.country_settings(m), guests.stop_companies(m)
         for _, job, kind, label in hits:
-            if job["key"] in shown["keys"] or not extras.country_fits(job, cs):
+            if job["key"] in shown["keys"] or not extras.country_fits(job, cs) or (stopped and stopped(job)):
                 continue
             # one vacancy posted on several sites: show it once (no company: the same title on the same site)
             twin = (norm(job.get("title")).strip(), norm(job.get("company")).strip() or "@" + norm(job.get("site") or job.get("chat")))
@@ -1021,7 +1024,7 @@ class WebApp:
             "adds_left": guests.pool_adds_left(pool, m),
             "sites": [{"id": pid, "name": name, "on": pid in mine} for pid, name in listed.items()],
             "hh": guests.hh_settings(m),
-            "words": {g: [guests.plain(p) for p in kw.get(g, [])] for g in ("role", "negative")},
+            "words": {g: [guests.plain(p) for p in kw.get(g, [])] for g in ("role", "negative", "companies")},
             "tz": extras.tz_settings(m),
             "country": extras.country_settings(m),
             "countries": [{"key": k, "name": v[0]} for k, v in extras.COUNTRIES.items()],
@@ -1079,7 +1082,7 @@ class WebApp:
                 extras.set_country(m, **{k: data[k] for k in ("on", "key") if k in data})
             except (TypeError, ValueError):
                 raise web.HTTPBadRequest(text='{"error": "Не знаю такую страну"}', content_type="application/json")
-        elif kind == "words" and data.get("group") in ("role", "negative"):
+        elif kind == "words" and data.get("group") in ("role", "negative", "companies"):
             search = m.load_search()
             if data.get("add"):
                 added, refused = guests.add_words(search, data["group"], str(data["add"]))

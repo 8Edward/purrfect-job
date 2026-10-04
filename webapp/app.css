@@ -544,3 +544,8 @@ html[data-skin="remote"] .bitem { border-radius: 16px; }
 .rl .yn button { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid; background: transparent; font-size: 16px; font-weight: 700; display: grid; place-items: center; }
 .rl .yn .y { border-color: var(--ok); color: var(--ok); }
 .rl .yn .n { border-color: var(--bad); color: var(--bad); }
+
+.rl-nav { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 14px 10px; font-size: 13px; color: var(--muted); }
+.rl-nav button:not(.link) { width: 40px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: transparent; font-size: 20px; color: var(--fg); }
+.rl-nav button[disabled] { opacity: .35; }
+.rl-nav .link { margin-left: auto; }

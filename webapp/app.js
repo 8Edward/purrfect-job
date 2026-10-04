@@ -567,6 +567,8 @@ async function setStage(item, stage) {
     loadMe().catch(() => {});
   } catch (e) { fail(e); }
 }
+let trackAll = false;
+const TRACK_SHOWN = 10;
 async function loadTrack() {
   const box = $("#track-list");
   try {
@@ -577,10 +579,15 @@ async function loadTrack() {
       <span class="m${i.silent >= 7 ? " warn" : ""}">${i.track ? esc(STAGES[i.track.stage]) + (i.silent >= 7 ? " · ⏰ " + i.silent + " дн." : "") : "отметить"}</span>
       <span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`;
     const counts = order.map((k) => [k, items.filter((i) => i.track.stage === k).length]).filter(([, n]) => n);
+    const cut = (list) => (trackAll ? list : list.slice(0, TRACK_SHOWN));
+    $("#sum-track").textContent = items.length + d.taken.length ? String(items.length) : "пусто";
     box.innerHTML = (counts.length ? `<div class="hint">${counts.map(([k, n]) => `${STAGES[k]}: <b>${n}</b>`).join(" · ")}</div>` : "")
-      + (items.length ? items.map((i, n) => row(i, n, "t")).join("")
+      + (items.length ? cut(items).map((i, n) => row(i, n, "t")).join("")
         : '<div class="hint">Пока пусто. Откройте вакансию и отметьте этап внизу карточки: «Откликнулся», «Тестовое»… Если неделю нет новостей, бот напомнит.</div>')
-      + (d.taken.length ? `<div class="lbl">Избранное, без отметки</div>${d.taken.map((i, n) => row(i, n, "k")).join("")}` : "");
+      + (d.taken.length ? `<div class="lbl">Избранное, без отметки</div>${cut(d.taken).map((i, n) => row(i, n, "k")).join("")}` : "")
+      + (!trackAll && (items.length > TRACK_SHOWN || d.taken.length > TRACK_SHOWN) ? `<button class="link block" id="track-all">Показать все (${items.length + d.taken.length})</button>` : "");
+    const all = $("#track-all");
+    if (all) all.onclick = () => { trackAll = true; loadTrack(); };
     $$(".row", box).forEach((r) => (r.onclick = () => openSheet((r.dataset.list === "t" ? items : d.taken)[+r.dataset.n], false)));
   } catch (e) { box.innerHTML = ""; fail(e); }
 }
@@ -768,15 +775,16 @@ async function loadSources(data) {
   if (s.note) toast(s.note);
   $("#skins").innerHTML = skinsHtml();
   bindSkins($("#skins"));
-  for (const g of ["role", "negative"]) {
+  for (const g of ["role", "negative", "companies"]) {
     $("#w-" + g).innerHTML = s.words[g].length ? s.words[g].map((w, n) => `<button class="word" data-g="${g}" data-n="${n}">${esc(w)} ✕</button>`).join("")
-      : `<span class="hint">${g === "role" ? "Пусто: добавьте профессию и навыки." : "Пусто."}</span>`;
+      : `<span class="hint">${g === "role" ? "Пусто: добавьте профессию и навыки." : g === "companies" ? "Пусто: вакансии этих компаний не будут показываться." : "Пусто."}</span>`;
   }
   $$(".word").forEach((b) => (b.onclick = () => change({ type: "words", group: b.dataset.g, remove: +b.dataset.n }, "Удалил")));
   $$(".reset-words").forEach((b) => { b.hidden = !s.words[b.dataset.g].length; });
   const on = s.channels.filter((c) => c.on).length;
   $("#ch-head").innerHTML = `<span class="sn">📡 Каналы</span><small>${on} из ${s.channels.length}</small>`;
   $("#sum-role").textContent = s.words.role.length ? s.words.role[0] + (s.words.role.length > 1 ? ` +${s.words.role.length - 1}` : "") : "пусто";
+  $("#sum-companies").textContent = s.words.companies.length ? `${s.words.companies.length}` : "пусто";
   $("#sum-negative").textContent = s.words.negative.length ? `${s.words.negative.length}` : "пусто";
   $("#sum-sites").textContent = `${s.sites.filter((x) => x.on).length} из ${s.sites.length}`;
   $("#sum-tz").textContent = s.tz.on ? `UTC${s.tz.mine >= 0 ? "+" : "−"}${Math.abs(s.tz.mine)} ±${s.tz.spread} ч` : "выключено";
@@ -959,6 +967,8 @@ async function loadSourceHealth(all) {
 /* ---------------------------------------------------------------- 🤖 roles Claude guessed (owner, «Ещё») */
 
 let rolesShown = 8;
+let rolesAll = false;   // false: one vacancy at a time (carousel), true: the whole list
+let rolesAt = 0;
 async function loadRoles(body) {
   const g = $("#g-roles");
   if (!st.me || !st.me.owner) { g.hidden = true; return; }
@@ -966,16 +976,21 @@ async function loadRoles(body) {
   try { d = await api("/api/roles", body); } catch (e) { fail(e); return; }
   g.hidden = false;
   const s = d.stats;
-  const rows = d.items.slice(0, rolesShown).map((i) => `<div class="rl"><div class="t"><b>${esc(i.title)}</b>
+  if (rolesAt >= d.items.length) rolesAt = Math.max(0, d.items.length - 1);
+  const shownItems = rolesAll ? d.items.slice(0, rolesShown) : d.items.slice(rolesAt, rolesAt + 1);
+  const rows = shownItems.map((i) => `<div class="rl"><div class="t"><b>${esc(i.title)}</b>
       <small>${i.roles.map((r) => `<span class="role">${esc(r)}</span>`).join("")}${i.sure ? "" : "<span>· догадка</span>"}${i.jd ? "<span>· по описанию</span>" : ""}</small></div>
     <div class="yn"><button class="y" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="n" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button><button class="e" data-own="${esc(i.key)}" aria-label="Написать свою роль">✎</button></div></div>
     <form class="rl-own" data-ownform="${esc(i.key)}" hidden><input class="inp" list="role-names" maxlength="60" placeholder="Своя роль, например: аналитик данных"><button>OK</button></form>`).join("");
-  const more = Math.min(d.items.length, d.pending) - rolesShown;
+  const more = rolesAll ? Math.min(d.items.length, d.pending) - rolesShown : 0;
+  const nav = !d.items.length ? "" : rolesAll
+    ? '<button class="link block" id="roles-one">Показать по одной</button>'
+    : `<div class="rl-nav"><button id="roles-prev" aria-label="Назад" ${rolesAt ? "" : "disabled"}>‹</button><span>${rolesAt + 1} из ${d.items.length}</span><button id="roles-next" aria-label="Дальше" ${rolesAt < d.items.length - 1 ? "" : "disabled"}>›</button><button class="link" id="roles-every">Все</button></div>`;
   $("#roles-list").innerHTML = `<p class="hint">Вакансии, которые словарь не узнал, ИИ относит к роли сам (в поиске они с 🤖 и ниже точных).
       ✓ верно, ✗ ошибка: ошибка больше не используется, ✎ — написать роль самому.</p>
     <datalist id="role-names">${(d.names || []).map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
     <div class="stats"><span>в поиске ${s.used}</span><span>✓ ${s.checked}</span><span>✗ ${s.rejected}</span><span>ждут проверки ${d.pending}</span></div>
-    ${rows || '<p class="hint">Пока нечего проверять.</p>'}
+    ${nav && !rolesAll ? nav : ""}${rows || '<p class="hint">Пока нечего проверять.</p>'}${rolesAll ? nav : ""}
     ${more > 0 ? '<button class="link block" id="roles-more">Показать ещё</button>' : ""}
     ${s.total ? '<button class="link block" id="roles-reset">Забыть все догадки ИИ (проверенные ✓ останутся)</button>' : ""}`;
   $("#roles-list").querySelectorAll("[data-rk]").forEach((b) => {
@@ -997,6 +1012,11 @@ async function loadRoles(body) {
       loadRoles({ key: f.dataset.ownform, role }).then(() => toast("Запомнил вашу роль"));
     };
   });
+  const go = (id, fn) => { const b = $("#" + id); if (b) b.onclick = () => { haptic(); fn(); loadRoles(); }; };
+  go("roles-prev", () => { rolesAt = Math.max(0, rolesAt - 1); });
+  go("roles-next", () => { rolesAt += 1; });
+  go("roles-every", () => { rolesAll = true; });
+  go("roles-one", () => { rolesAll = false; });
   const m = $("#roles-more");
   if (m) m.onclick = () => { rolesShown += 8; loadRoles(); };
   const r = $("#roles-reset");
