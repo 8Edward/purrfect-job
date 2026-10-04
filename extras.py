@@ -704,7 +704,7 @@ def summary(item, size=2):
     return lines[:3]
 
 
-def funnel(inbox, fits=None):
+def funnel(inbox, fits=None, jobs=True):
     """Numbers for the feed header: vacancies found (duplicates merged), responses, interviews, offers.
     «Found» counts what fits the person's current words, channels and sites (fits), whatever its status.
     A stage counts once it has been reached, so an interview is also a response."""
@@ -720,6 +720,8 @@ def funnel(inbox, fits=None):
             reached["offer"] += 1
     # «вакансий» = the pool still to go through: what fits the settings and has not been decided on (not starred, hidden,
     # archived or responded to). Every decision except the AI score takes a vacancy out of it.
+    if not jobs:  # the caller counts the pool itself (it already has it)
+        return {"jobs": 0, **reached}
     shown = [(k, v) for k, v in inbox.items() if (fits is None or fits(v)) and v.get("status", "new") == "new"
              and not v.get("archived") and not v.get("fav") and not (v.get("track") or {}).get("stage")]
     return {"jobs": len(groups(shown)), **reached}

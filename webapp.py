@@ -23,7 +23,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
-import yaml
 from aiohttp import web
 from telethon import utils
 
@@ -138,7 +137,7 @@ def load_words():
     """Word equivalents from rolegraph.yml `words:` (антифрод = antifraud = fraud…): stem -> [terms]."""
     if not GRAPH_PATH.exists():
         return {}
-    groups = (yaml.safe_load(GRAPH_PATH.read_text(encoding="utf-8")) or {}).get("words") or []
+    groups = tc.read_yaml(GRAPH_PATH).get("words") or []
     out = {}
     for group in groups:
         terms = [str(t) for t in group or [] if str(t).strip()]
@@ -197,7 +196,7 @@ def hh_variants(phrase, words=None):
 def load_graph():
     if not GRAPH_PATH.exists():
         return {}
-    roles = (yaml.safe_load(GRAPH_PATH.read_text(encoding="utf-8")) or {}).get("roles") or {}
+    roles = tc.read_yaml(GRAPH_PATH).get("roles") or {}
     graph = {rid: {"names": [str(n) for n in r.get("names") or []], "also": [str(n) for n in r.get("also") or []],
                    "not": [str(n) for n in r.get("not") or []],
                    "links": dict(r.get("links") or {})}
@@ -682,7 +681,7 @@ class WebApp:
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
             "roles_ai": self.roles_summary() if m.is_owner else None,
-            "funnel": {**extras.funnel(inbox, fits_now(m)), "jobs": new_count},  # «вакансий» = the feed's own pool
+            "funnel": {**extras.funnel(inbox, jobs=False), "jobs": new_count},  # «вакансий» = the feed's own pool
             "stats": {
                 "new": new_count,
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
