@@ -51,6 +51,11 @@ assert wm.format_line(post) == "onsite" and wm.flags({"title": "x", "text": post
 assert wm.format_line("Hybrid 🏙\nSkills") == "hybrid" and wm.format_line("Work format: Office") == "onsite"
 assert wm.format_line("We are an office of 5 people.\nRemote 🏠") == "" and wm.format_line("Our office is great") == ""
 
+# the owner's feed archives office / hybrid vacancies on arrival
+assert wm.not_remote({"title": "x", "text": post}) and wm.not_remote({"title": "BI", "text": "Формат: гибрид, 3 дня в офисе"})
+assert not wm.not_remote({"title": "BI", "text": "Полностью удалённая работа"}) and not wm.not_remote({"title": "BI (Remote, US only)", "location": "Remote"})
+assert not wm.not_remote({"title": "Аналитик", "company": "Сбер", "location": "г Москва"})  # only a city: stays in the feed
+
 # links in posts and JSON-LD
 assert wm.post_links("Подробнее: https://career.habr.com/vacancies/1000.\nПиши @hr https://t.me/hr") == ["https://career.habr.com/vacancies/1000"]
 page = ('<html><script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Data Analyst",'

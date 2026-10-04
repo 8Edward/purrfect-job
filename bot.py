@@ -858,6 +858,9 @@ class JobRadar:
             key = job_key(job)
             if key not in inbox:
                 inbox[key] = to_inbox(job)
+                if workmode.not_remote(inbox[key], inbox[key].get("orig")):
+                    inbox[key]["archived"] = True  # office / hybrid: straight into «Мои → Архив» (reversible), no alert for it
+                    continue
                 items.append(inbox[key])
         save_inbox(inbox)
         return items

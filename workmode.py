@@ -398,6 +398,14 @@ def slim(found):
             "remote": found.get("remote"), "only": (found.get("only") or [])[:5], "text": (found.get("text") or "")[:3000]}
 
 
+NOT_REMOTE_FLAGS = ("⚠️ не удалёнка: офис", "⚠️ гибрид", "⚠️ в оригинале офис", "⚠️ в оригинале гибрид")
+
+
+def not_remote(item, orig=None):
+    """The vacancy itself says office or hybrid (not «only one country», that is another flag)."""
+    return any(f in NOT_REMOTE_FLAGS for f in flags(item, orig))
+
+
 def flags(item, orig=None):
     """Card warnings for a vacancy: «⚠️ в оригинале офис», «⚠️ гибрид», «🌍 только США».
     orig = the resolved original page ({remote, mode, only, text}) when a TG post linked to one."""
