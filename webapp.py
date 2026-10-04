@@ -406,6 +406,7 @@ class WebApp:
         self.radar = radar           # the running bot (JobRadar): clients, lock, owner
         self.posts = self.load_posts_cache()  # channel key -> (read at, [job-shaped posts])
         self.posts_refreshing = {}
+        self.shown = {}              # person id -> {"keys", "twins"}: what the current search has shown so far
         self.posts_dirty = None
         self.results = {}            # person id -> {key: job} from their last search
         self.last_search = {}
@@ -665,10 +666,14 @@ class WebApp:
         query = re.sub(r"\s+", " ", request.query.get("q", "")).strip()[:QUERY_MAX]
         mode = "similar" if request.query.get("mode") == "similar" else "exact"
         off = set(request.query.get("off", "").split(",")) - {""}
+        # part: "fast" = what is at hand (feed, cached channels, site feeds) at once; "chan", "hh", "hima" = the slower
+        # sources one by one, each sends only what the earlier parts did not; "all" = everything in one answer
+        part = request.query.get("part") if request.query.get("part") in ("fast", "chan", "hh", "hima") else "all"
         now_ = time.monotonic()
-        if now_ - self.last_search.get(m.id, 0) < SEARCH_COOLDOWN:
-            await asyncio.sleep(SEARCH_COOLDOWN)
-        self.last_search[m.id] = time.monotonic()
+        if part in ("all", "fast"):
+            if now_ - self.last_search.get(m.id, 0) < SEARCH_COOLDOWN:
+                await asyncio.sleep(SEARCH_COOLDOWN)
+            self.last_search[m.id] = time.monotonic()
         words = load_words()
         if not title_re(query, words):
             return web.json_response({"query": query, "mode": mode, "graph": None, "items": [], "sources": {}})
@@ -737,7 +742,7 @@ class WebApp:
                 return ("syn", "синоним: " + own) if own in graph[rid]["names"] else ("role", "роль: " + own)
             return ("loose", "слова вразброс")
 
-        jobs, counts = await self.gather(m, query, terms, mode)
+        jobs, counts = await self.gather(m, query, terms, mode, part)
         hits, rank = [], {"exact": 0, "syn": 1, "role": 1, "ai": 1.5, "loose": 1.8, "adj": 2, "far": 3, "text": 4}
         inbox, labels = m.load_inbox(), roles.load()
         for job in jobs:
@@ -762,8 +767,12 @@ class WebApp:
             if len(core) > RESULTS_MAX - NEAR_SLOTS:
                 rest = [h for h in hits if h[0] >= 2]
                 hits = core[:RESULTS_MAX - NEAR_SLOTS] + rest[:NEAR_SLOTS] + core[RESULTS_MAX - NEAR_SLOTS:]
-        keep, items, same = {}, [], set()
+        later = part in ("chan", "hh", "hima")
+        shown = self.shown.get(m.id, {"keys": set(), "twins": set()}) if later else {"keys": set(), "twins": set()}
+        keep, items, same = {}, [], set(shown["twins"])
         for _, job, kind, label in hits:
+            if job["key"] in shown["keys"]:
+                continue
             # one vacancy posted on several sites: show it once (no company: the same title on the same site)
             twin = (norm(job.get("title")).strip(), norm(job.get("company")).strip() or "@" + norm(job.get("site") or job.get("chat")))
             if twin in same and twin[1] != "@":
@@ -777,12 +786,16 @@ class WebApp:
                                        fav=inbox.get(key, {}).get("fav", False)))
             data["match"] = {"kind": kind, "label": label}
             items.append(data)
-        self.results[m.id] = keep
-        log.info("search for %s: %r %s -> %d", m.name, query, mode, len(items))
-        return web.json_response({"query": query, "mode": mode, "graph": view, "items": items, "sources": counts,
+        if later:
+            self.results.setdefault(m.id, {}).update(keep)
+        else:
+            self.results[m.id] = keep
+        self.shown[m.id] = {"keys": shown["keys"] | set(keep), "twins": same}
+        log.info("search for %s: %r %s %s -> %d", m.name, query, mode, part, len(items))
+        return web.json_response({"query": query, "mode": mode, "part": part, "graph": view, "items": items, "sources": counts,
                                   "no_role": mode == "similar" and view is None})
 
-    async def gather(self, m, query, terms, mode):
+    async def gather(self, m, query, terms, mode, part="all"):
         """Candidate vacancies from everything this person reads: their inbox, their channels
         (last SEARCH_DAYS days), cached site feeds and a live hh.ru query."""
         jobs, seen = [], set()
@@ -795,17 +808,19 @@ class WebApp:
             counts[where] = counts.get(where, 0) + 1
 
         counts = {}
-        for key, item in m.load_inbox().items():
-            add(dict(item, key=key, date=datetime.fromisoformat(item["date"])), "inbox")
+        if part in ("all", "fast"):
+            for key, item in m.load_inbox().items():
+                add(dict(item, key=key, date=datetime.fromisoformat(item["date"])), "inbox")
         gate = asyncio.Semaphore(4)  # channels are read side by side, a few at a time
 
         async def read(key):
             async with gate:
-                return await self.channel_posts(key, m)
+                return await self.channel_posts(key, m, wait=part != "fast")
         t0 = time.monotonic()
-        hh_task = asyncio.create_task(self.hh_search(m, query, terms))  # hh.ru and Himalayas go meanwhile
-        hima_task = asyncio.create_task(self.himalayas_search(m, query)) if "himalayas" in m.sites(guests.listed_sites()) else None
-        chan_tasks = [asyncio.ensure_future(read(k)) for k in m.selected(guests.load_pool())]
+        hh_task = asyncio.create_task(self.hh_search(m, query, terms)) if part in ("all", "hh") else None  # hh.ru and Himalayas go meanwhile
+        hima_task = (asyncio.create_task(self.himalayas_search(m, query))
+                     if part in ("all", "hima") and "himalayas" in m.sites(guests.listed_sites()) else None)
+        chan_tasks = [asyncio.ensure_future(read(k)) for k in m.selected(guests.load_pool())] if part in ("all", "fast", "chan") else []
         if chan_tasks:  # whatever is read within SEARCH_WAIT counts; slow channels finish in the background for next time
             await asyncio.wait(chan_tasks, timeout=SEARCH_WAIT)
         for task in chan_tasks:
@@ -816,7 +831,7 @@ class WebApp:
         tagger = guests.tagger_for(m)
         listed = guests.listed_sites()
         feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
-        for provider in m.sites(listed):
+        for provider in m.sites(listed) if part in ("all", "fast") else []:
             for j in (feed.get(provider) or {}).get("jobs", []):
                 if j.get("url"):
                     add(guests.web_job(j, listed.get(provider, provider), m, tagger), "sites")
@@ -825,7 +840,7 @@ class WebApp:
             for j in await self.within(hima_task):
                 add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m, tagger), "sites")
         t3 = time.monotonic()
-        for j in await self.within(hh_task):
+        for j in await self.within(hh_task) if hh_task else []:
             add(guests.web_job(j, guests.HH_NAME, m, tagger), "hh")
         log.info("search timing: channels %.1fs, site feeds %.1fs, himalayas wait %.1fs, hh wait %.1fs, %d candidates",
                  t1 - t0, t2 - t1, t3 - t2, time.monotonic() - t3, len(jobs))
@@ -910,15 +925,18 @@ class WebApp:
             task.add_done_callback(lambda _: self.posts_refreshing.pop(key, None))
         await asyncio.shield(task)
 
-    async def channel_posts(self, key, member):
+    async def channel_posts(self, key, member, wait=True):
         """Job posts of one public channel for the last SEARCH_DAYS days. A copy kept on disk is
         shown at once; if it is older than POSTS_TTL it is refreshed in the background."""
         hit = self.posts.get(key)
         if hit and datetime.now(timezone.utc) - hit[0] >= POSTS_TTL:
             asyncio.create_task(self.refresh_channel(key))
         elif not hit:
-            await self.refresh_channel(key)
-            hit = self.posts.get(key)
+            if wait:
+                await self.refresh_channel(key)
+                hit = self.posts.get(key)
+            else:  # the quick part of a search does not wait for Telegram: the channel is read for the next part
+                asyncio.create_task(self.refresh_channel(key))
         posts = hit[1] if hit else []
         flt = tc.job_filter_from(member.cfg())
         out = []

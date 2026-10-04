@@ -627,21 +627,42 @@ async function runSearch() {
   const q = $("#q").value.trim();
   if (!q) return;
   $("#q").blur();
-  $("#res-head").textContent = "Ищу в ленте, каналах за неделю, на сайтах и hh.ru…";
+  $("#res-head").textContent = "Ищу в ленте, сохранённых каналах и на сайтах…";
   $("#results").innerHTML = '<div class="skeleton"></div>'.repeat(4);
   const seq = (st.searchSeq = (st.searchSeq || 0) + 1);
+  const base = `/api/search?q=${encodeURIComponent(q)}&mode=${st.mode}&off=${encodeURIComponent([...st.off].join(","))}`;
+  /* in portions: first what is at hand (feed, saved channel posts, site feeds), then the slower sources one by one;
+     every later portion only adds what the earlier ones did not find */
+  const LATER = [["chan", "свежие посты каналов"], ["hh", "hh.ru"], ["hima", "Himalayas"]];
+  const src = {}, names = [["inbox", "лента"], ["channels", "каналы"], ["sites", "сайты"], ["hh", "hh.ru"]];
+  let noRole = false;
+  const head = (waiting) => {
+    const parts = names.filter(([k]) => src[k]).map(([k, n]) => `${n} ${src[k]}`);
+    $("#res-head").innerHTML = (noRole ? "Этой роли пока нет в графе: показываю точные совпадения. Граф можно дополнить в rolegraph.yml.<br>" : "")
+      + `Найдено: <b>${st.results.length}</b>` + (parts.length ? ` · просмотрел: ${esc(parts.join(", "))}` : "")
+      + (waiting ? ` · ещё ищу: ${esc(waiting)}…` : "");
+  };
   try {
-    const d = await api(`/api/search?q=${encodeURIComponent(q)}&mode=${st.mode}&off=${encodeURIComponent([...st.off].join(","))}`);
+    const d = await api(base + "&part=fast");
     if (seq !== st.searchSeq) return;  // a newer search is on its way: drop this answer
     st.results = d.items;
+    noRole = d.no_role;
     renderGraph(d.graph);
-    const src = d.sources || {};
-    const parts = [["inbox", "лента"], ["channels", "каналы"], ["sites", "сайты"], ["hh", "hh.ru"]]
-      .filter(([k]) => src[k]).map(([k, n]) => `${n} ${src[k]}`);
-    $("#res-head").innerHTML = (d.no_role ? "Этой роли пока нет в графе: показываю точные совпадения. Граф можно дополнить в rolegraph.yml.<br>" : "")
-      + `Найдено: <b>${d.items.length}</b>` + (parts.length ? ` · просмотрел: ${esc(parts.join(", "))}` : "");
+    for (const [k, n] of Object.entries(d.sources || {})) src[k] = (src[k] || 0) + n;
+    head(LATER[0][1]);
     renderResults();
     haptic();
+    for (let i = 0; i < LATER.length; i++) {
+      let more;
+      try { more = await api(`${base}&part=${LATER[i][0]}`); } catch (e) { continue; }  // a slow source failing does not spoil the rest
+      if (seq !== st.searchSeq) return;
+      st.results = st.results.concat(more.items);
+      for (const [k, n] of Object.entries(more.sources || {})) src[k] = (src[k] || 0) + n;
+      head(LATER[i + 1] && LATER[i + 1][1]);
+      if (more.items.length) renderResults();
+    }
+    head("");
+    renderResults();
   } catch (e) { $("#results").innerHTML = ""; $("#res-head").textContent = ""; fail(e); }
 }
 function renderResults() {

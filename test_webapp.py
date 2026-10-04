@@ -267,6 +267,13 @@ async def main():
                 assert "Бизнес-аналитик" in titles and not any("Системн" in t for t in titles), titles
                 assert {i["match"]["kind"] for i in s["items"]} <= {"exact", "syn", "role", "loose"} and s["graph"] is None, [(i["title"], i["match"]) for i in s["items"]]
                 assert s["sources"]["channels"] == 2  # the 30-day-old post is out
+                # in portions: fast + chan + hh + hima = the same set as one answer, nothing twice
+                got = []
+                for part in ("fast", "chan", "hh", "hima"):
+                    d = await (await c.get("/api/search?q=бизнес аналитик&mode=exact&part=" + part, headers=auth)).json()
+                    assert d["part"] == part
+                    got += [i["key"] for i in d["items"]]
+                assert len(got) == len(set(got)) and set(got) == {i["key"] for i in s["items"]}, (got, [i["key"] for i in s["items"]])
                 # a post that only mentions the phrase deep in its text comes last, labelled
                 app.posts["datajob"][1].append({"source": "tg", "key": "1000000000777_8", "chat": "Data Jobs", "chat_id": -1, "msg_id": 8,
                                                 "date": datetime.now(timezone.utc), "link": "https://t.me/datajob/8",
