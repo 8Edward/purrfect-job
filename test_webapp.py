@@ -272,6 +272,8 @@ async def main():
                 n = src["words"]["role"].index("аналитик требований")
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "words", "group": "role", "remove": n})).json()
                 assert "аналитик требований" not in src["words"]["role"]
+                src = await (await c.post("/api/sources", headers=auth, json={"type": "words", "group": "negative", "clear": True})).json()
+                assert src["words"]["negative"] == [] and src["words"]["role"]  # «Сбросить» empties only that group
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "hh", "query": "  BA  ", "remote": False})).json()
                 assert src["hh"] == {"query": "BA", "remote": False}
                 assert (await c.post("/api/sources", headers=auth, json={"type": "boom"})).status == 400

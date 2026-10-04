@@ -716,6 +716,7 @@ async function loadSources(data) {
       : `<span class="hint">${g === "role" ? "Пусто: добавьте профессию и навыки." : "Пусто."}</span>`;
   }
   $$(".word").forEach((b) => (b.onclick = () => change({ type: "words", group: b.dataset.g, remove: +b.dataset.n }, "Удалил")));
+  $$(".reset-words").forEach((b) => { b.hidden = !s.words[b.dataset.g].length; });
   const on = s.channels.filter((c) => c.on).length;
   $("#ch-head").innerHTML = `<span class="sn">📡 Каналы</span><small>${on} из ${s.channels.length} · максимум ${s.max_pool}</small>`;
   $("#sum-role").textContent = s.words.role.length ? s.words.role[0] + (s.words.role.length > 1 ? ` +${s.words.role.length - 1}` : "") : "пусто";
@@ -1056,6 +1057,12 @@ $("#view-toggle").onclick = () => {
 $$("#s-saved .seg button").forEach((b) => (b.onclick = () => { st.saved = b.dataset.v; loadSaved(); }));
 $("#b-yes").onclick = () => topCard() && decide(topCard(), true);
 $("#b-no").onclick = () => topCard() && decide(topCard(), false);
+/* «Сбросить» in «Что ищу» / «Стоп-слова»: the first tap asks, the second (within 4 s) empties the list */
+$$(".reset-words").forEach((b) => (b.onclick = () => {
+  if (b.dataset.ask) { clearTimeout(+b.dataset.ask); delete b.dataset.ask; b.textContent = "Сбросить"; return change({ type: "words", group: b.dataset.g, clear: true }, "Список очищен"); }
+  b.textContent = "Точно очистить всё? Нажмите ещё раз";
+  b.dataset.ask = setTimeout(() => { delete b.dataset.ask; b.textContent = "Сбросить"; }, 4000);
+}));
 $("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); loadFeed().catch(fail); };
 $("#score-new").onclick = scoreNew;
 $("#refresh").onclick = refresh;

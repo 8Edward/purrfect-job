@@ -233,6 +233,7 @@ SORTS = {  # feed order: newest first, or by pay / AI score / starred, newest fi
     "salary": lambda g: -max(extras.salary_value(v) for _, v in g),
     "ai": lambda g: -max(((v.get("ai") or {}).get("score") or 0) for _, v in g),
     "fav": lambda g: -int(any(v.get("fav") for _, v in g)),
+    "az": lambda g: (min((v.get("title") or "").casefold().lstrip(" \"'«([#") for _, v in g), min((v.get("company") or "").casefold() for _, v in g)),
 }
 PAGE_MAX = 100
 INTERVALS = [15, 30, 60, 120, 240]  # «Как часто искать», minutes
@@ -761,6 +762,8 @@ class WebApp:
             if data.get("add"):
                 added, refused = guests.add_words(search, data["group"], str(data["add"]))
                 note = "; ".join(f"{w} — {why}" for w, why in refused) or None
+            elif data.get("clear"):  # «Сбросить»: the whole group is emptied (the app asks twice)
+                search.setdefault("keywords", {})[data["group"]] = []
             elif isinstance(data.get("remove"), int):
                 words = search.get("keywords", {}).get(data["group"], [])
                 if 0 <= data["remove"] < len(words):

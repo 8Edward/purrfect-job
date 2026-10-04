@@ -48,7 +48,7 @@
     <div class="feedbar">
       <select class="inp sm" id="sort" aria-label="Сортировка">
         <option value="date">Сначала новые</option><option value="salary">По зарплате</option>
-        <option value="ai">По оценке ИИ</option><option value="fav">Сначала избранное</option>
+        <option value="ai">По оценке ИИ</option><option value="fav">Сначала избранное</option><option value="az">По алфавиту А–Я</option>
       </select>
       <button class="ai-btn sm" id="score-new" hidden>✨ Оценить новые</button>
     </div>
@@ -67,8 +67,10 @@
     <h3 class="feed-set">📥 Что попадает в ленту</h3>
     <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск ниже они не влияют. Нажмите на блок, чтобы открыть.</div>
     <details class="group fold" id="g-words"><summary><span class="sn">🎯 Что ищу</span><small id="sum-role"></small></summary><div class="words" id="w-role"></div>
+      <button type="button" class="link reset-words" data-g="role">Сбросить</button>
       <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></details>
     <details class="group fold"><summary><span class="sn">🚫 Стоп-слова</span><small id="sum-negative"></small></summary><div class="words" id="w-negative"></div>
+      <button type="button" class="link reset-words" data-g="negative">Сбросить</button>
       <form class="add" data-group="negative"><input placeholder="Например: стажёр, офис" maxlength="300"><button>+</button></form></details>
     <details class="group fold" id="g-ch"><summary id="ch-head"><span class="sn">📡 Каналы</span></summary><div class="bulk"><button type="button" data-bulk="channels_all" data-on="1">Включить все</button><button type="button" data-bulk="channels_all" data-on="0">Выключить все</button></div><div id="ch-list"></div>
       <form class="add" id="ch-add"><input placeholder="@канал или t.me/ссылка" maxlength="300"><button>+</button></form></details>
