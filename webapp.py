@@ -306,6 +306,11 @@ def feed_pairs(m, inbox):
     return keep, len(new) - len(keep)
 
 
+def feed_new_count(m):
+    """How many new vacancies the feed shows (what fits today's settings, duplicates merged): the same number everywhere."""
+    return len(extras.groups(feed_pairs(m, m.load_inbox())[0]))
+
+
 def searchable(job):
     return " ".join([job.get("title") or "", job.get("company") or "", job.get("text") or ""])
 

@@ -223,10 +223,12 @@ def app_button(url, text="📱 Открыть приложение"):
     return types.KeyboardInlineButton(text, types.InlineButtonTypeWebView(url))
 
 
-def home_screen(inbox, next_check=None, owner=False, app_url=None):
+def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None):
     """The chat's only screen: the radar animation, a line about new vacancies and the app button.
     Everything else (feed, search, settings, résumé) lives in the app; the owner keeps 👥 Близкие here."""
     s = stats_of(inbox)
+    if new is not None:  # the app's own count (fits the current settings), not every stored vacancy
+        s["new"] = new
     if s["new"]:
         n = s["new"]
         hello = f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя"
@@ -655,7 +657,7 @@ class JobRadar:
         home = tc.load_state().get("home_msg")
         if home:
             try:
-                caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=url)
+                caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=url, new=webapp.feed_new_count(self.me))
                 await self.edit_screen(home, caption, buttons)
             except Exception:
                 pass  # the home message may be gone or unchanged
@@ -769,7 +771,7 @@ class JobRadar:
         log.info("app buttons re-pointed in %d messages", fixed)
 
     async def show_home(self, target=None):
-        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url)
+        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url, new=webapp.feed_new_count(self.me))
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True)
         state = tc.load_state()
@@ -1448,7 +1450,7 @@ class JobRadar:
     # ------------------------------------------------------------ 👥 family: the guest's side
 
     async def guest_show_home(self, guest, target=None):
-        caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url)
+        caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url, new=webapp.feed_new_count(guest))
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
         msg = await self.send_screen(caption, buttons, guest=guest, home=True)
