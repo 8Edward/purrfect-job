@@ -33,6 +33,7 @@ import extras
 import filtercheck
 import guests
 import resume
+import letters
 import resume_ai
 import roles
 import sourcestats
@@ -498,6 +499,8 @@ class WebApp:
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
         r.add_post("/api/feedback", self.api_feedback)
+        r.add_post("/api/apply/compose", self.api_apply_compose)
+        r.add_post("/api/apply/presets", self.api_apply_presets)
         r.add_get("/api/plan", self.api_plan)
         r.add_post("/api/plan", self.api_plan_make)
         r.add_get("/api/cv", self.api_cv)
@@ -1651,17 +1654,90 @@ class WebApp:
     async def api_apply_prepare(self, request):
         """Draft a response: the letter in the vacancy's language, the résumé version to send, where it can go."""
         m = self.owner_only(request)
-        key = str((await self.body(request)).get("key") or "")
+        body = await self.body(request)
+        key = str(body.get("key") or "")
         item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
         if not item:
             return self.bad("Вакансия не найдена", 404)
-        if self.running(m, "apply"):
+        if body.get("mode") == "ai" and self.running(m, "apply"):
             return self.bad("Отклик уже готовится — подождите.", 409)
+        if body.get("mode") != "ai":  # the default: a letter from templates, no AI, no tokens, at once
+            try:
+                return web.json_response({"result": await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""))})
+            except ValueError as e:
+                return self.bad(str(e))
         if resume_ai.uses_left(m) <= 0:
             return self.bad("ИИ на сегодня всё: дневной лимит исчерпан.", 429)
         jid = self.new_ai_job(m, "apply", key=key)
         asyncio.create_task(self.run_ai_job(jid, m, lambda: self.draft_one(m, key, item)))
         return web.json_response({"job": jid, "queued": self.ai.lock.locked()})
+
+    PRESET_MAX, PRESET_TEXT = 10, 700
+
+    def about_presets(self, m, md, lang):
+        """«О себе» texts to choose from: the résumé's own + the ones the person saved (in the letter's language or any)."""
+        saved = [p for p in (m.load_state().get("apply_presets") or []) if p.get("lang") in (lang, "any", None)]
+        return letters.resume_presets(md) + [{"id": p["id"], "name": p["name"], "text": p["text"]} for p in saved]
+
+    async def draft_tpl(self, m, key, item, tone="", preset=""):
+        """A response draft from templates (letters.py): the same fields as draft_one plus the choices shown in the sheet."""
+        try:
+            text = await self.vacancy_text(m, {"job_key": key})
+        except ValueError:
+            text = item.get("text") or ""
+        head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n{item.get('location') or ''}\n\n"
+        lang = resume.detect_lang(text or head)
+        meta = apply.pick_version(m, lang)
+        if not meta:
+            raise ValueError("Сначала добавьте резюме во вкладке «▤ Резюме».")
+        _, md = resume.get_version(m, meta["id"])
+        tone = tone if tone in letters.TONES else letters.DEFAULT_TONE
+        presets = self.about_presets(m, md, lang)
+        about = next((p["text"] for p in presets if p["id"] == preset), None)
+        name = letters.parse_resume(md)["name"]
+        return {"key": key, "title": item.get("title") or "", "company": item.get("company") or "",
+                "letter": letters.compose(md, item, head + text, lang, tone, about), "warning": "", "lang": lang,
+                "subject": apply.subject_for(item, name, lang), "channels": apply.contacts(item, text),
+                "resume": {"vid": meta["id"], "name": meta["name"], "lang": meta.get("lang", "ru")},
+                "smtp": bool(apply.smtp_settings(self.radar.cfg)), "dry": apply.dry_run(self.radar.cfg),
+                "tone": tone, "tones": letters.tone_list("ru"), "presets": presets, "preset": preset if about is not None else "",
+                "ai_left": resume_ai.uses_left(m)}
+
+    async def api_apply_compose(self, request):
+        """Rebuild the letter with another tone / «о себе» text (typed or a preset). Free: no AI."""
+        m = self.owner_only(request)
+        body = await self.body(request)
+        key = str(body.get("key") or "")
+        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        if not item:
+            return self.bad("Вакансия не найдена", 404)
+        try:
+            draft = await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""))
+            if isinstance(body.get("about"), str):  # the person's own paragraph, not saved
+                _, md = resume.get_version(m, draft["resume"]["vid"])
+                tone = draft["tone"]
+                head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n"
+                draft["letter"] = letters.compose(md, item, head + (item.get("text") or ""), draft["lang"], tone, body["about"][:self.PRESET_TEXT])
+        except ValueError as e:
+            return self.bad(str(e))
+        return web.json_response({"letter": draft["letter"], "tone": draft["tone"]})
+
+    async def api_apply_presets(self, request):
+        """Save / remove a «о себе» preset of the person: {name, text} or {remove: id}."""
+        m = self.owner_only(request)
+        body = await self.body(request)
+        saved = list(m.load_state().get("apply_presets") or [])
+        if body.get("remove"):
+            saved = [p for p in saved if p.get("id") != body["remove"]]
+        else:
+            name, text = str(body.get("name") or "").strip()[:40], str(body.get("text") or "").strip()[:self.PRESET_TEXT]
+            if not name or len(text) < 10:
+                return self.bad("Нужны название и текст (от 10 символов)")
+            if len(saved) >= self.PRESET_MAX:
+                return self.bad(f"Не больше {self.PRESET_MAX} своих текстов: удалите ненужный")
+            saved.append({"id": "p" + secrets.token_hex(4), "name": name, "text": text, "lang": resume.detect_lang(text)})
+        m.update_state(apply_presets=saved)
+        return web.json_response({"ok": True, "n": len(saved)})
 
     async def draft_one(self, m, key, item):
         """One response draft: the letter in the vacancy's language from the résumé's facts, where it can go."""

@@ -416,12 +416,12 @@ async function scoreJob(item) {
 async function applyFlow(item) {
   st.sheet = { apply: item };
   $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
-    <div class="empty"><div class="spinner"></div><b>Готовлю письмо</b>Пишу на языке вакансии, только по фактам из резюме. До минуты.</div>`;
+    <div class="empty"><div class="spinner"></div><b>Собираю письмо</b>По шаблону из вашего резюме, на языке вакансии. Без ИИ.</div>`;
   $("#sheet").hidden = $("#sheet-bg").hidden = false;
   try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
   try {
     const d = await api("/api/apply/prepare", { key: item.key });
-    const r = await waitJob(d.job);
+    const r = d.result || (await waitJob(d.job));
     if (!st.sheet || st.sheet.apply !== item) return;
     renderApply(item, r);
   } catch (e) { closeSheet(); fail(e); }
@@ -433,15 +433,55 @@ function renderApply(item, r) {
   $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
     <p class="hint">Проверьте и поправьте письмо. Резюме: «${esc(r.resume.name)}»${r.resume.lang !== r.lang ? " (другой язык, чем вакансия — можно перевести во вкладке «Резюме»)" : ""}. Ничего не уйдёт, пока вы не нажмёте кнопку.${r.dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
     ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
+    ${r.tones ? `<div class="tzrow"><label>Тон письма<select class="inp" id="ap-tone">${r.tones.map((t) => `<option value="${esc(t.id)}" ${t.id === r.tone ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
+      <label>О себе<select class="inp" id="ap-preset"><option value="">Из резюме</option>${r.presets.filter((p) => p.id !== "resume").map((p) => `<option value="${esc(p.id)}" ${p.id === r.preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
+      <label class="fld"><span>Абзац «о себе» (можно написать свой)</span><textarea class="inp" id="ap-about" rows="3" maxlength="700">${esc((r.presets.find((p) => p.id === (r.preset || "resume")) || {}).text || "")}</textarea></label>
+      <div class="ap-btns"><button id="ap-rebuild">🔄 Пересобрать письмо</button><button id="ap-savepreset">💾 Сохранить «о себе»</button></div>
+      <div class="rl-own" id="ap-nameRow" hidden><input class="inp" id="ap-pname" maxlength="40" placeholder="Название, например: Коротко про меня"><button id="ap-psave">OK</button></div>` : ""}
     ${ch.email.length ? `<label class="fld"><span>Тема письма</span><input class="inp" id="ap-subj" value="${esc(r.subject)}" maxlength="200"></label>` : ""}
     <label class="fld"><span>Письмо</span><textarea class="inp big" id="ap-text">${esc(r.letter)}</textarea></label>
     <div class="ap-btns">${mails}${tgs}
       ${ch.link ? '<button data-site="1">🔗 Открыть вакансию</button>' : ""}
-      <button data-copy="1">📋 Скопировать письмо</button></div>
+      <button data-copy="1">📋 Скопировать письмо</button>
+      ${r.tones ? `<button data-ai="1">✨ Переписать с ИИ${r.ai_left != null ? ` (осталось ${r.ai_left})` : ""}</button>` : ""}</div>
     ${!r.smtp && !r.dry && ch.email.length ? '<p class="hint">Чтобы я отправлял письма сам, нужен «пароль приложения» Gmail в config.yml — спросите меня в чате, покажу по шагам.</p>' : ""}
     <p class="hint">После «Открыть…» письмо и PDF резюме придут в чат с ботом, а вакансия отметится «Откликнулся».</p>
     <div class="btns"><button class="wide" id="ap-cancel">Отмена</button></div>`;
   const text = () => $("#ap-text").value;
+  const rebuild = async (aboutText) => {
+    try {
+      const body = { key: item.key, tone: $("#ap-tone").value, preset: $("#ap-preset").value };
+      if (aboutText != null) body.about = aboutText;
+      const d = await api("/api/apply/compose", body);
+      $("#ap-text").value = d.letter;
+      haptic(); toast("Письмо пересобрано");
+    } catch (e) { fail(e); }
+  };
+  if ($("#ap-rebuild")) {
+    $("#ap-tone").onchange = () => rebuild($("#ap-about").value);
+    $("#ap-preset").onchange = () => {
+      const p = r.presets.find((x) => x.id === $("#ap-preset").value) || r.presets.find((x) => x.id === "resume");
+      $("#ap-about").value = p ? p.text : "";
+      rebuild($("#ap-about").value);
+    };
+    $("#ap-rebuild").onclick = () => rebuild($("#ap-about").value);
+    $("#ap-savepreset").onclick = () => { $("#ap-nameRow").hidden = !$("#ap-nameRow").hidden; $("#ap-pname").focus(); };
+    $("#ap-psave").onclick = async () => {
+      const name = $("#ap-pname").value.trim();
+      if (!name) return toast("Напишите название");
+      try { await api("/api/apply/presets", { name, text: $("#ap-about").value }); haptic("ok"); toast("Сохранил. Он будет в списке «О себе»"); applyFlow(item); } catch (e) { fail(e); }
+    };
+  }
+  $$("[data-ai]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true; b.textContent = "Пишу с ИИ…";
+    try {
+      const d = await api("/api/apply/prepare", { key: item.key, mode: "ai" });
+      const ai = await waitJob(d.job);
+      $("#ap-text").value = ai.letter;
+      if (ai.warning) toast("⚠️ " + ai.warning);
+      b.disabled = false; b.textContent = "✨ Переписать с ИИ";
+    } catch (e) { b.disabled = false; b.textContent = "✨ Переписать с ИИ"; fail(e); }
+  }));
   const done = async (how) => {
     try {
       const d = await api("/api/apply/done", { key: item.key, how, text: text(), vid: r.resume.vid });

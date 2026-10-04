@@ -422,7 +422,12 @@ async def main():
                                   "date": now.isoformat(), "text": "Ищем аналитика данных, SQL. Резюме на hr@uzum.com или @hr_uzum."}
                 g.save_inbox(inbox)
                 app.ai = FakeClaude([json.dumps({"text": "Здравствуйте! Я аналитик данных, пишу SQL-запросы к PostgreSQL. " * 3})])
-                job = await (await c.post("/api/apply/prepare", headers=auth, json={"key": "mail1"})).json()
+                free = await (await c.post("/api/apply/prepare", headers=auth, json={"key": "mail1"})).json()  # default: templates, no AI
+                assert free["result"]["letter"] and free["result"]["tones"] and free["result"]["channels"]["email"] == ["hr@uzum.com"], free
+                again = await (await c.post("/api/apply/compose", headers=auth, json={"key": "mail1", "tone": "short", "about": "Мой абзац."})).json()
+                assert "Мой абзац." in again["letter"] and again["tone"] == "short"
+                assert (await c.post("/api/apply/presets", headers=auth, json={"name": "x", "text": "коротко"})).status == 400
+                job = await (await c.post("/api/apply/prepare", headers=auth, json={"key": "mail1", "mode": "ai"})).json()
                 j = await wait(c, auth, job["job"])
                 assert j["status"] == "done", j
                 r = j["result"]

@@ -29,10 +29,10 @@ import tg_collect as tc
 CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
 PER_RUN = 2         # calls per background run (each ~20 s, the résumé AI waits meanwhile)
-DAILY = 12          # title calls per day: a small strict budget (owner's subscription, shared with everything else)
+DAILY = 6           # title calls per day: a small strict budget (owner's subscription, shared with everything else)
 MIN_BATCH = 15      # fewer unknown titles than this wait and pile up: one big call is cheaper than many small ones
                     # (so the spending shrinks by itself as the dictionary and the cache grow)
-DEEP_DAILY = 8      # description calls per day, a budget of their own
+DEEP_DAILY = 4      # description calls per day, a budget of their own
 DEEP_MIN = 4        # fewer candidates than this wait for more
 DEEP_PER_RUN = 8    # vacancies per second-look call (each page is read first, then one Claude call)
 DEEP_CHARS = 1800   # description characters given to Claude per vacancy
