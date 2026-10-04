@@ -12,6 +12,10 @@ Two layers (2026-10-04):
      marked «🤖» on the card;
    - the owner reviews them in the app: ✓ = checked (ranks like the dictionary), ✗ = never used;
    - «Сбросить» forgets everything Claude said (checked ✓ answers stay).
+3. A second look (2026-10-04): a title Claude was unsure about (or gave no role) is looked at again with the
+   REAL description: jdfetch.py follows the vacancy's link chain to the original page and Claude judges
+   by the text. The answer replaces the title-only guess (`jd: true`, shown «по описанию»), goes through
+   the same ✓/✗ review and never touches the dictionary by itself.
 """
 
 import json
@@ -26,6 +30,8 @@ CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
 PER_RUN = 2         # calls per background run (each ~20 s, the résumé AI waits meanwhile)
 DAILY = 40          # calls per day (owner's subscription, shared with everything else)
+DEEP_PER_RUN = 6    # vacancies per second-look call (each page is read first, then one Claude call)
+DEEP_CHARS = 1800   # description characters given to Claude per vacancy
 MAX_ENTRIES = 30000
 TIMEOUT = 180
 
@@ -148,6 +154,71 @@ async def classify(ai, jobs, graph):
             data["labels"][k] = v
     save(data)
     return sum(1 for v in got.values() if v["roles"])
+
+
+DEEP_SYSTEM = SYSTEM + """
+Each vacancy comes with its REAL description: judge by what the person will actually do there,
+the title may mislead. "sure": true only when the description makes the role clear."""
+
+
+def deep_candidates(jobs, limit=DEEP_PER_RUN):
+    """Vacancies whose title-only label is unsure or empty, not yet read in full, newest first."""
+    import jdfetch
+    data = load()
+    out, seen = [], set()
+    for job in sorted(jobs, key=lambda j: j["date"].timestamp() if hasattr(j["date"], "timestamp") else 0, reverse=True):
+        k = key_of(job)
+        v = data["labels"].get(k)
+        if k in seen or not v or v.get("ok") is not None or v.get("jdtry"):
+            continue
+        seen.add(k)
+        if v.get("roles") and v.get("sure"):
+            continue
+        if jdfetch.link_of(job):
+            out.append(job)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def deep_prompt(items, graph):
+    roles = "\n".join(f"- {rid}: {', '.join(r['names'][:5])}" for rid, r in graph.items())
+    lines = [f"{i}. {re.sub(r'\s+', ' ', job.get('title') or '')[:120]}\nDESCRIPTION: {text[:DEEP_CHARS]}"
+             for i, (job, text) in enumerate(items, 1)]
+    return (f"Roles:\n{roles}\n\nVacancies:\n" + "\n\n".join(lines) +
+            '\n\nReturn {"1": {"roles": ["role-id"], "sure": true}, ...} for every number. '
+            '"sure": false when you are guessing.')
+
+
+async def deep(ai, jobs, graph):
+    """The second look: read the originals, one Claude call for those that had a real description.
+    Every tried vacancy is marked (`jdtry`) so a dead link is not retried on every search. -> how many got a role."""
+    import asyncio
+    import jdfetch
+    data = load()
+    if calls_left(data) <= 0 or not jobs:
+        return 0
+    texts = await asyncio.gather(*(asyncio.to_thread(jdfetch.describe, jdfetch.link_of(j)) for j in jobs))
+    got_text = [(j, t) for j, t in zip(jobs, texts) if t]
+    out = {}
+    if got_text:
+        text = await ai.ask(DEEP_SYSTEM, deep_prompt(got_text, graph), timeout=TIMEOUT)
+        out = parse(text, [j for j, _ in got_text], graph)
+    data = load()
+    today = date.today().isoformat()
+    meta = data["meta"]
+    if got_text:
+        meta.update(day=today, n=(meta.get("n", 0) if meta.get("day") == today else 0) + 1)
+    for j in jobs:
+        v = data["labels"].get(key_of(j))
+        if not v or v.get("ok") is not None:
+            continue
+        v["jdtry"] = True
+        new = out.get(key_of(j))
+        if new and (new["roles"] or not v.get("roles")):  # the description decides; never lose a role for nothing
+            v.update(roles=new["roles"], sure=new["sure"], jd=True, at=new["at"])
+    save(data)
+    return sum(1 for j in jobs if (data["labels"].get(key_of(j)) or {}).get("jd") and data["labels"][key_of(j)].get("roles"))
 
 
 def review_list(limit=60):

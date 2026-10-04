@@ -553,11 +553,14 @@ class WebApp:
             graph, found = load_graph(), 0
             try:  # the first pass over a few thousand titles takes seconds: not in the request
                 todo = await asyncio.to_thread(roles.unknown, jobs, lambda title: bool(roles_of_title(title)))
-                if not todo:
-                    return
                 for i in range(0, min(len(todo), roles.BATCH * roles.PER_RUN), roles.BATCH):
                     found += await roles.classify(self.ai, todo[i:i + roles.BATCH], graph)
-                log.info("roles: Claude labelled %d of %d unknown titles, %d got a role", min(len(todo), roles.BATCH * roles.PER_RUN), len(todo), found)
+                if todo:
+                    log.info("roles: Claude labelled %d of %d unknown titles, %d got a role", min(len(todo), roles.BATCH * roles.PER_RUN), len(todo), found)
+                look = await asyncio.to_thread(roles.deep_candidates, jobs)  # unsure ones: read the real description
+                if look:
+                    n = await roles.deep(self.ai, look, graph)
+                    log.info("roles: second look at %d vacancies by their descriptions, %d got a role", len(look), n)
             except Exception as e:
                 log.warning("roles: Claude labelling failed: %s", e)
         self.roles_task = asyncio.create_task(run())

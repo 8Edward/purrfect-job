@@ -84,6 +84,7 @@ assert webapp.title_roles("Senior Data Engineer – Data Analytics Platform")[0]
 assert webapp.title_roles("Аналитик DWH")[0][2] == "dwh-analyst"
 
 # Claude's labels: kept apart, only sure ones used, ✓/✗ review, reset keeps checked ones
+import re  # noqa: E402
 import roles  # noqa: E402
 roles.CACHE_PATH = Path(tempfile.mkdtemp()) / "roles.json"
 jobs_ = [{"source": "web", "key": "a", "title": "Payments Integrity Specialist", "date": datetime.now(timezone.utc)},
@@ -105,6 +106,40 @@ assert roles.label_of(jobs_[0]) == ([], False)                  # ✗: never use
 roles.review(items[0]["key"], True)
 assert roles.label_of(jobs_[0]) == (["fraud-analyst"], True)
 assert roles.reset() == 1 and roles.label_of(jobs_[0]) == (["fraud-analyst"], True)  # ✓ survives a reset
+
+# second look: the REAL description via a redirect chain, then Claude judges by it
+import asyncio  # noqa: E402
+import http.server  # noqa: E402
+import threading  # noqa: E402
+import jdfetch  # noqa: E402
+LONG = "We are hiring a payments fraud analyst to investigate chargebacks and build detection rules. " * 8
+class _H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/go":
+            self.send_response(302); self.send_header("Location", "/agg"); self.end_headers(); return
+        body = {"/agg": '<html><body><p>short</p><a href="/real">Apply on company site</a></body></html>',
+                "/real": f"<html><body><main>{LONG}</main></body></html>"}.get(self.path, "<html>x</html>")
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write(body.encode())
+    def log_message(self, *a): pass
+srv = http.server.HTTPServer(("127.0.0.1", 0), _H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{srv.server_port}"
+jdfetch.SKIP = re.compile(r"^$")  # the test server is on localhost
+assert "payments fraud analyst" in jdfetch.describe(base + "/go"), "redirect + aggregator + apply link"
+assert jdfetch.describe(base + "/nothing") == ""
+class _Ai:
+    async def ask(self, system, prompt, timeout=0):
+        assert "payments fraud analyst" in prompt and "REAL description" in system
+        return '{"1": {"roles": ["fraud-analyst"], "sure": true}}'
+roles.DAILY = 40
+jd = {"source": "web", "key": "d", "title": "Risk Guru", "link": base + "/go", "date": datetime.now(timezone.utc)}
+roles.save({"labels": {"t:risk guru": {"title": "Risk Guru", "roles": [], "sure": False, "at": "x"}}, "meta": {}})
+cand = roles.deep_candidates([jd])
+assert [j["key"] for j in cand] == ["d"]
+assert asyncio.run(roles.deep(_Ai(), cand, graph)) == 1
+assert roles.label_of(jd) == (["fraud-analyst"], False) and roles.load()["labels"]["t:risk guru"]["jd"]
+assert roles.deep_candidates([jd]) == []  # looked at once
+srv.shutdown()
 roles.DAILY = 0  # the app tests below must never call the real Claude
 
 
