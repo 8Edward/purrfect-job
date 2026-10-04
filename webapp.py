@@ -30,6 +30,7 @@ from telethon import utils
 import apply
 import cv_reader
 import extras
+import filtercheck
 import guests
 import resume
 import resume_ai
@@ -577,7 +578,8 @@ class WebApp:
             listed = guests.listed_sites()
             ids = {("hh" if s == guests.HH_ID else "site:" + s) for s in m.sites(listed)}
             ids |= {"tg:" + k for k in m.selected(guests.load_pool())}
-        return web.json_response({"items": sourcestats.report(ids)})
+        return web.json_response({"items": sourcestats.report(ids),
+                                  "filter": filtercheck.report() if m.is_owner else None})
 
     async def api_roles(self, request):
         """Owner: Claude's labels to check (✓/✗), counts; POST {key, ok} or {reset: true}."""

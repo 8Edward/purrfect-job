@@ -27,6 +27,7 @@ from telethon import Button, TelegramClient, events, functions, types
 
 import boards
 import extras
+import filtercheck
 import guests
 import reality
 import screens
@@ -911,6 +912,8 @@ class JobRadar:
                 self.daily_run = now
                 await self.daily_pass()
                 asyncio.create_task(self.orig_pass())
+                if filtercheck.due() and getattr(self, "webapp", None):
+                    asyncio.create_task(self.filter_pass())
             await asyncio.sleep(60)
 
     # ------------------------------------------------------------ messages
@@ -1255,6 +1258,15 @@ class JobRadar:
             self.sites_busy = False
 
     # ------------------------------------------------------------ ☀️ morning digest, 📋 tracker reminders
+
+    async def filter_pass(self):
+        """🧪 Once a day: Claude reads a sample of posts the filter turned down (filtercheck.py)."""
+        try:
+            checked, lost = await filtercheck.run(self.webapp.ai)
+            if checked:
+                log.info("filter sample: %d checked, %d were vacancies", checked, lost)
+        except Exception as e:
+            log.warning("filter sample failed: %s", e)
 
     async def orig_pass(self):
         """Fake remote: for fresh Telegram posts with a vacancy link, read the original page (the

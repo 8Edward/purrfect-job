@@ -82,6 +82,24 @@ JOB_CARD = re.compile(
     r"\d[\d\s.,]*k?\s*[-–]\s*\d[\d\s.,]*k?\s*(usd|eur|gbp|\$|€|₽|руб)", re.IGNORECASE)
 
 
+# The person's job words are Russian / English; a post in another language has none of them and was
+# silently dropped. These are the same «it's a vacancy» markers in other languages (the role words
+# still have to match, so they widen the net only for the roles the person wants).
+JOB_WORDS_INTL = re.compile(
+    r"ваканс[іi]|шукаємо|запрошуємо|потрібен|потрібна|"                       # Ukrainian
+    r"\bvacante\b|\bbuscamos\b|estamos contratando|oferta de (trabajo|empleo)|"  # Spanish
+    r"\bvaga\b|\bvagas\b|contratando|oportunidade de emprego|"               # Portuguese
+    r"wir suchen|stellenangebot|stellenanzeige|\(m/w/d\)|\(w/m/d\)|"          # German
+    r"nous recrutons|offre d.emploi|poste à pourvoir|on recrute|"             # French
+    r"oferta pracy|\bszukamy\b|zatrudnimy|"                                  # Polish
+    r"iş ilanı|arıyoruz|"                                                    # Turkish
+    r"cerchiamo|offerta di lavoro|"                                          # Italian
+    r"\bvacature\b|wij zoeken|"                                              # Dutch
+    r"бос жұмыс орны|"                                                       # Kazakh
+    r"求人|招聘|채용",                                                         # Japanese / Chinese / Korean
+    re.IGNORECASE)
+
+
 class JobFilter:
     def __init__(self, keywords, min_length):
         self.job = compile_patterns(keywords.get("job"))
@@ -95,7 +113,7 @@ class JobFilter:
             return False
         if any(p.search(text) for p in self.negative) or looks_like_article(text):
             return False
-        if any(p.search(text) for p in self.job):
+        if any(p.search(text) for p in self.job) or JOB_WORDS_INTL.search(text):
             return any(p.search(text) for p in self.role)
         # a vacancy card: its first line is the job title, so the role must be there
         # (otherwise «Skills: sql, python» would let every engineer through)
@@ -103,13 +121,26 @@ class JobFilter:
         return bool(JOB_CARD.search(text)) and any(p.search(head) for p in self.role)
 
     def has_job_word(self, text):
-        return any(p.search(text) for p in self.job) or bool(JOB_CARD.search(text))
+        return any(p.search(text) for p in self.job) or bool(JOB_CARD.search(text) or JOB_WORDS_INTL.search(text))
 
     def is_job_like(self, text):
         """A job post by its own words (вакансия, hiring…), whatever the role: for search."""
         if not text or len(text) < self.min_length or any(p.search(text) for p in self.negative):
             return False
         return self.has_job_word(text) and not looks_like_article(text)
+
+    def why_not(self, text):
+        """Why is_job said no, for a post that does mention one of the person's roles (the control
+        sample): None if it is a job or no role is mentioned at all (then it is simply not theirs)."""
+        if not text or not any(p.search(text) for p in self.role) or self.is_job(text):
+            return None
+        if len(text) < self.min_length:
+            return "короткий"
+        if any(p.search(text) for p in self.negative):
+            return "стоп-слово"
+        if looks_like_article(text):
+            return "похож на статью"
+        return "нет слова «вакансия»"
 
     def tags_for(self, text):
         return [name for name, pats in self.tags.items() if any(p.search(text) for p in pats)]

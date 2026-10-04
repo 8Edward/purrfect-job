@@ -34,6 +34,7 @@ import yaml
 from telethon import utils
 
 import boards
+import filtercheck
 import sourcestats
 import tg_collect as tc
 
@@ -618,7 +619,7 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
     seen = {m.id: set(states[m.id].get("fingerprints", [])) for m in members}
     marks = {m.id: dict(states[m.id].get("pool_ids", {})) for m in members}
     found = {m.id: [] for m in members}
-    missing, stats = [], []
+    missing, stats, rejected = [], [], []
 
     for key, followers in wanted.items():
         days = rescan_days or max(m.cfg().get("lookback_days", 1) for m in followers)
@@ -641,13 +642,21 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
         title = getattr(entity, "title", None) or "@" + key
         stats.append(("tg:" + key, title, True, len(msgs), ""))
         chat_id = utils.get_peer_id(entity)
+        sampled = set()
         msgs.reverse()  # oldest first
         for m in followers:
             newest = marks[m.id].get(key, 0)
             for msg in msgs:
                 newest = max(newest, msg.id)
                 text = msg.message or ""
-                if msg.id <= start[m.id] or not filters[m.id].is_job(text):
+                if msg.id <= start[m.id]:
+                    continue
+                if not filters[m.id].is_job(text):
+                    why = filters[m.id].why_not(text)  # names their role but turned down: the control sample
+                    if why and msg.id not in sampled:
+                        sampled.add(msg.id)
+                        rejected.append({"text": text, "chat": title, "link": f"https://t.me/{key}/{msg.id}",
+                                         "date": msg.date.isoformat(), "why": why})
                     continue
                 fp = tc.fingerprint(text)
                 if fp in seen[m.id]:
@@ -676,8 +685,9 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
     if not rescan_days:  # a manual rescan re-reads old posts: not a fair daily count
         try:
             sourcestats.record_many(stats)
+            filtercheck.add(rejected)
         except Exception as e:
-            log.warning("source stats not saved: %s", e)
+            log.warning("source stats / filter sample not saved: %s", e)
     return found, missing
 
 

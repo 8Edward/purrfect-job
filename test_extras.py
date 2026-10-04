@@ -21,6 +21,12 @@ import extras  # noqa: E402
 import guests  # noqa: E402
 import resume  # noqa: E402
 import webapp  # noqa: E402
+import filtercheck  # noqa: E402
+import reality  # noqa: E402
+import sourcestats  # noqa: E402
+
+_scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test sources
+sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
 import hashlib  # noqa: E402
 import hmac  # noqa: E402
 from urllib.parse import urlencode  # noqa: E402
@@ -435,7 +441,6 @@ asyncio.run(main())
 time.sleep(0)
 
 # -- 📊 source counters: failed ≠ empty ≠ gone quiet
-import sourcestats  # noqa: E402
 with tempfile.TemporaryDirectory() as tmp:
     sourcestats.PATH = Path(tmp) / "stats.json"
     sourcestats.record("site:a", "A", True, 50)

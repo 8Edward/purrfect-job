@@ -87,6 +87,11 @@ assert webapp.title_roles("Аналитик DWH")[0][2] == "dwh-analyst"
 import re  # noqa: E402
 import roles  # noqa: E402
 roles.CACHE_PATH = Path(tempfile.mkdtemp()) / "roles.json"
+import filtercheck  # noqa: E402
+import reality  # noqa: E402
+import sourcestats  # noqa: E402
+_scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test sources
+sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
 jobs_ = [{"source": "web", "key": "a", "title": "Payments Integrity Specialist", "date": datetime.now(timezone.utc)},
          {"source": "web", "key": "b", "title": "Welder", "date": datetime.now(timezone.utc)},
          {"source": "web", "key": "c", "title": "Data Guru", "date": datetime.now(timezone.utc)}]

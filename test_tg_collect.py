@@ -7,6 +7,12 @@ from pathlib import Path
 import yaml
 
 import tg_collect as tc
+import filtercheck  # noqa: E402
+import reality  # noqa: E402
+import sourcestats  # noqa: E402
+
+_scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test channels
+sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
 
 cfg = yaml.safe_load((Path(__file__).parent / "search.default.yml").read_text(encoding="utf-8"))
 f = tc.JobFilter(cfg["keywords"], cfg["min_length"])
@@ -442,5 +448,40 @@ assert roles[0].search("Ведущий системный аналитик в к
 assert roles[1].search("Anti-fraud Analyst") and roles[1].search("antifraud") and not roles[0].search("Data Scientist (Антифрод)")
 assert roles[2].search("Data Quality Engineer") and not roles[2].search("engineer of data quality")
 assert not roles[0].search("аналитик" + " " * 60 + "антифрод")
+
+# -- languages without our job words: the role still decides; why_not names the reason for the control sample
+ml = tc.JobFilter({"job": ["ваканси", "hiring"], "role": ["data analyst"], "negative": ["стажёр"]}, 40)
+assert ml.is_job("Buscamos Data Analyst para nuestro equipo remoto, contrato indefinido")
+assert ml.is_job("Шукаємо Data Analyst у команду, віддалено, повна зайнятість")
+assert ml.is_job("Wir suchen einen Data Analyst (m/w/d) — remote möglich, Vollzeit")
+assert not ml.is_job("Buscamos diseñador gráfico para nuestro equipo remoto, contrato indefinido")
+assert ml.why_not("Как стать Data Analyst за 3 месяца: курс со скидкой, пишите") == "нет слова «вакансия»"
+assert ml.why_not("Data Analyst") == "короткий"
+assert ml.why_not("Вакансия: стажёр Data Analyst, пишите в личку, удалённо, гибкий график") == "стоп-слово"
+assert ml.why_not("Вакансия: Senior Data Analyst в финтех, удалённо, пишите в личку @hr") is None   # a job
+assert ml.why_not("Ищем дизайнера в команду, удалённо, гибкий график, пишите") is None             # not their role
+
+# -- 🧪 control sample (filtercheck): pending -> one Claude call a day -> loss count
+with tempfile.TemporaryDirectory() as tmp:
+    filtercheck.PATH = Path(tmp) / "fc.json"
+    now_ = datetime.now(timezone.utc).isoformat()
+    posts = [{"text": f"Data Analyst post number {n} " * 5, "chat": "c", "link": f"https://t.me/c/{n}", "date": now_,
+              "why": "нет слова «вакансия»"} for n in range(4)]
+    filtercheck.add(posts + posts[:1])
+    assert len(filtercheck.load()["pending"]) == 4 and filtercheck.due()
+
+    class FakeAI:
+        async def ask(self, system, prompt, timeout=0):
+            assert "### 1" in prompt and "résumé" in system
+            return 'Sure: {"1": true, "2": false, "3": false, "4": true}'
+
+    import asyncio as _asyncio  # noqa: E402
+    assert _asyncio.run(filtercheck.run(FakeAI())) == (4, 2)
+    rep = filtercheck.report()
+    assert rep["checked"] == 4 and rep["lost"] == 2 and rep["waiting"] == 0 and len(rep["items"]) == 2
+    assert not filtercheck.due() and _asyncio.run(filtercheck.run(FakeAI())) == (0, 0)  # once a day
+    filtercheck.add(posts)  # already checked: not queued again
+    assert filtercheck.load()["pending"] == []
+    assert filtercheck.parse("no json here", 3) == {} and filtercheck.parse('{"9": true, "1": "yes"}', 3) == {}
 
 print("ok")

@@ -916,15 +916,20 @@ async function loadSources(all) {
   const g = $("#g-src");
   let d;
   try { d = await api("/api/source-health"); } catch (e) { g.hidden = true; return; }
-  if (!d.items.length) { g.hidden = true; return; }
+  if (!d.items.length && !d.filter) { g.hidden = true; return; }
   g.hidden = false;
+  const f = d.filter;
+  const filt = f ? `<p class="hint"><b>🧪 Проверка фильтра каналов</b> (раз в день Claude читает до 15 постов, которые фильтр отбросил,
+      хотя в них есть ваша роль). За ${f.days} дн. проверено ${f.checked}, из них настоящих вакансий: ${f.lost}${f.checked ? ` (${Math.round(100 * f.lost / f.checked)}%)` : ""}.
+      Ждут проверки: ${f.waiting}.${Object.keys(f.why).length ? " Почему отбросил: " + Object.entries(f.why).map(([k, n]) => `${esc(k)} — ${n}`).join(", ") + "." : ""}</p>
+    ${f.items.map((i) => `<div class="tg"><span>${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title)}<small>${esc(i.chat)} · ${esc(i.why)}</small></span></div>`).join("")}` : "";
   const bad = d.items.filter((i) => i.state === "fail" || i.state === "quiet").length;
   const shown = all ? d.items : d.items.slice(0, Math.max(6, bad));
   const rows = shown.map((i) => `<div class="tg"><span>${SRC_ICON[i.state] || ""} ${esc(i.name)}<small>${esc(i.label)}</small></span></div>`).join("");
   $("#src-list").innerHTML = `<p class="hint">❌ — источник не ответил (сайт упал, сменил страницу или просит капчу): вакансий там может быть много, мы их просто не видим.
       🔇 — отвечает, но уже несколько дней пусто, хотя раньше было. ⚪ — проверен, вакансий правда нет. Сначала проблемные.</p>
     <p class="hint">${bad ? `Требуют внимания: ${bad}` : "Все источники отвечают"} · всего ${d.items.length}</p>${rows}
-    ${shown.length < d.items.length ? `<button class="link block" id="src-all">Показать все (${d.items.length})</button>` : ""}`;
+    ${shown.length < d.items.length ? `<button class="link block" id="src-all">Показать все (${d.items.length})</button>` : ""}${filt}`;
   const more = $("#src-all");
   if (more) more.onclick = () => loadSources(true);
 }
