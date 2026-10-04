@@ -418,7 +418,7 @@ def web_job(j, site, member=None, tagger=None):
     return {"source": "web", "key": boards.board_key(j["url"]), "title": title, "company": company,
             "location": j.get("location", ""), "comp": j.get("comp", ""), "site": site, "link": j["url"],
             "date": date, "tags": (tagger or (lambda t, r: web_tags(member, t, r)))(f"{title} {company}", j.get("ru")) if member else [],
-            "pipeline_line": line}
+            "pipeline_line": line, **({"countries": j["countries"]} if isinstance(j.get("countries"), list) else {})}
 
 
 # ---------------------------------------------------------------- one vacancy: store and act
@@ -1039,13 +1039,21 @@ async def fetch_hh(query, remote):
 HIMALAYAS_SEARCH = "https://himalayas.app/jobs/api/search"
 
 
-def _himalayas_get(queries, pages=2):
+def himalayas_location(countries):
+    """Himalayas' list of countries a job hires from -> a short place line («Worldwide» when it is empty)."""
+    if not countries:
+        return "Worldwide"
+    return ", ".join(countries[:4]) + (f" +{len(countries) - 4}" if len(countries) > 4 else "")
+
+
+def _himalayas_get(queries, country="", pages=2):
     """Live Himalayas search (its feed is ~100k jobs, the cached feed holds only the newest):
-    [{title, url, company, location, posted}]."""
+    [{title, url, company, location, countries, posted}]. `country` (Himalayas' name, e.g. «Thailand»): only jobs that
+    hire from there or from anywhere — Himalayas filters that itself."""
     jobs, seen = [], set()
     for q in queries[:3]:
         for page in range(1, pages + 1):
-            url = HIMALAYAS_SEARCH + "?" + urlencode({"q": q, "page": page})
+            url = HIMALAYAS_SEARCH + "?" + urlencode({"q": q, "page": page, **({"country": country} if country else {})})
             with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"}), timeout=20) as resp:
                 data = json.loads(resp.read(5_000_000))
             items = data.get("jobs") or []
@@ -1055,16 +1063,17 @@ def _himalayas_get(queries, pages=2):
                     continue
                 seen.add(link)
                 pub = it.get("pubDate")
+                countries = [str(x) for x in it.get("locationRestrictions") or []][:300]
                 jobs.append({"title": str(it.get("title") or "")[:200], "url": link, "company": str(it.get("companyName") or "")[:120],
-                             "location": ", ".join(str(x) for x in it.get("locationRestrictions") or [])[:120],
+                             "location": himalayas_location(countries), "countries": countries,
                              "posted": datetime.fromtimestamp(int(pub), timezone.utc).isoformat() if str(pub).isdigit() else ""})
             if len(items) < 20:
                 break
     return jobs
 
 
-async def fetch_himalayas(queries):
-    return await asyncio.get_running_loop().run_in_executor(None, _himalayas_get, queries)
+async def fetch_himalayas(queries, country=""):
+    return await asyncio.get_running_loop().run_in_executor(None, _himalayas_get, queries, country)
 
 
 def match_hh_jobs(raw, member, full=False):

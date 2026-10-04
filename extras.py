@@ -146,6 +146,91 @@ def tz_fits(item, tz):
     return not offs or any(tz_gap(o, tz["mine"]) <= tz["spread"] for o in offs)
 
 
+# ---------------------------------------------------------------- 🌏 which countries a vacancy hires from
+
+# key (Himalayas' own country name) -> (Russian name, other spellings, regions it belongs to)
+COUNTRIES = {
+    "Thailand": ("Таиланд", ["thailand", "bangkok", "phuket"], ["asia", "apac", "sea"]),
+    "Russian Federation": ("Россия", ["russia", "russian federation", "россия", "рф"], ["europe", "emea", "cis"]),
+    "Kazakhstan": ("Казахстан", ["kazakhstan", "казахстан"], ["asia", "cis"]),
+    "Uzbekistan": ("Узбекистан", ["uzbekistan", "узбекистан"], ["asia", "cis"]),
+    "Kyrgyzstan": ("Киргизия", ["kyrgyzstan", "киргизия", "кыргызстан"], ["asia", "cis"]),
+    "Belarus": ("Беларусь", ["belarus", "беларусь"], ["europe", "emea", "cis"]),
+    "Ukraine": ("Украина", ["ukraine", "украина"], ["europe", "emea"]),
+    "Georgia": ("Грузия", ["georgia", "грузия"], ["europe", "emea"]),
+    "Armenia": ("Армения", ["armenia", "армения"], ["europe", "emea", "cis"]),
+    "Azerbaijan": ("Азербайджан", ["azerbaijan", "азербайджан"], ["europe", "emea", "cis"]),
+    "Serbia": ("Сербия", ["serbia", "сербия"], ["europe", "emea"]),
+    "Montenegro": ("Черногория", ["montenegro", "черногория"], ["europe", "emea"]),
+    "Turkey": ("Турция", ["turkey", "türkiye", "турция"], ["europe", "emea"]),
+    "Cyprus": ("Кипр", ["cyprus", "кипр"], ["europe", "emea", "eu"]),
+    "Poland": ("Польша", ["poland", "польша"], ["europe", "emea", "eu"]),
+    "Germany": ("Германия", ["germany", "германия"], ["europe", "emea", "eu"]),
+    "Spain": ("Испания", ["spain", "испания"], ["europe", "emea", "eu"]),
+    "Portugal": ("Португалия", ["portugal", "португалия"], ["europe", "emea", "eu"]),
+    "United Arab Emirates": ("ОАЭ", ["united arab emirates", "uae", "dubai", "оаэ"], ["emea", "mena"]),
+    "Indonesia": ("Индонезия", ["indonesia", "bali", "индонезия"], ["asia", "apac", "sea"]),
+    "Vietnam": ("Вьетнам", ["vietnam", "вьетнам"], ["asia", "apac", "sea"]),
+    "Malaysia": ("Малайзия", ["malaysia", "малайзия"], ["asia", "apac", "sea"]),
+    "Philippines": ("Филиппины", ["philippines", "филиппины"], ["asia", "apac", "sea"]),
+    "India": ("Индия", ["india", "индия"], ["asia", "apac"]),
+}
+EVERYWHERE = r"(?:worldwide|anywhere|global(?:ly)?|any (?:country|location)|work from anywhere|весь мир|любая страна|из любой страны)"
+REGION_WORDS = {
+    "asia": r"(?:asia)", "apac": r"(?:apac|asia[- ]?pacific)", "sea": r"(?:south[- ]?east asia|sea region)",
+    "europe": r"(?:europe)", "emea": r"(?:emea)", "eu": r"(?:(?-i:\bEU\b)|european union)", "cis": r"(?:(?-i:\bCIS\b))",
+    "mena": r"(?:mena|middle east)",
+}
+OTHER_PLACES = (r"(?:(?-i:\bUS\b)|\busa\b|u\.s\.|united states|canada|(?-i:\bUK\b)|united kingdom|latam|latin america|"
+                r"americas|north america|south america|brazil|mexico|argentina|colombia|australia|new zealand|africa|"
+                r"france|netherlands|ireland|italy|sweden|japan|china|singapore|south korea|israel)")
+
+
+def country_settings(member):
+    """{on, key, name}: the person's country; on = hide vacancies that clearly don't hire from there."""
+    c = member.load_search().get("country") or {}
+    key = c.get("key") if c.get("key") in COUNTRIES else ("Thailand" if member.is_owner else "Russian Federation")
+    return {"on": bool(c.get("on", member.is_owner)), "key": key, "name": COUNTRIES[key][0]}
+
+
+def set_country(member, **fields):
+    search = member.load_search()
+    c = dict(search.get("country") or {})
+    if "on" in fields:
+        c["on"] = bool(fields["on"])
+    if "key" in fields:
+        if fields["key"] not in COUNTRIES:
+            raise ValueError(fields["key"])
+        c["key"] = fields["key"]
+    search["country"] = c
+    member.save_search(search)
+
+
+def hires_from(item, key):
+    """True / False when the vacancy says who it hires (Himalayas' country list, or a location naming countries or
+    regions); None when it says nothing that settles it."""
+    countries = item.get("countries")
+    if isinstance(countries, list):  # Himalayas: [] = anyone, else the exact list
+        return not countries or key in countries
+    loc = " ".join(str(item.get(k) or "") for k in ("location",))[:600]
+    if not loc.strip():
+        return None
+    _, names, regions = COUNTRIES[key]
+    mine = [re.escape(n) for n in names] + [REGION_WORDS[r] for r in regions]
+    if re.search(EVERYWHERE, loc, re.IGNORECASE) or re.search(r"(?<!\w)(?:" + "|".join(mine) + r")(?!\w)", loc, re.IGNORECASE):
+        return True
+    # only Latin names say «not from here»: Russian sites write «Россия» for where the company is, not who it hires
+    others = [OTHER_PLACES] + [re.escape(n) for k, (_, ns, _) in COUNTRIES.items() if k != key for n in ns if n.isascii()] + \
+             [w for r, w in REGION_WORDS.items() if r not in regions]
+    if re.search(r"(?<!\w)(?:" + "|".join(others) + r")(?!\w)", loc, re.IGNORECASE):
+        return False
+    return None
+
+
+def country_fits(item, cs):
+    return not cs["on"] or hires_from(item, cs["key"]) is not False
+
+
 # ---------------------------------------------------------------- 🔗 one vacancy from several sources
 
 def _norm(s):

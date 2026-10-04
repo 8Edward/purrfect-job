@@ -356,6 +356,11 @@ async def main():
                 src = await (await c.get("/api/sources", headers=auth)).json()
                 assert src["channels"][0] == {"key": "datajob", "title": "Data Jobs", "on": True, "removable": True}
                 assert any(x["id"] == "hh" and x["on"] for x in src["sites"])
+                assert src["country"] == {"on": False, "key": "Russian Federation", "name": "Россия"}  # guests: off until they turn it on
+                src = await (await c.post("/api/sources", headers=auth, json={"type": "country", "on": True, "key": "Thailand"})).json()
+                assert src["country"] == {"on": True, "key": "Thailand", "name": "Таиланд"} and g.load_search()["country"]["key"] == "Thailand"
+                assert (await c.post("/api/sources", headers=auth, json={"type": "country", "key": "Atlantis"})).status == 400
+                await c.post("/api/sources", headers=auth, json={"type": "country", "on": False})
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "channels_all", "on": True})).json()
                 assert all(x["on"] for x in src["channels"])
                 src = await (await c.post("/api/sources", headers=auth, json={"type": "channels_all", "on": False})).json()

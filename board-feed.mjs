@@ -40,8 +40,23 @@ function withTimeout(promise, ms) {
 
 // Some boards give only their first page through the career-ops provider (Himalayas: the
 // 20 newest of ~100k). For those we walk the board's own cursor pages here.
+// Himalayas also says which countries a job hires from (locationRestrictions, [] = anyone): kept as `countries`
+// so the bot can show only jobs open to the person's country.
+function parseHimalayasWithCountries(json) {
+  const byUrl = new Map();
+  for (const x of json?.jobs || []) {
+    const list = Array.isArray(x?.locationRestrictions) ? x.locationRestrictions.filter((c) => typeof c === 'string').map((c) => c.trim()).slice(0, 300) : [];
+    for (const u of [x?.applicationLink, x?.guid]) { try { byUrl.set(new URL(u).href, list); } catch { /* not a link */ } }
+  }
+  return parseHimalayasResponse(json).map((j) => {
+    const countries = byUrl.get(j.url) || [];
+    const location = countries.length ? countries.slice(0, 4).join(', ') + (countries.length > 4 ? ` +${countries.length - 4}` : '') : 'Worldwide';
+    return { ...j, countries, location };
+  });
+}
+
 const PAGED = {
-  himalayas: { pages: 15, first: 'https://himalayas.app/jobs/api?limit=20', parse: parseHimalayasResponse },
+  himalayas: { pages: 15, first: 'https://himalayas.app/jobs/api?limit=20', parse: parseHimalayasWithCountries },
   jobicy: { pages: 5, first: 'https://jobicy.com/api/v2/remote-jobs?count=100', parse: (j) => parseJobicyResponse(j) },
 };
 
@@ -683,6 +698,7 @@ async function fetchBoard(id) {
           location: clean(j.location, 120),
           posted: clean(j.postedAt || j.posted || j.date || '', 40),
           ...(j.ru ? { ru: true } : {}),
+          ...(Array.isArray(j.countries) ? { countries: j.countries.map((c) => clean(c, 60)) } : {}),
         })),
     };
   } catch (err) {

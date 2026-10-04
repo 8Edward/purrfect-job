@@ -921,7 +921,7 @@ function renderRadar() {
 
 const SRC_ICON = { fail: "❌", quiet: "🔇", empty: "⚪", unknown: "⏳", ok: "✅" };
 
-async function loadSources(all) {
+async function loadSourceHealth(all) {
   const g = $("#g-src");
   let d;
   try { d = await api("/api/source-health"); } catch (e) { g.hidden = true; return; }
@@ -940,7 +940,7 @@ async function loadSources(all) {
     <p class="hint">${bad ? `Требуют внимания: ${bad}` : "Все источники отвечают"} · всего ${d.items.length}</p>${rows}
     ${shown.length < d.items.length ? `<button class="link block" id="src-all">Показать все (${d.items.length})</button>` : ""}${filt}`;
   const more = $("#src-all");
-  if (more) more.onclick = () => loadSources(true);
+  if (more) more.onclick = () => loadSourceHealth(true);
 }
 
 /* ---------------------------------------------------------------- 🤖 roles Claude guessed (owner, «Ещё») */
@@ -1150,7 +1150,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSources(); loadRoles(); }
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

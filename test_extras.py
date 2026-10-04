@@ -146,6 +146,19 @@ assert extras.tz_fits({"text": "no time zone said"}, tz) is True
 assert extras.tz_fits({"text": "US only"}, dict(tz, on=False)) is True
 assert extras.tz_gap(-11, 12) == 1
 
+# -- 🌏 which countries a vacancy hires from
+hf = lambda loc: extras.hires_from({"location": loc}, "Thailand")
+assert hf("Remote - US") is False and hf("Remote (EMEA)") is False and hf("Europe") is False
+assert hf("Remote, Thailand") is True and hf("APAC") is True and hf("Worldwide") is True and hf("Remote - Asia") is True
+assert hf("San Francisco, CA") is None and hf("") is None and hf("Москва") is None
+assert hf("Удалённо · Россия") is None  # Russian sites name the company's country, not who they hire
+assert extras.hires_from({"countries": [], "location": "Worldwide"}, "Thailand") is True
+assert extras.hires_from({"countries": ["Germany", "France"]}, "Thailand") is False
+assert extras.hires_from({"countries": ["Germany", "Thailand"]}, "Thailand") is True
+cs = {"on": True, "key": "Thailand"}
+assert extras.country_fits({"location": "US only"}, cs) is False and extras.country_fits({"location": "US only"}, dict(cs, on=False))
+assert extras.country_fits({"text": "no location"}, cs)
+
 # -- 🔗 duplicates
 now = datetime.now(timezone.utc)
 a = {"source": "web", "title": "Data Analyst", "company": "Uzum", "link": "https://a/1", "site": "Himalayas", "date": now.isoformat()}
