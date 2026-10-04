@@ -205,6 +205,27 @@ const FETCHERS = {
       posted: '',
     }));
   },
+  async tierb() {  // «tier B» (telegram/tierb.yml): remote companies hiring worldwide / APAC, their own boards, 6 at a time
+    const list = (yaml.load(fs.readFileSync(path.join(ROOT, 'telegram', 'tierb.yml'), 'utf8'))?.companies || [])
+      .filter((c) => FETCHERS[c.ats] && ['greenhouse', 'lever', 'ashby', 'workable'].includes(c.ats) && c.slug);
+    const out = [];
+    const failed = [];
+    let next = 0;
+    await Promise.all(Array.from({ length: 6 }, async () => {
+      while (next < list.length) {
+        const c = list[next++];
+        try {
+          for (const j of await withTimeout(FETCHERS[c.ats]({ slug: c.slug }), 30_000)) {
+            // big companies list offices too: only remote / anywhere / Asia ones (or no place said) are kept
+            if (!j.location || /remote|anywhere|worldwide|global|distributed|asia|apac|thailand|emea|home/i.test(j.location)) out.push({ ...j, company: c.name });
+          }
+        } catch { failed.push(c.name); }
+      }
+    }));
+    if (!out.length && failed.length) throw new Error(`tier B: no board answered (${failed.length})`);
+    if (failed.length) process.stderr.write(`tier B: ${failed.length} boards failed: ${failed.slice(0, 10).join(', ')}\n`);
+    return out;
+  },
   async aviasales() {
     const j = await getJson('https://vacancies-app.aviasales.ru/api/vacancies?language=ru');
     return j.map((x) => ({ title: String(x.position).trim(), url: `https://www.aviasales.ru/about/vacancies/${x.id}`, location: (x.workPlace || '') + (x.team?.name ? ` · ${x.team.name}` : ''), posted: '' }));

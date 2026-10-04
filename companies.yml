@@ -49,6 +49,8 @@ companies:
   - {id: co-geekjob, name: GeekJob (IT), kind: geekjob}
   - {id: co-trudvsem, name: Работа России (только удалёнка), kind: trudvsem}
   - {id: co-djinni, name: "Djinni (IT, Украина и удалёнка)", kind: djinni}
+  # 2026-10-04: «tier B» = remote companies from remoteintech/remote-jobs that hire worldwide / in APAC (telegram/tierb.yml)
+  - {id: co-tierb, name: "Тир B: удалённые компании (remoteintech, весь мир)", kind: tierb}
 
 # NOT connected: no public vacancy list on their own site that a script may read. Not read by the bot;
 # hh employer ids kept for reference (hh.ru is the only place that lists their vacancies).

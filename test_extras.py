@@ -27,6 +27,8 @@ import sourcestats  # noqa: E402
 
 _scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test sources
 sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
+import tierb  # noqa: E402
+tierb.SEEN_PATH = _scratch / "tb.json"
 import hashlib  # noqa: E402
 import hmac  # noqa: E402
 from urllib.parse import urlencode  # noqa: E402
@@ -158,6 +160,13 @@ assert extras.hires_from({"countries": ["Germany", "Thailand"]}, "Thailand") is 
 cs = {"on": True, "key": "Thailand"}
 assert extras.country_fits({"location": "US only"}, cs) is False and extras.country_fits({"location": "US only"}, dict(cs, on=False))
 assert extras.country_fits({"text": "no location"}, cs)
+
+# -- tier B: remoteintech companies remembered when they reach a feed
+tierb._names = {"gitlab": "GitLab", "doist": "Doist"}
+assert tierb.is_tierb("GitLab") and tierb.is_tierb("git lab") and not tierb.is_tierb("Yandex") and not tierb.is_tierb("")
+assert tierb.remember([{"company": "GitLab"}, {"company": "Yandex"}, {"company": "GITLAB"}]) == 2
+assert tierb.load_seen()["GitLab"]["n"] == 2 and "Yandex" not in tierb.load_seen()
+tierb._names = None
 
 # -- 🔗 duplicates
 now = datetime.now(timezone.utc)
