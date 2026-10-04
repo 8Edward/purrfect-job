@@ -837,10 +837,10 @@ class WebApp:
                     add(guests.web_job(j, listed.get(provider, provider), m, tagger), "sites")
         t2 = time.monotonic()
         if hima_task:  # its cached feed is only the newest few hundred of ~100k
-            for j in await self.within(hima_task):
+            for j in await self.within(hima_task, 30 if part == "hima" else None):
                 add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m, tagger), "sites")
         t3 = time.monotonic()
-        for j in await self.within(hh_task) if hh_task else []:
+        for j in await self.within(hh_task, 30 if part == "hh" else None) if hh_task else []:
             add(guests.web_job(j, guests.HH_NAME, m, tagger), "hh")
         log.info("search timing: channels %.1fs, site feeds %.1fs, himalayas wait %.1fs, hh wait %.1fs, %d candidates",
                  t1 - t0, t2 - t1, t3 - t2, time.monotonic() - t3, len(jobs))
