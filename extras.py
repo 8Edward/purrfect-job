@@ -718,7 +718,8 @@ def funnel(inbox, fits=None):
             reached["interview"] += 1
         if "offer" in log:
             reached["offer"] += 1
-    shown = [(k, v) for k, v in inbox.items() if fits is None or fits(v)]
+    # a vacancy already responded to is done with: it leaves the «вакансий» count (responses are counted next to it)
+    shown = [(k, v) for k, v in inbox.items() if (fits is None or fits(v)) and not (v.get("track") or {}).get("stage")]
     return {"jobs": len(groups(shown)), **reached}
 
 

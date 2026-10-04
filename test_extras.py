@@ -168,6 +168,12 @@ assert tierb.remember([{"company": "GitLab"}, {"company": "Yandex"}, {"company":
 assert tierb.load_seen()["GitLab"]["n"] == 2 and "Yandex" not in tierb.load_seen()
 tierb._names = None
 
+# -- 📊 funnel: a responded vacancy leaves the «вакансий» count, the response is counted
+_f = extras.funnel({"a": {"title": "A", "company": "X", "link": "l1", "date": "2026-10-01T00:00:00+00:00", "text": "one"},
+                    "b": {"title": "B", "company": "Y", "link": "l2", "date": "2026-10-01T00:00:00+00:00", "text": "two",
+                          "track": {"stage": "applied", "log": [["applied", "2026-10-02T00:00:00+00:00"]]}}})
+assert _f["jobs"] == 1 and _f["applied"] == 1, _f
+
 # -- 🎚 grade
 assert extras.grade_of({"title": "Senior Data Analyst"}) == "senior" and extras.grade_of({"title": "Data Analyst"}) == ""
 assert extras.grade_of({"title": "Middle/Senior BI Analyst"}) == "senior,middle" and extras.grade_of({"title": "Ведущий аналитик"}) == "senior"
@@ -353,7 +359,7 @@ async def main():
 
                 # 📊 funnel, pages, sorting, chips, «Оценить новые»
                 me = await (await c.get("/api/me", headers=auth)).json()
-                assert me["funnel"]["applied"] >= 1 and me["funnel"]["interview"] >= 1 and me["funnel"]["jobs"] >= 3, me["funnel"]
+                assert me["funnel"]["applied"] >= 1 and me["funnel"]["interview"] >= 1 and me["funnel"]["jobs"] >= 2, me["funnel"]
                 inbox = g.load_inbox()
                 for n in range(7):
                     inbox[f"p{n}"] = {"source": "web", "title": f"Analyst {n}", "company": f"Co{n}", "link": f"https://p/{n}", "site": "X",

@@ -659,6 +659,7 @@ function afterApply(item, fresh) {
   if (fresh) st.feed = st.feed.filter((i) => i.key !== item.key);
   renderStack();
   loadMe().catch(() => {});
+  loadFeed().catch(() => {});
   if (!$("#s-more").hidden) loadTrack();
 }
 
