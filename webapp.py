@@ -14,6 +14,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import itertools
 import json
 import logging
 import re
@@ -32,6 +33,7 @@ import extras
 import guests
 import resume
 import resume_ai
+import roles
 import tg_collect as tc
 
 log = logging.getLogger("job-radar.app")
@@ -46,8 +48,11 @@ INIT_MAX_AGE = timedelta(days=1)  # how long one app launch stays valid
 SEARCH_DAYS = 21                  # how far back search reads channels (job channels post a few a week)
 POSTS_TTL = timedelta(minutes=15) # channel messages are re-read at most this often
 POSTS_PER_CHANNEL = 300
+POSTS_CACHE_PATH = tc.ROOT / "data" / "tg-posts-cache.json"   # channel posts kept on disk (~4 MB), so the first search after a restart is fast
+POSTS_STALE_MAX = timedelta(days=2)  # older than this the disk copy is not used
 QUERY_MAX = 80
 RESULTS_MAX = 80
+NEAR_SLOTS = 30                   # «similar»: places kept for neighbour roles when the role itself has plenty
 SEARCH_COOLDOWN = 0.5             # seconds between one person's searches (graph taps come fast)
 ACTIONS = ("take", "hide", "restore", "fav")
 VIEWS = {
@@ -147,6 +152,30 @@ def title_re(phrase, words=None):
     return re.compile(r"^" + "".join(looks), re.IGNORECASE | re.MULTILINE)
 
 
+PART_END = re.compile(r"\s[-–—|]\s|[,(|:]|\s(?:at|в команду|в компанию)\s")  # where a title's role part ends
+# between words of one phrase: a space, a hyphen, «/», «&», a bracket, maybe a preposition; never « - » or «,»
+# («Electrical Engineer - Data Centres» is no «инженер данных»)
+TIGHT_SEP = r"(?:\s*[/&+]\s*|\s*[()\[\]]+\s*|-|\s+)(?:(?:по|в|на|и|для|с|of|in|for|and|the)\s+)?"
+REV_SEP = r"(?:\s*[()\[\]]+\s*|\s+)(?:(?:по|в|на|для|с|of|in|for)\s+)?"
+
+
+def tight_re(phrase, words=None):
+    """The phrase's words side by side (either order for 2-3 words, a preposition or bracket may sit
+    between), each also by its equivalents: «Аналитик (антифрод)», «аналитик по антифроду», «DWH Analyst».
+    Unlike title_re, «Data Scientist, Marketing Analytics» does not count as «data analyst»."""
+    words = load_words() if words is None else words
+    tokens = [w for w in re.findall(r"[\w+#&.]+", norm(phrase)) if w not in FILLER]
+    if not tokens:
+        return None
+    alts = ["(?:" + "|".join(dict.fromkeys(a for a in [word_pat(w)] + [word_pat(t) for t in words.get(ru_stem(w), [])] if a)) + ")"
+            for w in tokens]
+    # other orders only with a space, a bracket or a preposition between («аналитик DWH», «аналитик (антифрод)»),
+    # not across «-» or «,»: «Electrical Engineer - Data Centres» is no data engineer
+    others = [o for o in itertools.permutations(alts) if list(o) != alts] if len(alts) <= 3 else []
+    return re.compile(r"(?<![\w])(?:" + "|".join([TIGHT_SEP.join(alts)] + [REV_SEP.join(o) for o in others]) + r")(?![\w])",
+                      re.IGNORECASE)
+
+
 def hh_variants(phrase, words=None):
     """The phrase for hh.ru plus its English twin («антифрод аналитик» -> «antifraud analyst»)."""
     words = load_words() if words is None else words
@@ -159,7 +188,9 @@ def load_graph():
     if not GRAPH_PATH.exists():
         return {}
     roles = (yaml.safe_load(GRAPH_PATH.read_text(encoding="utf-8")) or {}).get("roles") or {}
-    graph = {rid: {"names": [str(n) for n in r.get("names") or []], "links": dict(r.get("links") or {})}
+    graph = {rid: {"names": [str(n) for n in r.get("names") or []], "also": [str(n) for n in r.get("also") or []],
+                   "not": [str(n) for n in r.get("not") or []],
+                   "links": dict(r.get("links") or {})}
              for rid, r in roles.items() if isinstance(r, dict)}
     for rid, role in graph.items():  # links work both ways
         for other, kind in list(role["links"].items()):
@@ -168,17 +199,68 @@ def load_graph():
     return graph
 
 
+_matchers = {}
+
+
+def role_matchers():
+    """[(role id, name, pattern)] for every name and `also` title of every role, built once
+    per version of rolegraph.yml."""
+    mtime = GRAPH_PATH.stat().st_mtime if GRAPH_PATH.exists() else None
+    if _matchers.get("mtime") != mtime or "list" not in _matchers:
+        words, out = load_words(), []
+        for rid, role in load_graph().items():
+            for name in role["names"] + role["also"]:
+                rx = title_re(name, words) if len(name.strip()) > 3 else None  # «BA», «PM»: too noisy
+                if rx:
+                    out.append((rid, name, rx, tight_re(name, words)))
+        _matchers.clear()
+        _matchers.update(mtime=mtime, list=out, known={}, heads={})
+    return _matchers["list"]
+
+
+def roles_of_title(title):
+    """Role ids the dictionary sees in a title (cached per title)."""
+    matchers = role_matchers()
+    t = norm(title)
+    known = _matchers["known"]
+    if t not in known:
+        if len(known) > 50000:
+            known.clear()
+        known[t] = list(dict.fromkeys(rid for rid, _, rx, _ in matchers if rx.search(t)))
+    return known[t]
+
+
+def title_roles(title):
+    """[(start, end, role id, name)] of role names standing side by side in a title, first first.
+    The first one is what the job is: «Senior Data Engineer – Data Analytics Platform» is a data
+    engineer, not a data analyst (cached per title)."""
+    matchers = role_matchers()
+    t = norm(title)
+    heads = _matchers["heads"]
+    if t not in heads:
+        if len(heads) > 50000:
+            heads.clear()
+        found = []
+        for rid, name, _, tight in matchers:
+            m_ = tight.search(t) if tight else None
+            if m_:
+                found.append((m_.start(), m_.end(), rid, name))
+        heads[t] = sorted(found)
+    return heads[t]
+
+
 def find_role(graph, query):
-    """The role the query names: an exact name first, else the longest name inside the query."""
+    """The role the query names: an exact name first, else the longest name whose words are all
+    in the query (any order, word equivalents count: «аналитик dwh» -> dwh-analyst)."""
     q = " ".join(re.findall(r"[\w+#&.]+", norm(query)))
-    best, size = None, 0
     for rid, role in graph.items():
-        for name in role["names"]:
-            n = " ".join(re.findall(r"[\w+#&.]+", norm(name)))
-            if n == q:
+        for name in role["names"] + role.get("also", []):
+            if " ".join(re.findall(r"[\w+#&.]+", norm(name))) == q:
                 return rid
-            if n and re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", q) and len(n) > size:
-                best, size = rid, len(n)
+    best, size = None, 0
+    for rid, name, rx, _ in role_matchers():
+        if rid in graph and len(name) > size and rx.search(norm(query)):
+            best, size = rid, len(name)
     return best
 
 
@@ -320,7 +402,9 @@ def searchable(job):
 class WebApp:
     def __init__(self, radar):
         self.radar = radar           # the running bot (JobRadar): clients, lock, owner
-        self.posts = {}              # channel key -> (read at, [job-shaped posts])
+        self.posts = self.load_posts_cache()  # channel key -> (read at, [job-shaped posts])
+        self.posts_refreshing = {}
+        self.posts_dirty = None
         self.results = {}            # person id -> {key: job} from their last search
         self.last_search = {}
         self.warming = False
@@ -329,6 +413,7 @@ class WebApp:
         log.info("ai: claude at %s", self.ai.exe or "— not found")
         self.ai_jobs = {}            # job id -> {"member", "op", "status", "result"|"error"}
         self.ai_checking = False
+        self.roles_task = None       # Claude labelling unknown job titles (roles.py)
 
     # -- plumbing
 
@@ -362,6 +447,8 @@ class WebApp:
         r.add_post("/api/jobs/{key}/{action}", self.api_job_action)
         r.add_get("/api/search", self.api_search)
         r.add_post("/api/search/{key}/{action}", self.api_search_action)
+        r.add_get("/api/roles", self.api_roles)
+        r.add_post("/api/roles", self.api_roles)
         r.add_get("/api/sources", self.api_sources)
         r.add_post("/api/sources", self.api_sources_change)
         r.add_post("/api/settings", self.api_settings)
@@ -450,6 +537,43 @@ class WebApp:
             finally:
                 self.warming = False
         asyncio.create_task(run())
+
+    def queue_roles(self, jobs):
+        """Titles from this search the dictionary can't place go to Claude in the background
+        (owner's subscription, roles.DAILY calls a day); the next search knows them."""
+        if (self.roles_task and not self.roles_task.done()) or roles.calls_left() <= 0:
+            return
+
+        async def run():
+            graph, found = load_graph(), 0
+            try:  # the first pass over a few thousand titles takes seconds: not in the request
+                todo = await asyncio.to_thread(roles.unknown, jobs, lambda title: bool(roles_of_title(title)))
+                if not todo:
+                    return
+                for i in range(0, min(len(todo), roles.BATCH * roles.PER_RUN), roles.BATCH):
+                    found += await roles.classify(self.ai, todo[i:i + roles.BATCH], graph)
+                log.info("roles: Claude labelled %d of %d unknown titles, %d got a role", min(len(todo), roles.BATCH * roles.PER_RUN), len(todo), found)
+            except Exception as e:
+                log.warning("roles: Claude labelling failed: %s", e)
+        self.roles_task = asyncio.create_task(run())
+
+    async def api_roles(self, request):
+        """Owner: Claude's labels to check (✓/✗), counts; POST {key, ok} or {reset: true}."""
+        m = self.member(request)
+        if not m.is_owner:
+            raise web.HTTPForbidden(text='{"error": "Только для владельца"}', content_type="application/json")
+        if request.method == "POST":
+            data = await self.body(request)
+            if data.get("reset"):
+                roles.reset()
+            elif isinstance(data.get("key"), str):
+                roles.review(data["key"], bool(data.get("ok")))
+        graph = load_graph()
+        items, total = roles.review_list()
+        return web.json_response({
+            "items": [{"key": v["key"], "title": v["title"],
+                       "roles": [graph[r]["names"][0] if r in graph else r for r in v["roles"]]} for v in items],
+            "pending": total, "stats": roles.stats()})
 
     async def api_me(self, request):
         m = self.member(request)
@@ -550,6 +674,8 @@ class WebApp:
         graph, view = load_graph(), None
         terms = [("exact", "точно", title_re(query, words))]
         rid = find_role(graph, query)
+        by_role = {}  # role id -> (kind, label) for Claude's labels: the role itself and, in «similar», its neighbours
+        near = {}     # neighbour role id -> (kind, label), «similar» only
         if rid:  # the role's own synonyms count in both modes: «аналитик данных» = «data analyst»
             nodes = graph_view(graph, rid, query)
             if mode == "similar":
@@ -562,23 +688,83 @@ class WebApp:
                     rx = title_re(name, words) if len(name.strip()) > 3 else None  # «BA», «PM»: too noisy
                     if rx:
                         terms.append((node["kind"], label, rx))
+                if node["kind"] != "syn":
+                    by_role[node["id"]] = (node["kind"], "🤖 " + label)
+                    near[node["id"]] = (node["kind"], label)
+            # the role's other job titles (`also`: Chargeback Analyst, Trust & Safety…) rank like synonyms
+            terms[1:1] = [("role", "роль: " + name, rx) for r, name, rx, _ in role_matchers()
+                          if r == rid and name in graph[rid]["also"]]
+            by_role[rid] = ("ai", "🤖 по смыслу: " + graph[rid]["names"][0])
+
+        qt, me = tight_re(query, words), rid or "_q"
+        other_job = (re.compile(r"(?<![\w])(?:" + "|".join(word_pat(w) for w in graph[rid]["not"]) + r")(?![\w])", re.IGNORECASE)
+                     if rid and graph[rid]["not"] else None)  # «Trust & Safety Product Manager» isn't a fraud analyst
+
+        def refine(hit, title):
+            """Words scattered over a title aren't enough: what stands side by side counts, and the
+            role named first in the title's head is what the job is (when the query is a role):
+            «Data Scientist, Product Analytics» is not a data analyst, «Data Analyst / DWH Analyst» is both."""
+            if hit[0] in ("text", "ai"):
+                return hit
+            found = title_roles(title)
+            q = qt.search(title) if qt else None
+            if q:
+                found = sorted(found + [(q.start(), q.end(), me, query)])
+            cut = PART_END.search(title)
+            end = cut.start() if cut else len(title)
+            head = [f for f in found if f[0] < end]  # «Program Coordinator - Data Analytics»: the head has no data analyst
+            if head:  # at the first spot the longest name wins: «Data Analytics Engineer» is an analytics engineer
+                first = [f for f in head if f[0] == head[0][0]]
+                longest = max(f[1] for f in first)
+                lead = {f[2] for f in first if f[1] == longest}
+            else:
+                lead = set()
+            neighbour = next((near[r] for r in lead if r in near), None)
+            if hit[0] in ("adj", "far"):  # a neighbour role only when that's what the title is
+                return neighbour
+            if rid and head:
+                mine = next((f for f in head if f[2] == me), None)
+                if mine is None or (me not in lead and not re.search(r"/|\bor\b|\bили\b", title[head[0][1]:mine[0]])):
+                    return neighbour
+            if q and q.start() < end:
+                return ("exact", "точно")
+            if other_job and other_job.search(title):
+                return neighbour
+            own = next((f[3] for f in head if f[2] == rid), None) if rid else None
+            if own:
+                return ("syn", "синоним: " + own) if own in graph[rid]["names"] else ("role", "роль: " + own)
+            return ("loose", "слова вразброс")
 
         jobs, counts = await self.gather(m, query, terms, mode)
-        hits, rank = [], {"exact": 0, "syn": 1, "adj": 2, "far": 3, "text": 4}
-        inbox = m.load_inbox()
+        hits, rank = [], {"exact": 0, "syn": 1, "role": 1, "ai": 1.5, "loose": 1.8, "adj": 2, "far": 3, "text": 4}
+        inbox, labels = m.load_inbox(), roles.load()
         for job in jobs:
             title = norm(job.get("title"))
             hit = next(((kind, label) for kind, label, rx in terms if rx.search(title)), None)  # closest kind wins
+            if hit:
+                hit = refine(hit, title)
+            if hit is None and by_role:  # Claude's label for a title the dictionary doesn't know
+                ids, checked = roles.label_of(job, labels)
+                hit = next((by_role[r] for r in ids if r in by_role), None)
+                if hit and checked:
+                    hit = ("role" if hit[0] == "ai" else hit[0], hit[1].replace("🤖 ", "✓ "))
             if hit is None and job.get("source") == "tg" and terms[0][2].search(norm(searchable(job))):
                 # the phrase is only somewhere in a post (often a digest of several jobs): last, labelled
                 hit = ("text", "в тексте поста")
             if hit:
                 hits.append((rank[hit[0]], job, *hit))
+        self.queue_roles(jobs)
         hits.sort(key=lambda h: (h[0], -h[1]["date"].timestamp()))
+        if mode == "similar":  # a popular role fills the list by itself: keep room for its neighbours
+            core = [h for h in hits if h[0] < 2]
+            if len(core) > RESULTS_MAX - NEAR_SLOTS:
+                rest = [h for h in hits if h[0] >= 2]
+                hits = core[:RESULTS_MAX - NEAR_SLOTS] + rest[:NEAR_SLOTS] + core[RESULTS_MAX - NEAR_SLOTS:]
         keep, items, same = {}, [], set()
         for _, job, kind, label in hits:
-            twin = (norm(job.get("title")).strip(), norm(job.get("company")).strip())
-            if twin in same and twin[1]:  # one vacancy posted on several sites: show it once
+            # one vacancy posted on several sites: show it once (no company: the same title on the same site)
+            twin = (norm(job.get("title")).strip(), norm(job.get("company")).strip() or "@" + norm(job.get("site") or job.get("chat")))
+            if twin in same and twin[1] != "@":
                 continue
             same.add(twin)
             if len(items) >= RESULTS_MAX:
@@ -658,30 +844,70 @@ class WebApp:
             log.warning("search hh.ru: %s", e)
             return []
 
+    def load_posts_cache(self):
+        out = {}
+        try:
+            raw = json.loads(POSTS_CACHE_PATH.read_text(encoding="utf-8")) if POSTS_CACHE_PATH.exists() else {}
+            for key, entry in raw.items():
+                at = datetime.fromisoformat(entry["at"])
+                if datetime.now(timezone.utc) - at < POSTS_STALE_MAX:
+                    out[key] = (at, [dict(p, date=datetime.fromisoformat(p["date"])) for p in entry["posts"]])
+        except Exception as e:
+            log.warning("posts cache not loaded: %s", e)
+        return out
+
+    def save_posts_cache(self):
+        """Written a few seconds after the last channel read (not after every channel)."""
+        self.posts_dirty = None
+        try:
+            data = {k: {"at": at.isoformat(), "posts": [dict(p, date=p["date"].isoformat()) for p in posts]}
+                    for k, (at, posts) in self.posts.items()}
+            guests.write_json(POSTS_CACHE_PATH, data)
+        except Exception as e:
+            log.warning("posts cache not saved: %s", e)
+
+    async def read_channel(self, key):
+        """Read one channel from Telegram into the cache; the old copy stays if it fails."""
+        posts = []
+        try:
+            entity = await self.radar.user.get_entity(key)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=SEARCH_DAYS)
+            title = getattr(entity, "title", None) or "@" + key
+            peer = utils.get_peer_id(entity)  # same key as the feed uses, so no duplicates
+            async for msg in self.radar.user.iter_messages(entity, limit=POSTS_PER_CHANNEL):
+                if msg.date < cutoff:
+                    break
+                if msg.message and len(msg.message) >= 80:
+                    posts.append({"source": "tg", "key": f"{abs(peer)}_{msg.id}", "chat": title,
+                                  "chat_id": peer, "msg_id": msg.id, "date": msg.date,
+                                  "link": f"https://t.me/{key}/{msg.id}", "text": msg.message,
+                                  "title": tc.guess_title(msg.message)})
+            await asyncio.sleep(0.3)
+        except Exception as e:
+            log.warning("search: channel @%s: %s", key, e)
+            return
+        self.posts[key] = (datetime.now(timezone.utc), posts)
+        if self.posts_dirty is None:
+            self.posts_dirty = asyncio.get_running_loop().call_later(20, self.save_posts_cache)
+
+    async def refresh_channel(self, key):
+        """One read per channel at a time; a second caller waits for the first one's result."""
+        task = self.posts_refreshing.get(key)
+        if task is None:
+            task = self.posts_refreshing[key] = asyncio.ensure_future(self.read_channel(key))
+            task.add_done_callback(lambda _: self.posts_refreshing.pop(key, None))
+        await asyncio.shield(task)
+
     async def channel_posts(self, key, member):
-        """Job posts of one public channel for the last SEARCH_DAYS days (cached a while)."""
+        """Job posts of one public channel for the last SEARCH_DAYS days. A copy kept on disk is
+        shown at once; if it is older than POSTS_TTL it is refreshed in the background."""
         hit = self.posts.get(key)
-        if hit and datetime.now(timezone.utc) - hit[0] < POSTS_TTL:
-            posts = hit[1]
-        else:
-            posts = []
-            try:
-                entity = await self.radar.user.get_entity(key)
-                cutoff = datetime.now(timezone.utc) - timedelta(days=SEARCH_DAYS)
-                title = getattr(entity, "title", None) or "@" + key
-                peer = utils.get_peer_id(entity)  # same key as the feed uses, so no duplicates
-                async for msg in self.radar.user.iter_messages(entity, limit=POSTS_PER_CHANNEL):
-                    if msg.date < cutoff:
-                        break
-                    if msg.message and len(msg.message) >= 80:
-                        posts.append({"source": "tg", "key": f"{abs(peer)}_{msg.id}", "chat": title,
-                                      "chat_id": peer, "msg_id": msg.id, "date": msg.date,
-                                      "link": f"https://t.me/{key}/{msg.id}", "text": msg.message,
-                                      "title": tc.guess_title(msg.message)})
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                log.warning("search: channel @%s: %s", key, e)
-            self.posts[key] = (datetime.now(timezone.utc), posts)
+        if hit and datetime.now(timezone.utc) - hit[0] >= POSTS_TTL:
+            asyncio.create_task(self.refresh_channel(key))
+        elif not hit:
+            await self.refresh_channel(key)
+            hit = self.posts.get(key)
+        posts = hit[1] if hit else []
         flt = tc.job_filter_from(member.cfg())
         out = []
         for p in posts:  # a job post by its own words (вакансия, hiring…), no stop words

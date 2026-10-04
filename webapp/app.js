@@ -864,6 +864,32 @@ function renderRadar() {
   $("#int-note").textContent = m.owner ? "для всех, кто пользуется Purrfect Job" : "меняет владелец бота";
 }
 
+/* ---------------------------------------------------------------- 🤖 roles Claude guessed (owner, «Ещё») */
+
+async function loadRoles(body) {
+  const g = $("#g-roles");
+  if (!st.me || !st.me.owner) { g.hidden = true; return; }
+  let d;
+  try { d = await api("/api/roles", body); } catch (e) { fail(e); return; }
+  g.hidden = false;
+  const s = d.stats;
+  const rows = d.items.map((i) => `<div class="tg"><span>${esc(i.title)}<small>ИИ считает: ${esc(i.roles.join(", "))}</small></span>
+    <span class="ctl"><button class="ghost sm" data-rk="${esc(i.key)}" data-ok="1" aria-label="Верно">✓</button><button class="ghost sm" data-rk="${esc(i.key)}" data-ok="" aria-label="Неверно">✗</button></span></div>`).join("");
+  $("#roles-list").innerHTML = `<p class="hint">Вакансии, которые словарь не узнал, ИИ относит к роли сам. Такие находки в поиске помечены 🤖 и стоят ниже точных.
+      ✓ — верно (дальше как проверенная), ✗ — ошибка (больше не используется). Новые догадки ИИ не учится на старых, поэтому ошибки не копятся.</p>
+    <p class="hint">Используется: ${s.used} · проверено ✓ ${s.checked} · отклонено ✗ ${s.rejected} · ждут проверки: ${d.pending}</p>
+    ${rows || '<p class="hint">Пока нечего проверять.</p>'}
+    ${s.total ? '<button class="link block" id="roles-reset">Забыть все догадки ИИ (проверенные ✓ останутся)</button>' : ""}`;
+  $("#roles-list").querySelectorAll("[data-rk]").forEach((b) => {
+    b.onclick = () => { haptic(); loadRoles({ key: b.dataset.rk, ok: !!b.dataset.ok }); };
+  });
+  const r = $("#roles-reset");
+  if (r) r.onclick = () => {
+    if (!r.dataset.sure) { r.dataset.sure = "1"; r.textContent = "Точно забыть? Нажмите ещё раз"; return; }
+    loadRoles({ reset: true }).then(() => toast("Догадки ИИ забыты"));
+  };
+}
+
 /* ---------------------------------------------------------------- after a résumé upload: fill the feed? */
 
 async function offerPreset(cv) {
@@ -1039,7 +1065,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); }
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadRoles(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

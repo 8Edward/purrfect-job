@@ -64,6 +64,48 @@ view = webapp.graph_view(graph, "business-analyst", "бизнес аналити
 kinds = {n["id"]: n["kind"] for n in view["nodes"]}
 assert kinds["system-analyst"] == "adj" and kinds["product-manager"] == "far" and "syn:1" in kinds
 assert "business-analyst" in graph["system-analyst"]["links"]  # links work both ways
+# roles by meaning: `also` titles (O*NET + Russian), any word order, word equivalents
+assert webapp.find_role(graph, "аналитик dwh") == "dwh-analyst" and webapp.find_role(graph, "DWH-аналитик") == "dwh-analyst"
+assert webapp.find_role(graph, "chargeback analyst") == "fraud-analyst"
+assert webapp.find_role(graph, "антифрод") == "fraud-analyst"
+assert webapp.find_role(graph, "системный аналитик dwh") == "dwh-analyst"
+for t, rid in [("Chargeback Specialist", "fraud-analyst"), ("Head of Fraud Operations", "fraud-analyst"),
+               ("Trust & Safety Analyst", "fraud-analyst"), ("Аналитик по мониторингу транзакций", "fraud-analyst"),
+               ("Data Warehouse Analyst", "dwh-analyst"), ("Аналитик хранилища данных (DWH)", "dwh-analyst"),
+               ("Senior Insights Analyst", "data-analyst"), ("Аналитик SQL", "data-analyst"),
+               ("Power BI Developer", "bi-analyst"), ("Credit Risk Specialist", "risk-analyst")]:
+    assert rid in webapp.roles_of_title(t), (t, webapp.roles_of_title(t))
+assert webapp.roles_of_title("Welder") == [] and webapp.roles_of_title("Водитель такси") == []
+# words side by side vs scattered; the first role in a title is what the job is
+tr = webapp.tight_re("антифрод аналитик")
+assert all(tr.search(webapp.norm(t)) for t in ("Fraud Analyst", "Аналитик (антифрод)", "аналитик по антифроду"))
+assert not webapp.tight_re("data analyst").search(webapp.norm("Data Scientist, Marketing Analytics"))
+assert webapp.title_roles("Senior Data Engineer – Data Analytics Platform")[0][2] == "data-engineer"
+assert webapp.title_roles("Аналитик DWH")[0][2] == "dwh-analyst"
+
+# Claude's labels: kept apart, only sure ones used, ✓/✗ review, reset keeps checked ones
+import roles  # noqa: E402
+roles.CACHE_PATH = Path(tempfile.mkdtemp()) / "roles.json"
+jobs_ = [{"source": "web", "key": "a", "title": "Payments Integrity Specialist", "date": datetime.now(timezone.utc)},
+         {"source": "web", "key": "b", "title": "Welder", "date": datetime.now(timezone.utc)},
+         {"source": "web", "key": "c", "title": "Data Guru", "date": datetime.now(timezone.utc)}]
+todo = roles.unknown(jobs_, lambda t: bool(webapp.roles_of_title(t)))
+assert [j["key"] for j in todo] == ["a", "b", "c"]
+got = roles.parse('```json\n{"1": {"roles": ["fraud-analyst", "nonsense"], "sure": true}, "2": {"roles": [], "sure": true},'
+                  ' "3": {"roles": ["data-analyst"], "sure": false}}\n```', todo, graph)
+assert got["t:payments integrity specialist"]["roles"] == ["fraud-analyst"]
+roles.save({"labels": got, "meta": {}})
+assert roles.label_of(jobs_[0]) == (["fraud-analyst"], False)   # sure: used, not yet checked
+assert roles.label_of(jobs_[2]) == ([], False)                  # a guess: never used
+assert roles.unknown(jobs_, lambda t: False) == []               # each title is asked once
+items, n = roles.review_list()
+assert n == 2 and items[0]["title"] == "Payments Integrity Specialist"  # the guess waits for ✓ too
+roles.review(items[0]["key"], False)
+assert roles.label_of(jobs_[0]) == ([], False)                  # ✗: never used again
+roles.review(items[0]["key"], True)
+assert roles.label_of(jobs_[0]) == (["fraud-analyst"], True)
+assert roles.reset() == 1 and roles.label_of(jobs_[0]) == (["fraud-analyst"], True)  # ✓ survives a reset
+roles.DAILY = 0  # the app tests below must never call the real Claude
 
 
 CV_TEXT = """Анна Петрова — Middle бизнес-аналитик
@@ -223,7 +265,7 @@ async def main():
                 s = await (await c.get("/api/search?q=бизнес аналитик&mode=exact", headers=auth)).json()
                 titles = {i["title"] for i in s["items"]}
                 assert "Бизнес-аналитик" in titles and not any("Системн" in t for t in titles), titles
-                assert all(i["match"]["kind"] == "exact" for i in s["items"]) and s["graph"] is None
+                assert {i["match"]["kind"] for i in s["items"]} <= {"exact", "syn", "role", "loose"} and s["graph"] is None, [(i["title"], i["match"]) for i in s["items"]]
                 assert s["sources"]["channels"] == 2  # the 30-day-old post is out
                 # a post that only mentions the phrase deep in its text comes last, labelled
                 app.posts["datajob"][1].append({"source": "tg", "key": "1000000000777_8", "chat": "Data Jobs", "chat_id": -1, "msg_id": 8,
@@ -237,7 +279,7 @@ async def main():
                 # similar: synonyms (Business Analyst), adjacent (системный), far (Product Owner) — ranked
                 s = await (await c.get("/api/search?q=бизнес аналитик&mode=similar", headers=auth)).json()
                 kinds = [i["match"]["kind"] for i in s["items"]]
-                assert kinds == sorted(kinds, key=["exact", "syn", "adj", "far", "text"].index), kinds
+                assert kinds == sorted(kinds, key={"exact": 0, "syn": 1, "role": 1, "ai": 1.5, "loose": 1.8, "adj": 2, "far": 3, "text": 4}.get), kinds
                 # «Business Analyst» is the same words in English, so it counts as exact now
                 assert {"adj", "far"} <= set(kinds) and s["graph"]["root"]["label"] == "бизнес аналитик"
                 assert any(i["title"] == "Business Analyst" and i["match"]["kind"] == "exact" for i in s["items"])
@@ -251,6 +293,7 @@ async def main():
                 r = await (await c.post(f"/api/search/{hh_hit['key'].replace('/', '%2F')}/take", headers=auth)).json()
                 assert r["ok"] and g.load_inbox()[hh_hit["key"]]["status"] == "taken" and g.load_inbox()[hh_hit["key"]]["via"] == "search"
                 assert (await c.post("/api/search/unknown/take", headers=auth)).status == 404
+                assert (await c.get("/api/roles", headers=auth)).status == 403  # reviewing Claude's roles: owner only
 
                 # sources
                 src = await (await c.get("/api/sources", headers=auth)).json()
