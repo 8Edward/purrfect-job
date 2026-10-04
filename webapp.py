@@ -1675,7 +1675,8 @@ class WebApp:
             return self.bad("Отклик уже готовится — подождите.", 409)
         if body.get("mode") != "ai":  # the default: a letter from templates, no AI, no tokens, at once
             try:
-                return web.json_response({"result": await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""))})
+                return web.json_response({"result": await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""),
+                                                                         str(body.get("lang") or ""))})
             except ValueError as e:
                 return self.bad(str(e))
         if resume_ai.uses_left(m) <= 0:
@@ -1690,17 +1691,17 @@ class WebApp:
         """«О себе» texts to choose from: the résumé's own + the ones the person saved (in the letter's language or any)."""
         saved = [p for p in (m.load_state().get("apply_presets") or []) if p.get("lang") in (lang, "any", None)]
         profile = self.apply_profile(m)
-        mine = [{"id": "profile", "name": "Из профиля", "text": profile["values"]["about"]}] if profile["values"].get("about") and "about" in profile["use"] else []
+        mine = [{"id": "profile", "name": "Из профиля", "text": letters.pv(profile, "about", lang)}] if letters.pv(profile, "about", lang) and "about" in profile["use"] else []
         return mine + letters.resume_presets(md) + [{"id": p["id"], "name": p["name"], "text": p["text"]} for p in saved]
 
-    async def draft_tpl(self, m, key, item, tone="", preset=""):
+    async def draft_tpl(self, m, key, item, tone="", preset="", lang_over=""):
         """A response draft from templates (letters.py): the same fields as draft_one plus the choices shown in the sheet."""
         try:
             text = await self.vacancy_text(m, {"job_key": key})
         except ValueError:
             text = item.get("text") or ""
         head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n{item.get('location') or ''}\n\n"
-        lang = resume.detect_lang(text or head)
+        lang = lang_over if lang_over in ("ru", "en") else resume.detect_lang(text or head)
         meta = apply.pick_version(m, lang)
         if not meta:
             raise ValueError("Сначала добавьте резюме во вкладке «▤ Резюме».")
@@ -1711,7 +1712,7 @@ class WebApp:
             preset = "profile"
         about = next((p["text"] for p in presets if p["id"] == preset), None)
         profile = self.apply_profile(m)
-        name = (profile["values"].get("fio") if "fio" in profile["use"] else "") or letters.parse_resume(md)["name"]
+        name = (letters.pv(profile, "fio", lang) if "fio" in profile["use"] else "") or letters.parse_resume(md)["name"]
         manual = letters.manual_reasons(text or item.get("text"))
         return {"key": key, "title": item.get("title") or "", "company": item.get("company") or "",
                 "letter": letters.compose(md, item, head + text, lang, tone, about, profile),
@@ -1719,6 +1720,7 @@ class WebApp:
                 "subject": apply.subject_for(item, name, lang), "channels": apply.contacts(item, text),
                 "resume": {"vid": meta["id"], "name": meta["name"], "lang": meta.get("lang", "ru")},
                 "smtp": bool(apply.smtp_settings(self.radar.cfg)), "dry": apply.dry_run(self.radar.cfg),
+                "blocks": letters.package_blocks(profile, lang),
                 "tone": tone, "tones": letters.tone_list("ru"), "presets": presets, "preset": preset if about is not None else "",
                 "ai_left": resume_ai.uses_left(m)}
 
@@ -1731,7 +1733,7 @@ class WebApp:
         if not item:
             return self.bad("Вакансия не найдена", 404)
         try:
-            draft = await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""))
+            draft = await self.draft_tpl(m, key, item, str(body.get("tone") or ""), str(body.get("preset") or ""), str(body.get("lang") or ""))
             if isinstance(body.get("about"), str):  # the person's own paragraph, not saved
                 _, md = resume.get_version(m, draft["resume"]["vid"])
                 tone = draft["tone"]
@@ -1740,7 +1742,8 @@ class WebApp:
                                                   self.apply_profile(m))
         except ValueError as e:
             return self.bad(str(e))
-        return web.json_response({"letter": draft["letter"], "tone": draft["tone"]})
+        return web.json_response({"letter": draft["letter"], "tone": draft["tone"], "lang": draft["lang"], "subject": draft["subject"],
+                                  "blocks": draft["blocks"], "presets": draft["presets"]})
 
     @staticmethod
     def apply_profile(m):
@@ -1760,8 +1763,15 @@ class WebApp:
                     return self.bad("Сначала добавьте резюме во вкладке «▤ Резюме».")
                 _, md = resume.get_version(m, meta["id"])
                 profile = self.apply_profile(m)
-                found = {k: v for k, v in letters.from_resume(md).items() if not profile["values"].get(k)}
-                profile["values"].update(found)
+                found = {k: v for k, v in letters.profile_lang_values(letters.from_resume(md)).items()}
+                changed = {}
+                for k, texts in found.items():  # only into empty places: what the person typed stays
+                    cell = profile["values"].setdefault(k, {"ru": "", "en": ""})
+                    for lg, text in texts.items():
+                        if not cell.get(lg):
+                            cell[lg], changed[k] = text, True
+                found = changed
+                profile = letters.clean_profile(profile)
             else:
                 profile = letters.clean_profile(body)
             m.update_state(apply_profile=profile)

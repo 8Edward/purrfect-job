@@ -176,11 +176,11 @@ function renderStack() {
   }
   $("#acts").hidden = false;
   if (items.length < 8) moreFeed();
-  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не подходят по поясу или стране: ${st.tzHidden}` : "");
+  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, вверх — оценка ИИ, вниз — отклик, тап — подробно` + (st.tzHidden ? ` · не подходят по поясу или стране: ${st.tzHidden}` : "");
   box.innerHTML = items.slice(0, 3).reverse().map((i, n, arr) => {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
-      <span class="verdict yes">В ИЗБРАННОЕ</span><span class="verdict no">СКРЫТЬ</span>
+      <span class="verdict yes">В ИЗБРАННОЕ</span><span class="verdict no">СКРЫТЬ</span><span class="verdict up">✨ ОЦЕНКА ИИ</span><span class="verdict down">✉️ ОТКЛИК</span>
       <div class="src"><span>${esc(originOf(i))}</span><span>${esc(when(i.date))}${i.fav ? " · ★" : ""}</span></div>
       <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
       <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>${aiLine(i)}
@@ -239,11 +239,18 @@ async function decide(card, yes) {
   } catch (e) { fail(e); loadFeed().catch(() => {}); }
 }
 function drag(card) {
-  let x0 = null, y0 = 0, dx = 0, down = null;
-  card.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; dx = 0; down = e.target; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
+  let x0 = null, y0 = 0, dx = 0, dy = 0, down = null, axis = "";
+  card.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; dx = dy = 0; axis = ""; down = e.target; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
   card.addEventListener("pointermove", (e) => {
     if (x0 === null) return;
-    dx = e.clientX - x0;
+    dx = e.clientX - x0; dy = e.clientY - y0;
+    if (!axis && Math.max(Math.abs(dx), Math.abs(dy)) > 10) axis = Math.abs(dy) > Math.abs(dx) * 1.2 ? "v" : "h";  // the first moves decide: sideways or up / down
+    if (axis === "v") {
+      card.style.transform = `translateY(${dy / 3}px)`;
+      $(".verdict.up", card).style.opacity = Math.max(0, -dy / 90);
+      $(".verdict.down", card).style.opacity = Math.max(0, dy / 90);
+      return;
+    }
     card.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
     $(".verdict.yes", card).style.opacity = Math.max(0, dx / 90);
     $(".verdict.no", card).style.opacity = Math.max(0, -dx / 90);
@@ -253,9 +260,16 @@ function drag(card) {
     const tap = Math.abs(dx) < 6 && Math.abs((e.clientY || y0) - y0) < 6;
     x0 = null;
     card.classList.remove("drag");
-    if (Math.abs(dx) > 90) return decide(card, dx > 0);
+    if (axis === "h" && Math.abs(dx) > 90) return decide(card, dx > 0);
+    const vertical = axis === "v" && Math.abs(dy) > 90 && e.type === "pointerup" ? (dy < 0 ? "up" : "down") : "";
     card.style.transform = "";
     $$(".verdict", card).forEach((v) => (v.style.opacity = 0));
+    if (vertical) {  // the card stays: «up» asks the AI, «down» opens the response package (nothing is sent)
+      haptic();
+      const item = byKey(card.dataset.key);
+      if (vertical === "up") return st.me && st.me.ai ? scoreJob(item) : toast("ИИ для вас пока не включён");
+      return st.me && st.me.owner ? applyFlow(item) : toast("Отклики пока только у владельца");
+    }
     if (tap && e.type === "pointerup") {
       if (down && down.closest && down.closest("[data-score]")) scoreJob(byKey(card.dataset.key));
       else openSheet(byKey(card.dataset.key), false);
@@ -459,6 +473,7 @@ function renderApply(item, r) {
   $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
     <p class="hint">Проверьте и поправьте письмо. Резюме: «${esc(r.resume.name)}»${r.resume.lang !== r.lang ? " (другой язык, чем вакансия — можно перевести во вкладке «Резюме»)" : ""}. Ничего не уйдёт, пока вы не нажмёте кнопку.${r.dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
     ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
+    ${r.tones ? `<div class="seg two" id="ap-lang" role="group" aria-label="Язык отклика"><button data-al="ru" aria-pressed="${r.lang === "ru"}">RUS</button><button data-al="en" aria-pressed="${r.lang === "en"}">ENG</button></div>` : ""}
     ${r.tones ? `<div class="tzrow"><label>Тон письма<select class="inp" id="ap-tone">${r.tones.map((t) => `<option value="${esc(t.id)}" ${t.id === r.tone ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
       <label>О себе<select class="inp" id="ap-preset"><option value="">Из резюме</option>${r.presets.filter((p) => p.id !== "resume").map((p) => `<option value="${esc(p.id)}" ${p.id === r.preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
       <label class="fld"><span>Абзац «о себе» (можно написать свой)</span><textarea class="inp" id="ap-about" rows="3" maxlength="700">${esc((r.presets.find((p) => p.id === (r.preset || "resume")) || {}).text || "")}</textarea></label>
@@ -469,20 +484,40 @@ function renderApply(item, r) {
     <div class="ap-btns">${mails}${tgs}
       ${ch.link ? '<button data-site="1">🔗 Открыть вакансию</button>' : ""}
       <button data-copy="1">📋 Скопировать письмо</button>
+      ${r.tones ? '<button data-pdf="1">📎 Резюме (PDF) в чат с ботом</button>' : ""}
       ${r.tones ? `<button data-ai="1">✨ Переписать с ИИ${r.ai_left != null ? ` (осталось ${r.ai_left})` : ""}</button>` : ""}</div>
     ${!r.smtp && !r.dry && ch.email.length ? '<p class="hint">Чтобы я отправлял письма сам, нужен «пароль приложения» Gmail в config.yml — спросите меня в чате, покажу по шагам.</p>' : ""}
+    ${r.blocks && r.blocks.length ? `<div class="lbl" style="margin-top:12px">Данные для формы на сайте (${r.lang === "ru" ? "RUS" : "ENG"})</div>
+      ${r.blocks.map((b, n) => `<div class="pk-row"><div class="pk-t"><small>${esc(b.label)}</small><span>${esc(b.text)}</span></div><button data-pk-copy="${n}" aria-label="Скопировать">📋</button></div>`).join("")}
+      <p class="hint">Заполняются в «Ещё → Профиль для откликов».</p>` : (r.tones ? '<p class="hint">Ваши данные (ФИО, город, зарплата…) можно заполнить в «Ещё → Профиль для откликов»: они появятся здесь готовыми блоками.</p>' : "")}
     <p class="hint">После «Открыть…» письмо и PDF резюме придут в чат с ботом, а вакансия отметится «Откликнулся».</p>
     <div class="btns"><button class="wide" id="ap-cancel">Отмена</button></div>`;
   const text = () => $("#ap-text").value;
   const rebuild = async (aboutText) => {
     try {
-      const body = { key: item.key, tone: $("#ap-tone").value, preset: $("#ap-preset").value };
+      const body = { key: item.key, tone: $("#ap-tone").value, preset: $("#ap-preset").value, lang: r.lang };
       if (aboutText != null) body.about = aboutText;
       const d = await api("/api/apply/compose", body);
       $("#ap-text").value = d.letter;
       haptic(); toast("Письмо пересобрано");
     } catch (e) { fail(e); }
   };
+  $$("#ap-lang button").forEach((b) => (b.onclick = async () => {
+    if (b.dataset.al === r.lang) return;
+    try {
+      const d = await api("/api/apply/compose", { key: item.key, tone: $("#ap-tone").value, preset: "", lang: b.dataset.al });
+      haptic();
+      renderApply(item, { ...r, lang: d.lang, letter: d.letter, subject: d.subject, blocks: d.blocks, presets: d.presets, preset: "" });
+    } catch (e) { fail(e); }
+  }));
+  $$("[data-pk-copy]").forEach((b) => (b.onclick = async () => {
+    try { await navigator.clipboard.writeText(r.blocks[+b.dataset.pkCopy].text); haptic(); toast("Скопировано"); } catch (e) { toast("Не получилось скопировать — выделите текст вручную"); }
+  }));
+  $$("[data-pdf]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true; b.textContent = "Готовлю PDF…";
+    try { await api("/api/resume/export", { vid: r.resume.vid, format: "pdf" }); haptic("ok"); toast("PDF резюме в чате с ботом"); } catch (e) { fail(e); }
+    b.disabled = false; b.textContent = "📎 Резюме (PDF) в чат с ботом";
+  }));
   if ($("#ap-rebuild")) {
     $("#ap-tone").onchange = () => rebuild($("#ap-about").value);
     $("#ap-preset").onchange = () => {
@@ -845,10 +880,13 @@ async function loadSaved() {
 /* ---------------------------------------------------------------- 🧾 profile for responses («Ещё») */
 
 let pf = null;
+let pfLang = "ru";   // the language the form edits: every field keeps a Russian and an English text
+const pfText = (p, key, lang) => ((p.values[key] || {})[lang] || "");
 function pfRender() {
-  const f = pf.fields, p = pf.profile;
-  $("#pf-list").innerHTML = f.map((x) => `<div class="pf-row"><label>${esc(x.ru)}</label>
-      ${x.key === "about" ? `<textarea class="inp" data-pk="${x.key}" rows="3" maxlength="700">${esc(p.values[x.key] || "")}</textarea>` : `<input class="inp" data-pk="${x.key}" maxlength="700" value="${esc(p.values[x.key] || "")}">`}
+  const f = pf.fields, p = pf.profile, other = pfLang === "ru" ? "en" : "ru";
+  $$("#pf-lang button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.l === pfLang));
+  $("#pf-list").innerHTML = f.map((x) => `<div class="pf-row"><label>${esc(x[pfLang])}</label>
+      ${x.key === "about" ? `<textarea class="inp" data-pk="${x.key}" rows="3" maxlength="700" placeholder="${esc(pfText(p, x.key, other).slice(0, 80))}">${esc(pfText(p, x.key, pfLang))}</textarea>` : `<input class="inp" data-pk="${x.key}" maxlength="700" placeholder="${esc(pfText(p, x.key, other).slice(0, 60))}" value="${esc(pfText(p, x.key, pfLang))}">`}
       <label class="pf-use"><input type="checkbox" data-pu="${x.key}" ${p.use.includes(x.key) ? "checked" : ""}> в письмо</label></div>`).join("")
     + p.custom.map((c, n) => `<div class="pf-row own"><input class="inp" data-cl="${n}" maxlength="40" placeholder="Название поля" value="${esc(c.label)}">
       <input class="inp" data-cv="${n}" maxlength="700" placeholder="Значение" value="${esc(c.value)}">
@@ -859,7 +897,11 @@ function pfRender() {
 }
 function pfRead() {   // the form -> pf.profile (before it is saved or redrawn)
   const p = pf.profile;
-  $$("[data-pk]").forEach((e) => { const v = e.value.trim(); if (v) p.values[e.dataset.pk] = v; else delete p.values[e.dataset.pk]; });
+  $$("[data-pk]").forEach((e) => {
+    const cell = p.values[e.dataset.pk] || (p.values[e.dataset.pk] = { ru: "", en: "" });
+    cell[pfLang] = e.value.trim();
+    if (!cell.ru && !cell.en) delete p.values[e.dataset.pk];
+  });
   p.use = $$("[data-pu]").filter((c) => c.checked).map((c) => c.dataset.pu);
   p.custom = $$("[data-cl]").map((e) => ({ label: e.value, value: $(`[data-cv="${e.dataset.cl}"]`).value, use: $(`[data-cu="${e.dataset.cl}"]`).checked }));
 }
@@ -870,6 +912,7 @@ async function loadProfile() {
   g.hidden = false;
   pfRender();
 }
+$$("#pf-lang button").forEach((b) => (b.onclick = () => { pfRead(); pfLang = b.dataset.l; pfRender(); }));
 $("#pf-add").onclick = () => { pfRead(); pf.profile.custom.push({ label: "", value: "", use: true }); pfRender(); };
 $("#pf-save").onclick = async () => {
   pfRead();

@@ -73,6 +73,7 @@ PROFILE_FIELDS = [
     ("location", "Где живу", "Location", False),
     ("salary", "Ожидаемая зарплата", "Expected salary", False),
     ("notice", "Когда могу выйти", "Available from", False),
+    ("permit", "Право на работу", "Work authorization", False),
     ("about", "О себе", "About me", True),
     ("email", "Почта", "Email", True),
     ("phone", "Телефон", "Phone", False),
@@ -162,10 +163,10 @@ def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None, profile
     fill = dict(title=title, company=company, team=team, at=at)
     profile = profile or {}
     use = profile.get("use") or []
-    mine_about = (profile.get("values") or {}).get("about") if "about" in use else ""
+    mine_about = pv(profile, "about", lang) if "about" in use else ""
     about = _fit(about if about is not None else (mine_about or info["summary"]))
-    if (profile.get("values") or {}).get("fio") and "fio" in use:
-        info["name"] = profile["values"]["fio"]
+    if "fio" in use and pv(profile, "fio", lang):
+        info["name"] = pv(profile, "fio", lang)
     mine = matched_skills(info["skills"], f"{item.get('title') or ''}\n{vacancy_text}")
     if mine:
         skills_line = t["skills_match"].format(skills=", ".join(mine))
@@ -190,11 +191,37 @@ LINKEDIN = re.compile(r"(?:https?://)?(?:[\w.]+\.)?linkedin\.com/[\w\-/%]+", re.
 SITE = re.compile(r"(?:https?://)?(?:www\.)?(?:github\.com|gitlab\.com|behance\.net)/[\w\-/.]+", re.I)
 
 
+def pv(profile, key, lang):
+    """The profile's text for a field in a language; the other language's text when this one is empty ('' if none)."""
+    v = (profile.get("values") or {}).get(key) or {}
+    other = "en" if lang == "ru" else "ru"
+    return v.get(lang) or v.get(other) or ""
+
+
+def profile_lang_values(found):
+    """{key: str} found in a résumé -> {key: {ru, en}}: a text goes into the language it is written in (names, contacts into both)."""
+    out = {}
+    for k, v in found.items():
+        if k == "about":
+            out[k] = {resume.detect_lang(v): v}
+        else:
+            out[k] = {"ru": v, "en": v}
+    return out
+
+
 def clean_profile(data):
     """Whatever the app sent -> {values{key: text}, custom[{label, value, use}], use[key]}; unknown keys dropped."""
     data = data if isinstance(data, dict) else {}
     vals = data.get("values") if isinstance(data.get("values"), dict) else {}
-    values = {k: str(vals[k]).strip()[:VALUE_MAX] for k in PROFILE_KEYS if k in vals and str(vals[k]).strip()}
+    values = {}
+    for k in PROFILE_KEYS:
+        v = vals.get(k)
+        if isinstance(v, str):  # one text for both languages
+            v = {"ru": v, "en": v}
+        if isinstance(v, dict):
+            both = {lg: str(v.get(lg) or "").strip()[:VALUE_MAX] for lg in ("ru", "en")}
+            if any(both.values()):
+                values[k] = both
     custom = []
     for c in (data.get("custom") if isinstance(data.get("custom"), list) else [])[:CUSTOM_MAX]:
         if isinstance(c, dict) and str(c.get("label") or "").strip() and str(c.get("value") or "").strip():
@@ -221,7 +248,7 @@ def from_resume(md):
         out["email"] = m.group(0)
     if m := PHONE.search(text):
         out["phone"] = m.group(0).strip()
-    if m := TG.search(text):
+    if m := TG.search(EMAIL.sub(" ", text)):  # an address like a@gmail.com is not a handle
         out["telegram"] = "@" + (m.group(1) or m.group(2)).lstrip("@")
     if m := LINKEDIN.search(text):
         out["linkedin"] = m.group(0)
@@ -239,11 +266,24 @@ def from_resume(md):
 def contact_block(profile, lang):
     """The contact lines ending a letter: the profile fields (and own fields) the person ticked; name and about are not here."""
     lang = lang if lang in ("ru", "en") else "ru"
-    values, use = profile.get("values", {}), set(profile.get("use", []))
-    lines = [f"{ru if lang == 'ru' else en}: {values[key]}" for key, ru, en, _ in PROFILE_FIELDS
-             if key not in ("fio", "about") and key in use and values.get(key)]
+    use = set(profile.get("use", []))
+    lines = [f"{ru if lang == 'ru' else en}: {pv(profile, key, lang)}" for key, ru, en, _ in PROFILE_FIELDS
+             if key not in ("fio", "about") and key in use and pv(profile, key, lang)]
     lines += [f"{c['label']}: {c['value']}" for c in profile.get("custom", []) if c.get("use")]
     return lines
+
+
+def package_blocks(profile, lang):
+    """The ready pieces of a response package, each with its own «copy» button in the app: [{label, text}] in the language.
+    Only filled fields; the letter itself and the résumé file are separate."""
+    lang = lang if lang in ("ru", "en") else "ru"
+    blocks = []
+    for key, ru, en, _ in PROFILE_FIELDS:
+        text = pv(profile, key, lang)
+        if text:
+            blocks.append({"key": key, "label": ru if lang == "ru" else en, "text": text})
+    blocks += [{"key": "custom", "label": c["label"], "text": c["value"]} for c in profile.get("custom", [])]
+    return blocks
 
 
 MANUAL = [  # a vacancy asking for more than a letter: a test, a questionnaire, real experience answers

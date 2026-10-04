@@ -67,15 +67,22 @@ assert info["skills"] == ["PostgreSQL", "Greenplum", "ClickHouse"], info["skills
 # profile: only known fields, ticked ones in the letter, résumé contacts found by rules
 pr = letters.clean_profile({"values": {"fio": "Eduard Dunaev", "salary": "от 3000 USD", "bogus": "x", "email": ""}, "custom": [{"label": "Visa", "value": "нет"}, {"label": "", "value": "z"}],
                             "use": ["fio", "salary", "nope"]})
-assert pr["values"] == {"fio": "Eduard Dunaev", "salary": "от 3000 USD"} and pr["use"] == ["fio", "salary"] and pr["custom"] == [{"label": "Visa", "value": "нет", "use": True}]
+assert pr["values"] == {"fio": {"ru": "Eduard Dunaev", "en": "Eduard Dunaev"}, "salary": {"ru": "от 3000 USD", "en": "от 3000 USD"}} and pr["use"] == ["fio", "salary"] and pr["custom"] == [{"label": "Visa", "value": "нет", "use": True}]
 text = letters.compose(MD, item, "", "ru", profile=pr)
 assert text.rstrip().endswith("Visa: нет") and "Ожидаемая зарплата: от 3000 USD" in text and "Eduard Dunaev" in text and "Иван Петров" not in text
 assert "Expected salary: от 3000 USD" in letters.compose(MD, item, "", "en", profile=pr)
+two = letters.clean_profile({"values": {"salary": {"ru": "от 3000 USD", "en": "from 3000 USD"}, "permit": {"en": "Remote contractor"}}, "use": ["salary", "permit"]})
+assert "Ожидаемая зарплата: от 3000 USD" in letters.compose(MD, item, "", "ru", profile=two) and "Salary" not in letters.compose(MD, item, "", "ru", profile=two)
+assert "Expected salary: from 3000 USD" in letters.compose(MD, item, "", "en", profile=two) and "Право на работу: Remote contractor" in letters.compose(MD, item, "", "ru", profile=two)  # the other language fills a gap
+assert [b["label"] for b in letters.package_blocks(two, "en")] == ["Expected salary", "Work authorization"] and letters.package_blocks({}, "ru") == []
+assert letters.profile_lang_values({"about": "Аналитик данных", "email": "a@b.co"}) == {"about": {"ru": "Аналитик данных"}, "email": {"ru": "a@b.co", "en": "a@b.co"}}
 mine = letters.clean_profile({"values": {"about": "Свой абзац про меня.", "phone": "+1 555"}, "use": ["about"]})
 t2 = letters.compose(MD, item, "", "ru", profile=mine)
 assert "Свой абзац про меня." in t2 and "+1 555" not in t2 and "Аналитик данных с опытом" not in t2
 found = letters.from_resume(HH)
 assert found["fio"] == "Иван Петров" and found["email"] == "ivan@mail.ru" and found["telegram"] == "@ivan_p" and found["phone"] == "+7 (926) 111-22-33" and found["location"] == "Москва", found
+assert letters.from_resume("# Имя\n\nname@gmail.com | +7 (926) 111-22-33 | ТГ @ivan_p\n").get("telegram") == "@ivan_p"
+assert "telegram" not in letters.from_resume("# Имя\n\nname@gmail.com | Москва\n")
 assert letters.manual_reasons("Выполните тестовое задание и ответьте на вопросы") == ["тестовое задание", "вопросы или анкета"]
 assert letters.manual_reasons("Ищем аналитика, SQL") == [] and letters.manual_reasons("Please answer the following questions") == ["questions / test"]
 print("ok")
