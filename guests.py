@@ -215,7 +215,7 @@ class Guest(Member):
 
     def load_search(self):
         if self.search_path.exists():
-            return yaml.safe_load(self.search_path.read_text(encoding="utf-8")) or {}
+            return tc.read_yaml(self.search_path)
         return {}
 
     def save_search(self, search):
@@ -694,13 +694,13 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
 # ---------------------------------------------------------------- 🌐 sites (portals.yml job_boards)
 
 def read_boards():
-    data = yaml.safe_load(PORTALS_PATH.read_text(encoding="utf-8")) if PORTALS_PATH.exists() else {}
+    data = tc.read_yaml(PORTALS_PATH) if PORTALS_PATH.exists() else {}
     return [b for b in (data or {}).get("job_boards") or [] if isinstance(b, dict) and b.get("provider")]
 
 
 def read_companies():
     """Companies with their own feed: {id: {name, ru, ...}} from companies.yml."""
-    data = yaml.safe_load(COMPANIES_PATH.read_text(encoding="utf-8")) if COMPANIES_PATH.exists() else {}
+    data = tc.read_yaml(COMPANIES_PATH) if COMPANIES_PATH.exists() else {}
     return {c["id"]: c for c in (data or {}).get("companies") or [] if isinstance(c, dict) and str(c.get("id", "")).startswith(CO_PREFIX)}
 
 

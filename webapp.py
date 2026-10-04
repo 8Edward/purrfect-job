@@ -670,6 +670,7 @@ class WebApp:
                     item["fav"] = True
             m.save_inbox(inbox)
             m.update_state(fav_migrated=True)
+        new_count = len(extras.groups(feed_pairs(m, inbox)[0]))  # once: it is the slow part
         return web.json_response({
             "name": "Эдуард" if m.is_owner else (m.info.get("name") or m.name).split(" ")[0],
             "owner": m.is_owner,
@@ -681,9 +682,9 @@ class WebApp:
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
             "roles_ai": self.roles_summary() if m.is_owner else None,
-            "funnel": {**extras.funnel(inbox, fits_now(m)), "jobs": len(extras.groups(feed_pairs(m, inbox)[0]))},  # «вакансий» = the feed's own pool
+            "funnel": {**extras.funnel(inbox, fits_now(m)), "jobs": new_count},  # «вакансий» = the feed's own pool
             "stats": {
-                "new": len(extras.groups(feed_pairs(m, inbox)[0])),
+                "new": new_count,
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
                 "fav": sum(1 for i in inbox.values() if VIEWS["fav"](i)),
                 "archived": sum(1 for i in inbox.values() if i.get("archived")),
@@ -710,6 +711,7 @@ class WebApp:
             limit = min(PAGE_MAX, max(1, int(request.query.get("limit", 40))))
         except ValueError:
             offset, limit = 0, 40
+        pool = items  # the whole feed, before this request's chips: its sources fill «Исключить источник»
         items = apply_filters(items, request.query.get("f", "all"))
         grade = request.query.get("grade", "")
         if grade in dict(extras.GRADES):
@@ -729,8 +731,7 @@ class WebApp:
         unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
         origins = {}
         if view == "new":  # the sources in today's pool, biggest first (for «Исключить источник»)
-            full, _ = feed_pairs(m, inbox)
-            for _, v in full:
+            for _, v in pool:
                 origins[origin_name(v)] = origins.get(origin_name(v), 0) + 1
         return web.json_response({"items": page, "total": total, "offset": offset, "tz_hidden": tz_hidden, "unscored": unscored,
                                   "origins": [{"name": n, "n": c} for n, c in sorted(origins.items(), key=lambda kv: -kv[1]) if n][:40],

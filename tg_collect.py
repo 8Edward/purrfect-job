@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import asyncio
+import copy
 import functools
 import hashlib
 import json
@@ -370,9 +371,25 @@ def add_to_pipeline(lines):
 
 # ---------------------------------------------------------------- main
 
+_yaml_cache = {}
+
+
+def read_yaml(path):
+    """A yaml file as a fresh dict. Parsing is slow (portals.yml, companies.yml: a third of a second), and a feed
+    request read five of them, so the parsed text is kept until the file changes (modified time and size)."""
+    path = Path(path)
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    hit = _yaml_cache.get(str(path))
+    if not hit or hit[0] != key:
+        hit = (key, yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+        _yaml_cache[str(path)] = hit
+    return copy.deepcopy(hit[1])
+
+
 def load_search():
     path = SEARCH_PATH if SEARCH_PATH.exists() else SEARCH_DEFAULT_PATH
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return read_yaml(path)
 
 
 def save_search(search):
@@ -383,7 +400,7 @@ def save_search(search):
 
 def load_config():
     """config.yml (credentials) + search settings (search.yml or its defaults)."""
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    cfg = read_yaml(CONFIG_PATH)
     return {**cfg, **load_search()}
 
 
