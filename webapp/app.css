@@ -419,6 +419,7 @@ html[data-skin="office"] .slide h2 { font-size: 18px; }
 #track-list { padding: 0 12px; }
 #track-list .lbl { margin-top: 10px; }
 .tzrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px 14px 14px; }
+.tzrow.one { grid-template-columns: 1fr; }
 .tzrow label { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; min-width: 0; }
 .plan { padding: 4px 14px 14px; display: grid; gap: 10px; font-size: 14px; line-height: 1.45; min-width: 0; }
 .plan .goals { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -522,7 +523,9 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 html[data-skin="remote"] .bitem { border-radius: 16px; }
 
 /* 🤖 roles Claude guessed («Ещё») */
-#roles-list .hint { margin: 0 14px 10px; }
+#roles-list .hint, #roleai .hint { margin: 0 14px 10px; }
+#roleai .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }
+#roleai .stats span { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--tag); }
 #roles-list .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }
 #roles-list .stats span { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--tag); }
 .rl { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); }

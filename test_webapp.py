@@ -135,7 +135,7 @@ class _Ai:
     async def ask(self, system, prompt, timeout=0):
         assert "payments fraud analyst" in prompt and "REAL description" in system
         return '{"1": {"roles": ["fraud-analyst"], "sure": true}}'
-roles.DAILY = 40
+roles.DAILY = 40; roles.DEEP_MIN = 1
 jd = {"source": "web", "key": "d", "title": "Risk Guru", "link": base + "/go", "date": datetime.now(timezone.utc)}
 roles.save({"labels": {"t:risk guru": {"title": "Risk Guru", "roles": [], "sure": False, "at": "x"}}, "meta": {}})
 cand = roles.deep_candidates([jd])
@@ -144,7 +144,7 @@ assert asyncio.run(roles.deep(_Ai(), cand, graph)) == 1
 assert roles.label_of(jd) == (["fraud-analyst"], False) and roles.load()["labels"]["t:risk guru"]["jd"]
 assert roles.deep_candidates([jd]) == []  # looked at once
 srv.shutdown()
-roles.DAILY = 0  # the app tests below must never call the real Claude
+roles.DAILY = 0; roles.DEEP_DAILY = 0  # the app tests below must never call the real Claude
 
 
 CV_TEXT = """Анна Петрова — Middle бизнес-аналитик

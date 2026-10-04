@@ -82,6 +82,9 @@
     <details class="group fold" id="g-tz"><summary><span class="sn">🕒 Часовой пояс</span><small id="sum-tz"></small></summary>
       <div class="tg"><span>Скрывать вакансии не под мой пояс<small>где пояс не указан, вакансия остаётся в ленте</small></span><button class="sw" id="tz-on" aria-pressed="false" aria-label="Фильтр по часовому поясу"></button></div>
       <div class="tzrow"><label>Мой пояс<select class="inp" id="tz-mine"></select></label><label>Разница до<select class="inp" id="tz-spread"></select></label></div></details>
+    <details class="group fold" id="g-country"><summary><span class="sn">🌏 Откуда берут</span><small id="sum-country"></small></summary>
+      <div class="tg"><span>Скрывать вакансии, куда не берут из моей страны<small>например «только США» или «только Европа»; где страна не указана, вакансия остаётся</small></span><button class="sw" id="country-on" aria-pressed="false" aria-label="Фильтр по стране"></button></div>
+      <div class="tzrow one"><label>Я живу в<select class="inp" id="country-key"></select></label></div></details>
     <h3 class="feed-set">⌕ Поиск по всем источникам</h3>
     <form class="field" id="search-form">
       <span aria-hidden="true">⌕</span>
@@ -131,6 +134,7 @@
     <div class="group" id="g-radar"><h4>📡 Поиск вакансий</h4>
       <div class="tg"><span>Как часто искать<small id="int-note"></small></span><select class="inp sm" id="interval" aria-label="Как часто искать"></select></div>
       <div class="tg"><span>Сообщения в Telegram о новых вакансиях<small>короткое саммари в чат с ботом, когда что-то нашлось</small></span><button class="sw" id="alerts" aria-pressed="true" aria-label="Сообщения о новых вакансиях"></button></div></div>
+    <div class="group" id="g-roleai" hidden><h4>🧠 ИИ и словарь ролей</h4><div class="pad" id="roleai"></div></div>
     <div class="group" id="g-src" hidden><h4>📊 Источники: кто молчит</h4><div class="pad" id="src-list"></div></div>
     <div class="group" id="g-roles" hidden><h4>🤖 Роли, которые угадал ИИ</h4><div class="pad" id="roles-list"></div></div>
     <button class="row" id="memo"><b>❓ Вопросы и ответы</b><span class="m">FAQ</span><span class="s">Как всё устроено и как пользоваться</span></button>

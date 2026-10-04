@@ -386,12 +386,12 @@ def fits_now(m):
 
 
 def feed_pairs(m, inbox):
-    """The «new» feed: newest first, the person's time zone filter applied. -> (pairs, filtered out)"""
-    tz = extras.tz_settings(m)
+    """The «new» feed: newest first, the person's time zone and country filters applied. -> (pairs, filtered out)"""
+    tz, cs = extras.tz_settings(m), extras.country_settings(m)
     fits = fits_now(m)
     new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
-    keep = [(k, v) for k, v in new if extras.tz_fits(v, tz)]
+    keep = [(k, v) for k, v in new if extras.tz_fits(v, tz) and extras.country_fits(v, cs)]
     return keep, len(new) - len(keep)
 
 
@@ -559,7 +559,7 @@ class WebApp:
                 todo = await asyncio.to_thread(roles.unknown, jobs, lambda title: bool(roles_of_title(title)))
                 for i in range(0, min(len(todo), roles.BATCH * roles.PER_RUN), roles.BATCH):
                     found += await roles.classify(self.ai, todo[i:i + roles.BATCH], graph)
-                if todo:
+                if len(todo) >= roles.MIN_BATCH:
                     log.info("roles: Claude labelled %d of %d unknown titles, %d got a role", min(len(todo), roles.BATCH * roles.PER_RUN), len(todo), found)
                 look = await asyncio.to_thread(roles.deep_candidates, jobs)  # unsure ones: read the real description
                 if look:
@@ -580,6 +580,15 @@ class WebApp:
             ids |= {"tg:" + k for k in m.selected(guests.load_pool())}
         return web.json_response({"items": sourcestats.report(ids),
                                   "filter": filtercheck.report() if m.is_owner else None})
+
+    @staticmethod
+    def roles_summary():
+        """«Ещё → Радар»: what the role helper spent today and how much it already knows (the pile grows, the spending shrinks)."""
+        s = roles.stats()
+        graph = load_graph()
+        return {"calls": s["calls"], "calls_cap": s["calls_cap"], "deep": s["deep_calls"], "deep_cap": s["deep_cap"],
+                "dict": sum(len(r["names"]) + len(r["also"]) for r in graph.values()),
+                "cache": s["total"], "checked": s["checked"], "used": s["used"]}
 
     async def api_roles(self, request):
         """Owner: Claude's labels to check (✓/✗), counts; POST {key, ok} or {reset: true}."""
@@ -621,6 +630,7 @@ class WebApp:
             "interval": int(self.radar.cfg.get("interval_minutes", 15)),
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
+            "roles_ai": self.roles_summary() if m.is_owner else None,
             "funnel": extras.funnel(inbox, fits_now(m)),
             "stats": {
                 "new": len(extras.groups(feed_pairs(m, inbox)[0])),
@@ -792,8 +802,9 @@ class WebApp:
         later = part in ("chan", "hh", "hima")
         shown = self.shown.get(m.id, {"keys": set(), "twins": set()}) if later else {"keys": set(), "twins": set()}
         keep, items, same = {}, [], set(shown["twins"])
+        cs = extras.country_settings(m)
         for _, job, kind, label in hits:
-            if job["key"] in shown["keys"]:
+            if job["key"] in shown["keys"] or not extras.country_fits(job, cs):
                 continue
             # one vacancy posted on several sites: show it once (no company: the same title on the same site)
             twin = (norm(job.get("title")).strip(), norm(job.get("company")).strip() or "@" + norm(job.get("site") or job.get("chat")))
@@ -876,7 +887,8 @@ class WebApp:
 
     async def himalayas_search(self, m, query):
         try:
-            return await guests.fetch_himalayas(hh_variants(query))
+            cs = extras.country_settings(m)
+            return await guests.fetch_himalayas(hh_variants(query), cs["key"] if cs["on"] else "")
         except Exception as e:
             log.warning("search himalayas: %s", e)
             return []
@@ -998,6 +1010,8 @@ class WebApp:
             "hh": guests.hh_settings(m),
             "words": {g: [guests.plain(p) for p in kw.get(g, [])] for g in ("role", "negative")},
             "tz": extras.tz_settings(m),
+            "country": extras.country_settings(m),
+            "countries": [{"key": k, "name": v[0]} for k, v in extras.COUNTRIES.items()],
         })
 
     async def api_sources_change(self, request):
@@ -1047,6 +1061,11 @@ class WebApp:
                 extras.set_tz(m, **{k: data[k] for k in ("on", "mine", "spread") if k in data})
             except (TypeError, ValueError):
                 raise web.HTTPBadRequest(text='{"error": "Не понял часовой пояс"}', content_type="application/json")
+        elif kind == "country":
+            try:
+                extras.set_country(m, **{k: data[k] for k in ("on", "key") if k in data})
+            except (TypeError, ValueError):
+                raise web.HTTPBadRequest(text='{"error": "Не знаю такую страну"}', content_type="application/json")
         elif kind == "words" and data.get("group") in ("role", "negative"):
             search = m.load_search()
             if data.get("add"):

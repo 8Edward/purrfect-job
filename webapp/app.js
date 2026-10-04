@@ -159,7 +159,7 @@ function renderStack() {
   $("#feed-list").hidden = !list;
   if (list) {
     $("#acts").hidden = true;
-    $("#left").textContent = items.length ? `Показано ${items.length} из ${st.total} · тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "") : "";
+    $("#left").textContent = items.length ? `Показано ${items.length} из ${st.total} · тап — подробно` + (st.tzHidden ? ` · не подходят по поясу или стране: ${st.tzHidden}` : "") : "";
     renderList(items);
     if (items.length) return;
     box.hidden = false;
@@ -168,7 +168,7 @@ function renderStack() {
     const filtered = st.feed.length && st.filter !== "all";
     box.innerHTML = `<div class="empty"><b>${filtered ? "Тут пусто" : "Всё разобрано"}</b>${filtered
       ? "С этим фильтром новых нет."
-      : "Новые вакансии появятся после следующей проверки."}${st.tzHidden ? `<br>Не под ваш часовой пояс скрыто: ${st.tzHidden}.` : ""}<br><button class="link" id="empty-act">${filtered ? "Показать все" : "Проверить сейчас"}</button></div>`;
+      : "Новые вакансии появятся после следующей проверки."}${st.tzHidden ? `<br>Не подходят по поясу или стране: ${st.tzHidden}.` : ""}<br><button class="link" id="empty-act">${filtered ? "Показать все" : "Проверить сейчас"}</button></div>`;
     $("#empty-act").onclick = filtered ? () => setFilter("all") : refresh;
     $("#left").textContent = "";
     $("#acts").hidden = true;
@@ -176,7 +176,7 @@ function renderStack() {
   }
   $("#acts").hidden = false;
   if (items.length < 8) moreFeed();
-  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не под ваш пояс скрыто: ${st.tzHidden}` : "");
+  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, тап — подробно` + (st.tzHidden ? ` · не подходят по поясу или стране: ${st.tzHidden}` : "");
   box.innerHTML = items.slice(0, 3).reverse().map((i, n, arr) => {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
@@ -785,6 +785,9 @@ async function loadSources(data) {
   $("#tz-on").setAttribute("aria-pressed", tz.on);
   $("#tz-mine").innerHTML = offs.map((o) => `<option value="${o}" ${o === tz.mine ? "selected" : ""}>${utc(o)}</option>`).join("");
   $("#tz-spread").innerHTML = [1, 2, 3, 4, 6, 8].map((n) => `<option value="${n}" ${n === tz.spread ? "selected" : ""}>±${n} ч</option>`).join("");
+  $("#sum-country").textContent = s.country.on ? s.country.name : "выключено";
+  $("#country-on").setAttribute("aria-pressed", s.country.on);
+  $("#country-key").innerHTML = s.countries.map((c) => `<option value="${esc(c.key)}" ${c.key === s.country.key ? "selected" : ""}>${esc(c.name)}</option>`).join("");
 }
 async function change(body, note) {
   try {
@@ -905,6 +908,12 @@ function renderRadar() {
   const sel = $("#interval");
   sel.innerHTML = m.intervals.map((n) => `<option value="${n}" ${n === m.interval ? "selected" : ""}>${n < 60 ? n + " мин" : n / 60 + " ч"}</option>`).join("");
   sel.disabled = !m.owner;
+  const ra = m.roles_ai;
+  $("#g-roleai").hidden = !ra;
+  if (ra) {
+    $("#roleai").innerHTML = `<div class="stats"><span>вызовов сегодня ${ra.calls + ra.deep} из ${ra.calls_cap + ra.deep_cap}</span><span>в словаре ${ra.dict} названий</span><span>запомнено ${ra.cache}</span><span>✓ ${ra.checked}</span></div>
+      <p class="hint">ИИ спрашиваем только про названия, которых нет ни в словаре, ни в памяти, пачкой, и раз в день не больше ${ra.calls_cap} вызовов (${ra.deep_cap} на чтение описаний). Один ответ запоминается навсегда: со временем неизвестных названий всё меньше, а вызовов тратится меньше.</p>`;
+  }
   $("#int-note").textContent = m.owner ? "для всех, кто пользуется Purrfect Job" : "меняет владелец бота";
 }
 
@@ -1191,6 +1200,8 @@ const tzChange = (body) => change(body).then(() => Promise.all([loadFeed(), load
 $("#tz-on").onclick = () => tzChange({ type: "tz", on: $("#tz-on").getAttribute("aria-pressed") !== "true" });
 $("#tz-mine").onchange = () => tzChange({ type: "tz", mine: +$("#tz-mine").value });
 $("#tz-spread").onchange = () => tzChange({ type: "tz", spread: +$("#tz-spread").value });
+$("#country-on").onclick = () => tzChange({ type: "country", on: $("#country-on").getAttribute("aria-pressed") !== "true" });
+$("#country-key").onchange = () => tzChange({ type: "country", key: $("#country-key").value });
 $("#track-add").onclick = addTrackSheet;
 $("#digest").onclick = async () => {
   const on = $("#digest").getAttribute("aria-pressed") !== "true";

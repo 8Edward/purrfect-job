@@ -29,9 +29,12 @@ import tg_collect as tc
 CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
 PER_RUN = 2         # calls per background run (each ~20 s, the résumé AI waits meanwhile)
-DAILY = 40          # calls per day (owner's subscription, shared with everything else)
-DEEP_DAILY = 20     # description calls per day, a budget of their own (title labelling used to eat the whole cap)
-DEEP_PER_RUN = 6    # vacancies per second-look call (each page is read first, then one Claude call)
+DAILY = 12          # title calls per day: a small strict budget (owner's subscription, shared with everything else)
+MIN_BATCH = 15      # fewer unknown titles than this wait and pile up: one big call is cheaper than many small ones
+                    # (so the spending shrinks by itself as the dictionary and the cache grow)
+DEEP_DAILY = 8      # description calls per day, a budget of their own
+DEEP_MIN = 4        # fewer candidates than this wait for more
+DEEP_PER_RUN = 8    # vacancies per second-look call (each page is read first, then one Claude call)
 DEEP_CHARS = 1800   # description characters given to Claude per vacancy
 MAX_ENTRIES = 30000
 TIMEOUT = 180
@@ -147,7 +150,7 @@ def parse(text, jobs, graph):
 async def classify(ai, jobs, graph):
     """One Claude call for up to BATCH vacancies. -> how many got a role."""
     data = load()
-    if calls_left(data) <= 0 or not jobs:
+    if calls_left(data) <= 0 or len(jobs) < MIN_BATCH:
         return 0
     text = await ai.ask(SYSTEM, prompt_for(jobs[:BATCH], graph), timeout=TIMEOUT)
     got = parse(text, jobs[:BATCH], graph)
@@ -184,7 +187,7 @@ def deep_candidates(jobs, limit=DEEP_PER_RUN):
             out.append(job)
         if len(out) >= limit:
             break
-    return out
+    return out if len(out) >= DEEP_MIN else []
 
 
 def deep_prompt(items, graph):
@@ -253,9 +256,16 @@ def reset():
     return len(data["labels"])
 
 
+def spent_today(data=None):
+    meta = (data or load())["meta"]
+    today = date.today().isoformat()
+    return (meta.get("n", 0) if meta.get("day") == today else 0), (meta.get("dn", 0) if meta.get("dday") == today else 0)
+
+
 def stats():
     labels = load()["labels"].values()
     return {"total": len(labels),
+            "calls": spent_today()[0], "calls_cap": DAILY, "deep_calls": spent_today()[1], "deep_cap": DEEP_DAILY,
             "used": sum(1 for v in labels if v.get("roles") and (v.get("ok") is True or (v.get("sure") and v.get("ok") is None))),
             "checked": sum(1 for v in labels if v.get("ok") is True),
             "rejected": sum(1 for v in labels if v.get("ok") is False),
