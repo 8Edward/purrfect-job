@@ -1,0 +1,390 @@
+# «Tier B»: remote companies from remoteintech/remote-jobs (ISC) that hire worldwide or in Asia-Pacific.
+# Built by telegram/tierb-build.mjs on 2026-10-04: 385 companies, 95 with a public job board
+# (ats + slug; how = where the board was found: profile / website / guess from the domain name).
+# Read by board-feed.mjs (site «co-tierb») and by the bot (the «тир B» mark on a card).
+companies:
+  - {name: 37signals, ri: 37signals, site: https://37signals.com, region: worldwide, policy: fully-remote}
+  - {name: 3Blocks, ri: 3blocks, site: https://3blocks.io/, region: worldwide, policy: remote-friendly}
+  - {name: 42 Technologies, ri: 42-technologies, site: https://www.42technologies.com/, region: worldwide, policy: fully-remote}
+  - {name: A-1 Auto Transport, ri: a-1-auto-transport, site: https://a1autotransport.com, region: worldwide, policy: fully-remote}
+  - {name: Abstract, ri: abstract, site: https://abstractapi.com, region: worldwide, policy: fully-remote}
+  - {name: Adaface, ri: adaface, site: https://www.adaface.com, region: asia-pacific, policy: fully-remote}
+  - {name: Akamai Technologies Inc, ri: akamai-technologies-inc, site: https://www.akamai.com/, region: other, policy: fully-remote}
+  - {name: Akka, ri: akka, site: https://akka.io/, region: worldwide, policy: fully-remote}
+  - {name: Alami, ri: alami, site: https://alamisharia.co.id/en/, region: asia-pacific, policy: remote-friendly}
+  - {name: Algorithmia, ri: algorithmia, site: https://algorithmia.com/, region: worldwide, policy: fully-remote}
+  - {name: Amazon, ri: amazon, site: https://www.amazon.jobs/content/en/locations, region: worldwide, policy: fully-remote}
+  - {name: Ambaum, ri: ambaum, site: https://ambaum.com/, region: worldwide, policy: fully-remote}
+  - {name: Andela, ri: andela, site: https://andela.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: andela, how: website}
+  - {name: Applied AI Company (AAICO), ri: applied-ai-company-aaico, site: https://aaico.com, region: worldwide, policy: fully-remote}
+  - {name: Appstractor, ri: appstractor, site: https://www.appstractor.com/, region: worldwide, policy: fully-remote}
+  - {name: Appwrite, ri: appwrite, site: https://appwrite.io, region: worldwide, policy: remote-first}
+  - {name: Argyle, ri: argyle, site: https://argyle.com/, region: worldwide, policy: fully-remote}
+  - {name: Arkency, ri: arkency, site: https://arkency.com/, region: worldwide, policy: fully-remote}
+  - {name: Articulate, ri: articulate, site: https://www.articulate.com, region: worldwide, policy: fully-remote, ats: lever, slug: articulate, how: guess}
+  - {name: Asana, ri: asana, site: https://asana.com/, region: worldwide, policy: remote-first, ats: greenhouse, slug: asana, how: guess}
+  - {name: ATOZDEBUG, ri: atozdebug, site: https://atozdebug.com/, region: worldwide, policy: fully-remote}
+  - {name: Audiense, ri: audiense, site: https://www.audiense.com/, region: worldwide, policy: fully-remote}
+  - {name: Aula Education, ri: aula-education, site: https://aula.education/, region: worldwide, policy: remote-first}
+  - {name: Automattic, ri: automattic, site: https://automattic.com/, region: worldwide, policy: fully-remote}
+  - {name: Axelerant, ri: axelerant, site: https://axelerant.com/, region: worldwide, policy: remote-friendly}
+  - {name: Bairesdev, ri: bairesdev, site: https://bairesdev.com/, region: worldwide, policy: fully-remote}
+  - {name: Balena, ri: balena, site: https://www.balena.io/, region: worldwide, policy: remote-first, ats: workable, slug: balena, how: website}
+  - {name: Bandcamp, ri: bandcamp, site: https://bandcamp.com/, region: worldwide, policy: fully-remote}
+  - {name: BandLab, ri: bandlab, site: https://bandlab.com/, region: worldwide, policy: fully-remote, ats: workable, slug: bandlabtechnologies, how: profile}
+  - {name: Baremetrics, ri: baremetrics, site: https://baremetrics.com/, region: worldwide, policy: fully-remote}
+  - {name: Basecamp, ri: basecamp, site: https://basecamp.com/, region: worldwide, policy: fully-remote}
+  - {name: Best Practical Solutions, ri: best-practical-solutions, site: https://bestpractical.com/, region: worldwide, policy: fully-remote}
+  - {name: BigData Boutique, ri: bigdata-boutique, site: https://bigdataboutique.com, region: worldwide, policy: remote-friendly}
+  - {name: Bit Zesty, ri: bit-zesty, site: https://bitzesty.com/, region: worldwide, policy: fully-remote}
+  - {name: Bitwarden, ri: bitwarden, site: https://bitwarden.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: bitwarden, how: guess}
+  - {name: Bizink, ri: bizink, site: https://bizinkonline.com, region: worldwide, policy: fully-remote}
+  - {name: Boldare, ri: boldare, site: https://boldare.com, region: worldwide, policy: fully-remote}
+  - {name: Bonsai, ri: bonsai, site: https://hellobonsai.com, region: worldwide, policy: fully-remote, ats: workable, slug: hellobonsai, how: website}
+  - {name: Brave, ri: brave, site: https://brave.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: brave, how: website}
+  - {name: Broadwing, ri: broadwing, site: https://broadwing.io, region: worldwide, policy: fully-remote}
+  - {name: Buffer, ri: buffer, site: https://buffer.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: buffer, how: guess}
+  - {name: Bugfender, ri: bugfender, site: https://bugfender.com/, region: worldwide, policy: fully-remote}
+  - {name: Cabify, ri: cabify, site: https://cabify.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: cabify, how: guess}
+  - {name: Cal.com, ri: cal-com, site: https://cal.com/, region: worldwide, policy: fully-remote}
+  - {name: Calibre, ri: calibre, site: https://calibreapp.com/, region: worldwide, policy: fully-remote}
+  - {name: Canonical, ri: canonical, site: https://www.canonical.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: canonical, how: website}
+  - {name: Capchase, ri: capchase, site: https://www.capchase.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: capchase, how: website}
+  - {name: Capgemini, ri: capgemini, site: https://www.capgemini.com/us-en/, region: worldwide, policy: fully-remote}
+  - {name: Capital Placement, ri: capital-placement, site: https://capital-placement.com, region: worldwide, policy: fully-remote}
+  - {name: Carbon Black, ri: carbon-black, site: https://www.carbonblack.com/, region: worldwide, policy: fully-remote}
+  - {name: CareCru, ri: carecru, site: https://carecru.com, region: worldwide, policy: fully-remote}
+  - {name: CareMessage, ri: caremessage, site: https://www.caremessage.org/about-us/careers/, region: worldwide, policy: remote-friendly, ats: ashby, slug: caremessage, how: website}
+  - {name: CartoDB, ri: cartodb, site: https://cartodb.com/, region: worldwide, policy: fully-remote}
+  - {name: CartStack, ri: cartstack, site: https://www.cartstack.com/, region: worldwide, policy: fully-remote}
+  - {name: Chainguard, ri: chainguard, site: https://www.chainguard.dev/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: chainguard, how: guess}
+  - {name: ChainLink Labs, ri: chainlink-labs, site: https://chainlinklabs.com/, region: worldwide, policy: remote-friendly}
+  - {name: Chargify, ri: chargify, site: https://www.chargify.com/, region: worldwide, policy: fully-remote}
+  - {name: Chess, ri: chess, site: https://www.chess.com/jobs, region: worldwide, policy: fully-remote}
+  - {name: Chroma, ri: chroma, site: https://www.chromatic.com, region: asia-pacific, policy: fully-remote, ats: ashby, slug: chromatic, how: guess}
+  - {name: CircleCI, ri: circleci, site: https://circleci.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: circleci, how: profile}
+  - {name: Clevertech, ri: clevertech, site: https://clevertech.biz/, region: worldwide, policy: fully-remote}
+  - {name: ClickUp, ri: clickup, site: https://clickup.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: clickup, how: guess}
+  - {name: Clootrack, ri: clootrack, site: https://www.clootrack.com/, region: asia-pacific, policy: fully-remote}
+  - {name: Close, ri: close, site: https://close.com, region: worldwide, policy: fully-remote, ats: ashby, slug: Close, how: website}
+  - {name: CloudBees, ri: cloudbees, site: https://www.cloudbees.com/, region: worldwide, policy: remote-first}
+  - {name: Coalition Technologies, ri: coalition-technologies, site: https://coalitiontechnologies.com/, region: worldwide, policy: fully-remote}
+  - {name: Code B Solutions, ri: code-b-solutions, site: https://code-b.dev/, region: worldwide, policy: remote-friendly}
+  - {name: Code Like a Girl, ri: code-like-a-girl, site: https://codelikeagirl.com, region: asia-pacific, policy: fully-remote}
+  - {name: Codea IT, ri: codea-it, site: https://www.codeait.com/, region: worldwide, policy: fully-remote}
+  - {name: CodePen, ri: codepen, site: https://codepen.io, region: worldwide, policy: fully-remote}
+  - {name: CodeSandbox, ri: codesandbox, site: https://codesandbox.io, region: worldwide, policy: remote-first}
+  - {name: Cofense, ri: cofense, site: https://cofense.com, region: worldwide, policy: fully-remote}
+  - {name: Coinbase, ri: coinbase, site: https://www.coinbase.com, region: worldwide, policy: remote-first}
+  - {name: Coingape, ri: coingape, site: https://coingape.com/, region: asia-pacific, policy: remote-friendly}
+  - {name: Collabora, ri: collabora, site: https://www.collabora.com/, region: worldwide, policy: fully-remote, ats: lever, slug: collabora, how: website}
+  - {name: Compucorp, ri: compucorp, site: https://www.compuco.io, region: worldwide, policy: fully-remote}
+  - {name: Connexa, ri: connexa, site: https://www.connexa.com/, region: worldwide, policy: fully-remote}
+  - {name: ConsenSys Inc, ri: consensys-inc, site: https://consensys.net/, region: worldwide, policy: fully-remote, ats: ashby, slug: consensys, how: website}
+  - {name: Conversio, ri: conversio, site: https://conversio.com, region: worldwide, policy: fully-remote}
+  - {name: Convert, ri: convert, site: https://www.convert.com, region: worldwide, policy: fully-remote}
+  - {name: Core-Apps, ri: core-apps, site: https://www.core-apps.com/, region: worldwide, policy: fully-remote}
+  - {name: CrazyGames, ri: crazygames, site: https://www.crazygames.com, region: worldwide, policy: remote-first}
+  - {name: CREEX TEAM, ri: creex-team, site: https://creex.team, region: worldwide, policy: fully-remote}
+  - {name: Crossover, ri: crossover, site: https://www.crossover.com, region: other, policy: remote-friendly}
+  - {name: Crowdstrike, ri: crowdstrike, site: https://www.crowdstrike.com, region: worldwide, policy: fully-remote}
+  - {name: Cueup, ri: cueup, site: https://cueup.io, region: worldwide, policy: fully-remote}
+  - {name: Customer.io, ri: customer-io, site: https://customer.io, region: worldwide, policy: fully-remote, ats: greenhouse, slug: customerio, how: website}
+  - {name: Cuvette, ri: cuvette, site: https://cuvette.tech, region: worldwide, policy: fully-remote}
+  - {name: CWT, ri: cwt, site: https://www.mycwt.com/, region: worldwide, policy: fully-remote}
+  - {name: DappRadar, ri: dappradar, site: https://dappradar.com/, region: worldwide, policy: fully-remote}
+  - {name: DashboardHub, ri: dashboardhub, site: https://dashboardhub.io/, region: worldwide, policy: fully-remote}
+  - {name: Dashlane, ri: dashlane, site: https://dashlane.com, region: worldwide, policy: fully-remote, ats: greenhouse, slug: dashlane, how: guess}
+  - {name: Data Science Brigade, ri: data-science-brigade, site: https://dsbrigade.com, region: worldwide, policy: fully-remote}
+  - {name: Data Science Dojo, ri: data-science-dojo, site: https://datasciencedojo.com/, region: worldwide, policy: fully-remote}
+  - {name: Datadog, ri: datadog, site: https://www.datadoghq.com/, region: worldwide, policy: fully-remote}
+  - {name: DataRobot, ri: datarobot, site: https://www.datarobot.com/, region: worldwide, policy: remote-friendly}
+  - {name: DataStax, ri: datastax, site: https://www.datastax.com/, region: worldwide, policy: fully-remote}
+  - {name: DealDash, ri: dealdash, site: http://www.dealdash.com, region: worldwide, policy: fully-remote}
+  - {name: Deel, ri: deel, site: https://www.deel.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: Deel, how: profile}
+  - {name: Designcode, ri: designcode, site: https://designcode.io/, region: worldwide, policy: fully-remote}
+  - {name: Deskpass, ri: deskpass, site: https://www.deskpass.com, region: worldwide, policy: fully-remote}
+  - {name: Dev Spotlight, ri: dev-spotlight, site: https://www.devspotlight.com, region: worldwide, policy: fully-remote}
+  - {name: Devsquad, ri: devsquad, site: https://devsquad.com, region: worldwide, policy: fully-remote, ats: workable, slug: devsquad, how: profile}
+  - {name: DigitalOcean, ri: digitalocean, site: https://www.digitalocean.com/, region: worldwide, policy: remote-friendly}
+  - {name: Discourse, ri: discourse, site: https://discourse.org, region: worldwide, policy: fully-remote}
+  - {name: DNSimple, ri: dnsimple, site: https://dnsimple.com/, region: worldwide, policy: remote-friendly}
+  - {name: Doist, ri: doist, site: https://doist.com, region: worldwide, policy: fully-remote}
+  - {name: Drupal Jedi, ri: drupal-jedi, site: https://drupaljedi.com/, region: worldwide, policy: fully-remote}
+  - {name: DuckDuckGo, ri: duckduckgo, site: https://duckduckgo.com/, region: worldwide, policy: fully-remote}
+  - {name: DynaPictures, ri: dynapictures, site: https://dynapictures.com, region: worldwide, policy: fully-remote}
+  - {name: Ebury, ri: ebury, site: https://ebury.com/, region: worldwide, policy: remote-first, ats: greenhouse, slug: ebury, how: website}
+  - {name: Edify, ri: edify, site: https://edify.cr/, region: worldwide, policy: remote-friendly}
+  - {name: Elastic, ri: elastic, site: https://www.elastic.co/, region: other, policy: remote-friendly, ats: greenhouse, slug: elastic, how: guess}
+  - {name: Embraer, ri: embraer, site: https://embraer.com/, region: other, policy: remote-friendly}
+  - {name: Employment Hero, ri: employment-hero, site: https://employmenthero.com/careers, region: other, policy: remote-first}
+  - {name: Encora, ri: encora, site: https://careers.encora.com/, region: other, policy: fully-remote}
+  - {name: EngineYard (Support Team), ri: engineyard-support-team, site: https://www.engineyard.com, region: worldwide, policy: remote-friendly}
+  - {name: EPAM, ri: epam, site: https://epam.com/, region: worldwide, policy: fully-remote}
+  - {name: Epic Games, ri: epic-games, site: https://www.epicgames.com/site/en-US/careers, region: worldwide, policy: fully-remote, ats: greenhouse, slug: epicgames, how: guess}
+  - {name: Epilocal, ri: epilocal, site: https://epilocal.com, region: worldwide, policy: fully-remote}
+  - {name: Epsy Health, ri: epsy-health, site: https://epsyhealth.com/, region: worldwide, policy: remote-first}
+  - {name: Ergeon, ri: ergeon, site: https://www.ergeon.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: ergeon, how: guess}
+  - {name: Etsy, ri: etsy, site: https://www.etsy.com/, region: worldwide, policy: remote-friendly}
+  - {name: Evrone, ri: evrone, site: https://evrone.com, region: worldwide, policy: fully-remote}
+  - {name: ExportData, ri: exportdata, site: https://www.exportdata.io/, region: worldwide, policy: remote-first}
+  - {name: Extreme Networks, ri: extreme-networks, site: https://www.extremenetworks.com/, region: worldwide, policy: fully-remote}
+  - {name: FDTE, ri: fdte, site: https://fdte.org.br/, region: worldwide, policy: remote-first}
+  - {name: Findify, ri: findify, site: https://findify.io, region: worldwide, policy: fully-remote}
+  - {name: Fingerprint, ri: fingerprint, site: https://fingerprint.com, region: worldwide, policy: fully-remote, ats: greenhouse, slug: fingerprint, how: guess}
+  - {name: Fire Engine Red, ri: fire-engine-red, site: https://fire-engine-red.com/, region: worldwide, policy: fully-remote}
+  - {name: FireHire, ri: firehire, site: https://www.firehire.ai, region: worldwide, policy: fully-remote}
+  - {name: First Point, ri: first-point, site: https://firstpoint.com.tr, region: worldwide, policy: fully-remote}
+  - {name: FivexL, ri: fivexl, site: https://fivexl.io, region: worldwide, policy: fully-remote}
+  - {name: fleetio, ri: fleetio, site: https://www.fleetio.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: fleetio, how: guess}
+  - {name: Focusnetworks, ri: focusnetworks, site: https://focusnetworks.com.br, region: worldwide, policy: fully-remote}
+  - {name: Foh&Boh, ri: foh-boh, site: https://fohandboh.com/, region: worldwide, policy: fully-remote}
+  - {name: folotop, ri: folotop, site: https://folotop.com/, region: worldwide, policy: fully-remote}
+  - {name: Freeagent, ri: freeagent, site: https://www.freeagent.com/, region: worldwide, policy: fully-remote}
+  - {name: Functionize, ri: functionize, site: https://www.functionize.com/, region: worldwide, policy: fully-remote}
+  - {name: Fyle, ri: fyle, site: https://www.fylehq.com/, region: asia-pacific, policy: remote-first}
+  - {name: Geckoboard, ri: geckoboard, site: https://www.geckoboard.com, region: worldwide, policy: remote-friendly}
+  - {name: General Assembly, ri: general-assembly, site: https://generalassemb.ly/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: generalassembly, how: website}
+  - {name: Ghost, ri: the-ghost-foundation, site: https://ghost.org/, region: worldwide, policy: fully-remote}
+  - {name: GitHub, ri: github, site: https://github.com/, region: worldwide, policy: fully-remote}
+  - {name: GitLab, ri: gitlab, site: https://about.gitlab.com/, region: worldwide, policy: fully-remote}
+  - {name: Glenn Website Design, ri: glenn-website-design, site: https://glennwebsitedesign.com/, region: worldwide, policy: fully-remote}
+  - {name: Glitch, ri: glitch, site: https://www.glitch.com/, region: worldwide, policy: remote-friendly, ats: ashby, slug: glitch, how: guess}
+  - {name: GMBapi, ri: gmbapi, site: https://www.gmbapi.com/, region: other, policy: remote-friendly}
+  - {name: GoDaddy, ri: godaddy, site: https://www.godaddy.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: godaddy, how: guess}
+  - {name: Graylog, ri: graylog, site: https://www.graylog.org/, region: worldwide, policy: fully-remote, ats: lever, slug: graylog, how: guess}
+  - {name: GreenStitch.io, ri: greenstitch-io, site: https://greenstitch.io, region: asia-pacific, policy: remote-friendly}
+  - {name: Grou.ps, ri: grou-ps, site: https://build.gr.ps, region: worldwide, policy: fully-remote}
+  - {name: Gruntwork, ri: gruntwork, site: https://gruntwork.io, region: worldwide, policy: fully-remote, ats: ashby, slug: Gruntwork, how: website}
+  - {name: Harvest, ri: harvest, site: https://www.getharvest.com/, region: worldwide, policy: fully-remote}
+  - {name: Hashex, ri: hashex, site: https://hashex.org/, region: other, policy: fully-remote}
+  - {name: HashiCorp, ri: hashicorp, site: https://www.hashicorp.com/, region: worldwide, policy: fully-remote}
+  - {name: HE:labs, ri: he-labs, site: https://www.helabs.com, region: worldwide, policy: fully-remote}
+  - {name: Heap, ri: heap, site: https://heapanalytics.com/, region: worldwide, policy: fully-remote}
+  - {name: Help Scout, ri: help-scout, site: https://www.helpscout.net/, region: worldwide, policy: remote-first, ats: ashby, slug: helpscout, how: website}
+  - {name: Honeybadger, ri: honeybadger, site: https://www.honeybadger.io/, region: worldwide, policy: fully-remote}
+  - {name: Hubspot, ri: hubspot, site: https://www.hubspot.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: hubspot, how: guess}
+  - {name: Hubstaff, ri: hubstaff, site: https://hubstaff.com/jobs, region: worldwide, policy: fully-remote, ats: ashby, slug: hubstaff, how: guess}
+  - {name: Hugging Face, ri: hugging-face, site: https://huggingface.co/, region: worldwide, policy: remote-first, ats: workable, slug: huggingface, how: profile}
+  - {name: Hugo, ri: hugo, site: https://hugo.events, region: worldwide, policy: fully-remote}
+  - {name: Human Made, ri: human-made, site: https://hmn.md, region: worldwide, policy: fully-remote, ats: workable, slug: humanmade, how: website}
+  - {name: I-Stem, ri: i-stem, site: https://www.istemai.com/, region: asia-pacific, policy: remote-friendly}
+  - {name: IBM, ri: ibm, site: https://www.ibm.com, region: worldwide, policy: fully-remote}
+  - {name: IDoneThis, ri: idonethis, site: https://www.idonethis.com/, region: worldwide, policy: fully-remote}
+  - {name: Igalia, ri: igalia, site: https://www.igalia.com/, region: worldwide, policy: remote-friendly}
+  - {name: Inshorts, ri: inshorts, site: https://www.inshorts.com/, region: asia-pacific, policy: remote-friendly}
+  - {name: Instamobile, ri: instamobile, site: https://instamobile.io, region: worldwide, policy: remote-friendly}
+  - {name: Inter.link, ri: inter-link, site: https://inter.link/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: inter, how: guess}
+  - {name: Interpersonal Frequency (I.F.), ri: interpersonal-frequency-i-f, site: https://ifsight.com, region: worldwide, policy: fully-remote}
+  - {name: Intuit Inc., ri: intuit-inc, site: https://www.intuit.com/, region: worldwide, policy: fully-remote}
+  - {name: 'Intuition Machines, Inc.', ri: intuition-machines-inc, site: https://www.imachines.com/, region: worldwide, policy: remote-first, ats: workable, slug: imachines, how: website}
+  - {name: IOHK, ri: iohk, site: https://iohk.io/, region: worldwide, policy: fully-remote}
+  - {name: iRonin, ri: ironin, site: https://www.ironin.it/, region: worldwide, policy: remote-first}
+  - {name: Iterative, ri: iterative, site: https://www.iterative.ai/, region: worldwide, policy: fully-remote}
+  - {name: iwantmyname, ri: iwantmyname, site: https://iwantmyname.com/, region: worldwide, policy: fully-remote}
+  - {name: Jaya Tech, ri: jaya-tech, site: http://jaya.tech, region: worldwide, policy: fully-remote}
+  - {name: Jitbit, ri: jitbit, site: https://jitbit.com, region: worldwide, policy: fully-remote}
+  - {name: Jitera, ri: jitera, site: https://iruuza-inc.com/, region: worldwide, policy: fully-remote}
+  - {name: Jolly Good Code, ri: jolly-good-code, site: https://jollygoodcode.com, region: worldwide, policy: fully-remote}
+  - {name: Kake, ri: kake, site: https://kake.co/jobs, region: worldwide, policy: fully-remote}
+  - {name: Karat, ri: karat, site: https://karat.com, region: worldwide, policy: fully-remote, ats: greenhouse, slug: karat, how: guess}
+  - {name: Kentik Technologies Inc., ri: kentik-technologies-inc, site: https://www.kentik.com/careers, region: worldwide, policy: fully-remote, ats: greenhouse, slug: kentik, how: guess}
+  - {name: Kestra, ri: kestra, site: https://www.kestra.io/careers, region: worldwide, policy: fully-remote, ats: ashby, slug: kestra, how: guess}
+  - {name: Khan Academy, ri: khan-academy, site: https://www.khanacademy.org/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: khanacademy, how: guess}
+  - {name: Kinsta, ri: kinsta, site: https://kinsta.com, region: worldwide, policy: fully-remote, ats: lever, slug: kinsta, how: guess}
+  - {name: Kona, ri: kona, site: https://www.heykona.com, region: worldwide, policy: fully-remote}
+  - {name: Kraken, ri: kraken, site: https://kraken.com, region: worldwide, policy: remote-first, ats: lever, slug: kraken, how: profile}
+  - {name: Labelbox, ri: labelbox, site: https://labelbox.com/, region: worldwide, policy: fully-remote}
+  - {name: Launch Potato, ri: launch-potato, site: https://launchpotato.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: launchpotato, how: website}
+  - {name: Leadership Success, ri: leadership-success, site: https://leadershipsuccess.co, region: worldwide, policy: fully-remote}
+  - {name: LeadIQ, ri: leadiq, site: https://leadiq.com/, region: worldwide, policy: fully-remote}
+  - {name: Lightspeed, ri: lightspeed, site: https://www.lightspeedhq.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: lightspeedhq, how: guess}
+  - {name: Linaro, ri: linaro, site: https://www.linaro.org/, region: worldwide, policy: fully-remote}
+  - {name: Linear, ri: linear, site: https://linear.app/, region: worldwide, policy: fully-remote, ats: ashby, slug: Linear, how: website}
+  - {name: LionSher, ri: lionsher, site: https://lionsher.com/careers, region: worldwide, policy: fully-remote}
+  - {name: LivePerson, ri: liveperson, site: https://www.liveperson.com/company/careers, region: worldwide, policy: fully-remote, ats: greenhouse, slug: liveperson, how: guess}
+  - {name: LogDog, ri: logdog, site: https://log.dog, region: worldwide, policy: fully-remote}
+  - {name: Lorum, ri: lorum, site: https://www.lorum.com, region: worldwide, policy: remote-friendly}
+  - {name: Luxoft, ri: luxoft, site: https://www.luxoft.com/, region: worldwide, policy: fully-remote}
+  - {name: Luxor Technology, ri: luxor-technology, site: https://luxor.tech/, region: worldwide, policy: fully-remote, ats: ashby, slug: luxor, how: profile}
+  - {name: MailerLite, ri: mailerlite, site: https://www.mailerlite.com, region: worldwide, policy: fully-remote}
+  - {name: MariaDB, ri: mariadb, site: https://www.mariadb.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: mariadbplc, how: website}
+  - {name: MarsBased, ri: marsbased, site: https://marsbased.com/, region: worldwide, policy: fully-remote}
+  - {name: Mattermost, ri: mattermost, site: https://mattermost.com/careers/, region: worldwide, policy: remote-first, ats: greenhouse, slug: mattermost, how: website}
+  - {name: Maxicus, ri: maxicus, site: https://maxicus.com/, region: asia-pacific, policy: remote-friendly}
+  - {name: Memberful, ri: memberful, site: https://memberful.com, region: worldwide, policy: fully-remote}
+  - {name: Memory, ri: memory, site: https://memory.ai/, region: worldwide, policy: fully-remote}
+  - {name: Merico, ri: merico, site: https://merico.dev, region: worldwide, policy: fully-remote}
+  - {name: messagebird, ri: messagebird, site: https://messagebird.com/, region: worldwide, policy: fully-remote}
+  - {name: MetaMask, ri: metamask, site: https://metamask.io, region: worldwide, policy: fully-remote, ats: greenhouse, slug: consensys, how: profile}
+  - {name: Microsoft, ri: microsoft, site: https://www.microsoft.com/, region: worldwide, policy: fully-remote}
+  - {name: Mixmax, ri: mixmax, site: https://mixmax.com, region: worldwide, policy: remote-friendly, ats: greenhouse, slug: mixmax, how: guess}
+  - {name: MixRank, ri: mixrank, site: https://mixrank.com, region: worldwide, policy: remote-friendly}
+  - {name: Mobile Jazz, ri: mobile-jazz, site: https://mobilejazz.com, region: worldwide, policy: fully-remote}
+  - {name: Modern Tribe, ri: modern-tribe, site: https://tri.be/, region: worldwide, policy: fully-remote}
+  - {name: MODSQUAD, ri: modsquad, site: https://modsquad.com/, region: worldwide, policy: fully-remote}
+  - {name: Molteo, ri: molteo, site: https://molteo.com/, region: worldwide, policy: fully-remote}
+  - {name: MongoDB, ri: mongodb, site: https://mongodb.com, region: worldwide, policy: remote-friendly, ats: greenhouse, slug: mongodb, how: guess}
+  - {name: Muck Rack, ri: muck-rack, site: https://muckrack.com, region: worldwide, policy: remote-friendly, ats: greenhouse, slug: muckrack, how: guess}
+  - {name: MySQL, ri: mysql, site: https://www.mysql.com/, region: worldwide, policy: remote-friendly}
+  - {name: Nearform, ri: nearform, site: https://www.nearform.com, region: worldwide, policy: remote-first, ats: greenhouse, slug: nearform, how: website}
+  - {name: NetApp, ri: netapp, site: https://www.netapp.com/, region: worldwide, policy: remote-friendly}
+  - {name: Netlify, ri: netlify, site: https://www.netlify.com/careers, region: worldwide, policy: remote-first, ats: greenhouse, slug: netlify, how: website}
+  - {name: Netsparker, ri: netsparker, site: https://www.netsparker.com/, region: worldwide, policy: fully-remote}
+  - {name: Nettl Edinburgh, ri: nettl-edinburgh, site: https://www.webdesignedinburgh.com, region: worldwide, policy: fully-remote}
+  - {name: No Code No Problem, ri: no-code-no-problem, site: https://www.nocodenoprob.com, region: worldwide, policy: fully-remote}
+  - {name: NodeSource, ri: nodesource, site: https://nodesource.com/, region: worldwide, policy: remote-first}
+  - {name: Nozbe, ri: nozbe, site: https://nozbe.com/, region: worldwide, policy: fully-remote}
+  - {name: O'Reilly Online Learning, ri: o-reilly-online-learning, site: https://www.oreilly.com/, region: worldwide, policy: remote-friendly}
+  - {name: Octopus Deploy, ri: octopus-deploy, site: https://octopus.com/, region: worldwide, policy: remote-first}
+  - {name: Okta, ri: okta, site: https://www.okta.com, region: worldwide, policy: fully-remote, ats: greenhouse, slug: okta, how: guess}
+  - {name: Ombu Labs, ri: ombu-labs, site: https://www.ombulabs.com/, region: worldwide, policy: fully-remote}
+  - {name: OmniTI, ri: omniti, site: https://omniti.com/, region: worldwide, policy: fully-remote}
+  - {name: On The Go Systems, ri: on-the-go-systems, site: https://onthegosystems.com/, region: worldwide, policy: fully-remote}
+  - {name: OpenCraft, ri: opencraft, site: https://opencraft.com/, region: worldwide, policy: fully-remote}
+  - {name: OpenZeppelin, ri: openzeppelin, site: https://openzeppelin.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: openzeppelin, how: guess}
+  - {name: Optoro, ri: optoro, site: https://www.optoro.com/, region: worldwide, policy: fully-remote}
+  - {name: Oracle, ri: oracle, site: https://www.oracle.com/, region: worldwide, policy: fully-remote}
+  - {name: Ordermentum, ri: ordermentum, site: https://www.ordermentum.com/, region: asia-pacific, policy: remote-friendly}
+  - {name: OutsourcingDev, ri: outsourcingdev, site: https://www.outsourcingdev.com/, region: worldwide, policy: fully-remote}
+  - {name: Over, ri: over, site: https://www.madewithover.com/, region: worldwide, policy: fully-remote}
+  - {name: Oyster HR, ri: oyster-hr, site: https://www.oysterhr.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: oyster, how: website}
+  - {name: Parabol, ri: parabol, site: https://www.parabol.co/, region: worldwide, policy: fully-remote}
+  - {name: Parexel, ri: parexel, site: https://www.parexel.com, region: worldwide, policy: fully-remote}
+  - {name: Park Assist, ri: park-assist, site: https://tech.parkassist.com, region: worldwide, policy: fully-remote}
+  - {name: Parsely, ri: parsely, site: https://Parse.ly, region: worldwide, policy: fully-remote}
+  - {name: Particular Software, ri: particular-software, site: https://particular.net, region: worldwide, policy: fully-remote}
+  - {name: Pathable, ri: pathable, site: https://pathable.com/, region: worldwide, policy: fully-remote}
+  - {name: Payfully, ri: payfully, site: https://www.payfully.co, region: worldwide, policy: fully-remote}
+  - {name: PayPay Corporation, ri: paypay-corporation, site: https://about.paypay.ne.jp/career/en/, region: asia-pacific, policy: remote-first, ats: greenhouse, slug: paypay, how: website}
+  - {name: PayU, ri: payu, site: https://corporate.payu.com, region: worldwide, policy: fully-remote}
+  - {name: Peakforce, ri: peakforce, site: https://www.peakforce.dev, region: worldwide, policy: fully-remote}
+  - {name: Percona, ri: percona, site: https://www.percona.com, region: worldwide, policy: fully-remote, ats: ashby, slug: percona, how: website}
+  - {name: Pex, ri: pex, site: https://pex.com, region: worldwide, policy: fully-remote}
+  - {name: PhantomBuster, ri: phantombuster, site: https://phantombuster.com/, region: worldwide, policy: fully-remote}
+  - {name: Platform Builders, ri: platform-builders, site: https://platformbuilders.io/, region: worldwide, policy: remote-first}
+  - {name: Polygon, ri: polygon, site: https://polygon.technology/careers/#all-roles, region: worldwide, policy: fully-remote}
+  - {name: PostHog, ri: posthog, site: https://posthog.com/, region: worldwide, policy: remote-first, ats: ashby, slug: posthog, how: guess}
+  - {name: Precision Nutrition, ri: precision-nutrition, site: https://www.precisionnutrition.com/, region: worldwide, policy: fully-remote}
+  - {name: Prezly, ri: prezly, site: https://www.prezly.com/, region: worldwide, policy: remote-friendly}
+  - {name: Primer, ri: primer, site: https://primer.io/careers, region: worldwide, policy: fully-remote, ats: ashby, slug: primer.io, how: website}
+  - {name: Prisma, ri: prisma, site: https://www.prisma.io/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: prisma, how: guess}
+  - {name: Quantify, ri: quantify, site: https://quantifyhq.com, region: worldwide, policy: fully-remote}
+  - {name: QuestDB, ri: questdb, site: https://questdb.io, region: worldwide, policy: fully-remote}
+  - {name: QuickTrials, ri: quicktrials, site: https://quicktrials.com, region: worldwide, policy: remote-first}
+  - {name: Quora, ri: quora, site: https://www.quora.com, region: worldwide, policy: remote-first, ats: ashby, slug: quora, how: guess}
+  - {name: Rackspace, ri: rackspace, site: https://rackspace.com/, region: worldwide, policy: fully-remote, ats: lever, slug: rackspace, how: guess}
+  - {name: Railway, ri: railway, site: https://railway.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: railway, how: guess}
+  - {name: Rainforest QA, ri: rainforest-qa, site: https://www.rainforestqa.com/jobs, region: worldwide, policy: fully-remote}
+  - {name: Rakuten Travel Xchange, ri: rakuten-travel-xchange, site: https://solutions.travel.rakuten.com, region: worldwide, policy: fully-remote}
+  - {name: Raycast, ri: raycast, site: https://raycast.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: raycast, how: guess}
+  - {name: RebelMouse, ri: rebelmouse, site: https://www.rebelmouse.com/, region: worldwide, policy: fully-remote}
+  - {name: ReCharge Payments, ri: recharge-payments, site: https://rechargepayments.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: recharge, how: website}
+  - {name: RedMonk, ri: redmonk, site: https://redmonk.com, region: worldwide, policy: fully-remote}
+  - {name: reinteractive, ri: reinteractive, site: https://reinteractive.com/careers, region: worldwide, policy: fully-remote}
+  - {name: Remote Garage, ri: remote-garage, site: http://www.remotegarage.club/, region: asia-pacific, policy: remote-friendly}
+  - {name: RemoteMore, ri: remotemore, site: https://remotemore.com, region: worldwide, policy: fully-remote}
+  - {name: RenoFi, ri: renofi, site: https://renofi.com/, region: worldwide, policy: fully-remote, ats: lever, slug: renofi, how: guess}
+  - {name: Replit, ri: replit, site: https://replit.com, region: worldwide, policy: remote-first, ats: ashby, slug: replit, how: website}
+  - {name: Retool, ri: retool, site: https://retool.com/, region: worldwide, policy: remote-first}
+  - {name: RevenueCat, ri: revenuecat, site: https://www.revenuecat.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: revenuecat, how: website}
+  - {name: Roundproxies, ri: roundproxies, site: https://roundproxies.com, region: worldwide, policy: remote-first}
+  - {name: rtCamp Solutions, ri: rtcamp-solutions, site: https://rtcamp.com, region: asia-pacific, policy: remote-friendly}
+  - {name: Safeguard Global, ri: safeguard-global, site: https://www.safeguardglobal.com/, region: worldwide, policy: fully-remote}
+  - {name: Salesforce, ri: salesforce, site: https://www.salesforce.com/, region: worldwide, policy: fully-remote}
+  - {name: Sardine.ai, ri: sardine-ai, site: https://sardine.ai, region: worldwide, policy: fully-remote, ats: ashby, slug: sardine, how: guess}
+  - {name: Scalac, ri: scalac, site: https://scalac.io/, region: worldwide, policy: fully-remote}
+  - {name: Scaloy Technology LLP, ri: scaloy-technology-llp, site: https://scaloy.com/, region: worldwide, policy: fully-remote}
+  - {name: ScrapingBee, ri: scrapingbee, site: https://scrapingbee.com, region: worldwide, policy: remote-first}
+  - {name: Scrapinghub, ri: scrapinghub, site: https://scrapinghub.com/, region: worldwide, policy: fully-remote}
+  - {name: Seaplane, ri: seaplane, site: https://www.seaplane.io/, region: worldwide, policy: fully-remote}
+  - {name: SearchApi, ri: searchapi, site: https://www.searchapi.io/, region: worldwide, policy: fully-remote, ats: ashby, slug: SearchApi, how: website}
+  - {name: SeatGeek, ri: seatgeek, site: https://seatgeek.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: seatgeek, how: guess}
+  - {name: Seeq, ri: seeq, site: https://www.seeq.com, region: worldwide, policy: fully-remote, ats: workable, slug: seeq, how: website}
+  - {name: Sendwave (International Remittance), ri: sendwave-international-remittance, site: https://www.sendwave.com/, region: worldwide, policy: fully-remote}
+  - {name: SerpApi, ri: serpapi, site: https://serpapi.com/, region: worldwide, policy: remote-first}
+  - {name: ServMask, ri: servmask, site: https://servmask.com, region: worldwide, policy: fully-remote}
+  - {name: Session, ri: session, site: https://getsession.com, region: worldwide, policy: remote-first}
+  - {name: Shattered Silicon, ri: shattered-silicon, site: https://shatteredsilicon.net, region: worldwide, policy: fully-remote}
+  - {name: Shogun, ri: shogun, site: https://getshogun.com, region: worldwide, policy: fully-remote}
+  - {name: Shopify, ri: shopify, site: https://www.shopify.com, region: worldwide, policy: fully-remote}
+  - {name: SignEasy, ri: signeasy, site: https://signeasy.com/, region: worldwide, policy: remote-friendly}
+  - {name: Silverfin, ri: silverfin, site: https://www.silverfin.com/, region: worldwide, policy: remote-friendly}
+  - {name: SimpleTexting, ri: simpletexting, site: https://simpletexting.com, region: worldwide, policy: remote-friendly}
+  - {name: Six to Start, ri: six-to-start, site: https://sixtostart.com, region: worldwide, policy: fully-remote}
+  - {name: Skillcrush, ri: skillcrush, site: https://skillcrush.com, region: other, policy: fully-remote}
+  - {name: Skillshare, ri: skillshare, site: https://www.skillshare.com/teach, region: worldwide, policy: fully-remote}
+  - {name: Skyrocket Ventures, ri: skyrocket-ventures, site: https://www.skyrocketventures.com/, region: worldwide, policy: fully-remote}
+  - {name: Smile.io, ri: smile-io, site: https://smile.io, region: worldwide, policy: fully-remote}
+  - {name: SmugMug, ri: smugmug, site: https://www.smugmug.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: smugmug, how: guess}
+  - {name: Sommo, ri: sommo, site: https://www.sommo.io, region: worldwide, policy: fully-remote}
+  - {name: Sonatype, ri: sonatype, site: https://www.sonatype.com, region: worldwide, policy: remote-first, ats: lever, slug: sonatype, how: website}
+  - {name: 'Soshace, LLC.', ri: soshace-llc, site: https://www.soshace.com/, region: worldwide, policy: fully-remote}
+  - {name: Sourcegraph, ri: sourcegraph, site: https://sourcegraph.com/jobs, region: worldwide, policy: remote-first, ats: greenhouse, slug: sourcegraph91, how: website}
+  - {name: 'Spoqa, Inc.', ri: spoqa-inc, site: https://spoqa.co.kr/, region: asia-pacific, policy: remote-friendly}
+  - {name: Spotify, ri: spotify, site: https://www.spotify.com/, region: worldwide, policy: remote-friendly}
+  - {name: Stairlin, ri: stairlin, site: https://www.stairlin.com/, region: worldwide, policy: fully-remote}
+  - {name: Status, ri: status, site: https://www.status.im/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: status, how: guess}
+  - {name: Sticker Mule, ri: sticker-mule, site: https://www.stickermule.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: stickermule, how: website}
+  - {name: StormX, ri: stormx, site: https://stormx.io/, region: worldwide, policy: fully-remote}
+  - {name: Strapi, ri: strapi, site: https://strapi.io/careers, region: worldwide, policy: fully-remote}
+  - {name: StreamNative, ri: streamnative, site: https://streamnative.io/careers, region: worldwide, policy: fully-remote, ats: greenhouse, slug: streamnative, how: guess}
+  - {name: StudySoup, ri: studysoup, site: https://studysoup.com/, region: worldwide, policy: fully-remote}
+  - {name: Supabase, ri: supabase, site: https://supabase.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: supabase, how: website}
+  - {name: SUSE, ri: suse, site: https://www.suse.com/, region: worldwide, policy: remote-first}
+  - {name: Sutherland CloudSource, ri: sutherland-cloudsource, site: https://www.sutherlandcloudsource.com, region: worldwide, policy: fully-remote}
+  - {name: SweetRush, ri: sweetrush, site: https://www.sweetrush.com, region: worldwide, policy: remote-friendly}
+  - {name: Swiggy, ri: swiggy, site: https://www.swiggy.com, region: other, policy: remote-friendly}
+  - {name: Syde, ri: syde, site: https://syde.com/, region: worldwide, policy: fully-remote}
+  - {name: Tag1 Consulting, ri: tag1-consulting, site: https://tag1consulting.com/, region: worldwide, policy: fully-remote}
+  - {name: Taskade, ri: taskade, site: https://taskade.com/, region: worldwide, policy: remote-friendly}
+  - {name: TatvaSoft, ri: tatvasoft, site: https://www.tatvasoft.com/, region: worldwide, policy: remote-friendly}
+  - {name: Teamflow, ri: teamflow, site: https://www.teamflowhq.com/, region: worldwide, policy: fully-remote}
+  - {name: Telestax Inc., ri: telestax-inc, site: https://telestax.com/, region: worldwide, policy: fully-remote}
+  - {name: Temporal, ri: temporal, site: https://temporal.io/, region: worldwide, policy: remote-first, ats: ashby, slug: temporal, how: guess}
+  - {name: The Crafters Lab, ri: the-crafters-lab, site: https://thecrafterslab.eu, region: worldwide, policy: remote-first}
+  - {name: Thinkful, ri: thinkful, site: https://www.thinkful.com/, region: worldwide, policy: fully-remote}
+  - {name: Three Movers, ri: three-movers, site: https://threemovers.com, region: worldwide, policy: fully-remote}
+  - {name: Time Doctor, ri: time-doctor, site: https://www.timedoctor.com/, region: worldwide, policy: fully-remote}
+  - {name: TimeSpot, ri: timespot, site: https://timespothq.com/, region: worldwide, policy: fully-remote}
+  - {name: toggl, ri: toggl, site: https://toggl.com/, region: worldwide, policy: fully-remote}
+  - {name: Tower, ri: tower, site: https://www.git-tower.com/, region: worldwide, policy: fully-remote}
+  - {name: Transloadit, ri: transloadit, site: https://transloadit.com/, region: worldwide, policy: remote-friendly}
+  - {name: Travis, ri: travis, site: https://travistravis.co, region: worldwide, policy: fully-remote}
+  - {name: Travis CI, ri: travis-ci, site: https://travis-ci.org/, region: worldwide, policy: fully-remote}
+  - {name: Turing, ri: turing, site: https://www.turing.com/, region: worldwide, policy: fully-remote}
+  - {name: Tyk, ri: tyk, site: https://tyk.io/, region: worldwide, policy: fully-remote}
+  - {name: Udacity, ri: udacity, site: https://www.udacity.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: udacity, how: website}
+  - {name: Uhuru, ri: uhuru, site: https://uhurunetwork.com/, region: worldwide, policy: fully-remote}
+  - {name: Upworthy, ri: upworthy, site: https://www.upworthy.com/, region: worldwide, policy: fully-remote}
+  - {name: Ushahidi, ri: ushahidi, site: https://www.ushahidi.com, region: worldwide, policy: fully-remote}
+  - {name: v0 report, ri: v0-report, site: https://v0.report, region: worldwide, policy: fully-remote}
+  - {name: Varnish Software, ri: varnish-software, site: https://www.varnish-software.com/about-us, region: worldwide, policy: fully-remote}
+  - {name: Veeva Systems, ri: veeva-systems, site: https://www.veeva.com/, region: worldwide, policy: remote-friendly}
+  - {name: Vercel, ri: vercel, site: https://vercel.com/, region: worldwide, policy: fully-remote, ats: greenhouse, slug: vercel, how: website}
+  - {name: Verve Systems, ri: verve-systems, site: https://www.vervesys.com/company/contact-us/, region: other, policy: remote-friendly}
+  - {name: Veryfi, ri: veryfi, site: https://veryfi.com/about, region: worldwide, policy: fully-remote}
+  - {name: VGS, ri: vgs, site: https://www.verygoodsecurity.com/careers, region: worldwide, policy: fully-remote}
+  - {name: Viperdev, ri: viperdev, site: https://viperdev.io, region: worldwide, policy: fully-remote}
+  - {name: VMware, ri: vmware, site: https://www.vmware.com/, region: worldwide, policy: fully-remote}
+  - {name: WebFX, ri: webfx, site: https://www.webfx.com, region: worldwide, policy: fully-remote}
+  - {name: Wells Fargo, ri: wells-fargo, site: https://www.wellsfargo.com/, region: worldwide, policy: fully-remote}
+  - {name: WeMakeMVP, ri: wemakemvp, site: https://wemakemvp.com, region: worldwide, policy: fully-remote}
+  - {name: Whitespectre, ri: whitespectre, site: https://www.whitespectre.com, region: worldwide, policy: remote-first, ats: workable, slug: whitespectre, how: website}
+  - {name: Wikimedia Foundation, ri: wikimedia-foundation, site: https://wikimediafoundation.org, region: other, policy: remote-friendly}
+  - {name: Willings Inc, ri: willings-inc, site: https://willings.co.jp/en/, region: asia-pacific, policy: remote-friendly}
+  - {name: Wingify, ri: wingify, site: https://wingify.com/, region: asia-pacific, policy: remote-first}
+  - {name: Wolfram, ri: wolfram, site: https://www.wolfram.com, region: worldwide, policy: fully-remote}
+  - {name: WP-Media, ri: wp-media, site: https://wp-media.me/, region: worldwide, policy: fully-remote, ats: workable, slug: wp-media, how: profile}
+  - {name: X-Team, ri: x-team, site: https://x-team.com/, region: worldwide, policy: fully-remote}
+  - {name: Xapo, ri: xapo, site: https://xapo.com/, region: worldwide, policy: fully-remote}
+  - {name: XWP, ri: xwp, site: https://xwp.co/, region: worldwide, policy: fully-remote}
+  - {name: Yahoo!, ri: yahoo, site: https://www.yahooinc.com/, region: worldwide, policy: fully-remote}
+  - {name: Yodo1, ri: yodo1, site: https://www.yodo1.com/en/, region: worldwide, policy: fully-remote}
+  - {name: Yonder, ri: yonder, site: https://www.yonder.io, region: worldwide, policy: fully-remote}
+  - {name: You Need A Budget, ri: you-need-a-budget, site: https://www.youneedabudget.com/, region: worldwide, policy: fully-remote}
+  - {name: Zaneffi, ri: zaneffi, site: https://zaneffi.com/, region: worldwide, policy: remote-first}
+  - {name: Zapier, ri: zapier, site: https://zapier.com/, region: worldwide, policy: fully-remote, ats: ashby, slug: zapier, how: guess}
+  - {name: ZenRows, ri: zenrows, site: https://zenrows.com, region: worldwide, policy: remote-first, ats: greenhouse, slug: zenrows, how: website}
+  - {name: Zignaly, ri: zignaly, site: https://zignaly.io/, region: worldwide, policy: fully-remote}
+  - {name: ZooTools, ri: zootools, site: https://zootools.co/, region: worldwide, policy: fully-remote}
