@@ -108,7 +108,6 @@ assert roles.label_of(jobs_[0]) == (["fraud-analyst"], True)
 assert roles.reset() == 1 and roles.label_of(jobs_[0]) == (["fraud-analyst"], True)  # ✓ survives a reset
 
 # second look: the REAL description via a redirect chain, then Claude judges by it
-import asyncio  # noqa: E402
 import http.server  # noqa: E402
 import threading  # noqa: E402
 import jdfetch  # noqa: E402
