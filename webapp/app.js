@@ -497,15 +497,15 @@ function renderApply(item, r) {
     <div class="ap-btns top">${ch.link ? '<button class="yes" data-site="1">🔗 Открыть вакансию</button>' : ""}${mails}${tgs}</div>
     ${r.tones ? `<div class="seg two" id="ap-lang" role="group" aria-label="Язык отклика"><button data-al="ru" aria-pressed="${r.lang === "ru"}">RUS</button><button data-al="en" aria-pressed="${r.lang === "en"}">ENG</button></div>` : ""}
     ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
+    ${dataBlocks.length ? `<div class="lbl" style="margin-top:12px">Данные для формы на сайте (${r.lang === "ru" ? "RUS" : "ENG"})</div>
+      ${dataBlocks.map(([b, n]) => `<div class="pk-row"><div class="pk-t"><small>${esc(b.label)}</small><span>${esc(b.text)}</span></div><button data-pk-copy="${n}" aria-label="Скопировать">📋</button></div>`).join("")}
+      <p class="hint">Заполняются в «Ещё → Профиль для откликов».</p>` : (r.tones ? '<p class="hint">Ваши данные (ФИО, город, зарплата…) можно заполнить в «Ещё → Профиль для откликов»: они появятся здесь готовыми блоками.</p>' : "")}
     ${ch.email.length ? `<label class="fld"><span>Тема письма</span><input class="inp" id="ap-subj" value="${esc(r.subject)}" maxlength="200"></label>` : ""}
     <label class="fld"><span>Письмо</span><textarea class="inp big" id="ap-text">${esc(r.letter)}</textarea></label>
     <div class="ap-btns">
       <button data-copy="1">📋 Скопировать письмо</button>
       ${r.tones ? '<button data-pdf="1">📎 Резюме (PDF) в чат с ботом</button>' : ""}</div>
     ${!r.smtp && !r.dry && ch.email.length ? '<p class="hint">Чтобы я отправлял письма сам, нужен «пароль приложения» Gmail в config.yml — спросите меня в чате, покажу по шагам.</p>' : ""}
-    ${dataBlocks.length ? `<div class="lbl" style="margin-top:12px">Данные для формы на сайте (${r.lang === "ru" ? "RUS" : "ENG"})</div>
-      ${dataBlocks.map(([b, n]) => `<div class="pk-row"><div class="pk-t"><small>${esc(b.label)}</small><span>${esc(b.text)}</span></div><button data-pk-copy="${n}" aria-label="Скопировать">📋</button></div>`).join("")}
-      <p class="hint">Заполняются в «Ещё → Профиль для откликов».</p>` : (r.tones ? '<p class="hint">Ваши данные (ФИО, город, зарплата…) можно заполнить в «Ещё → Профиль для откликов»: они появятся здесь готовыми блоками.</p>' : "")}
     ${r.tones ? `<details class="group fold" id="ap-more"><summary><span class="sn">⚙️ О себе, тон и ИИ</span></summary><div class="pad" style="padding:2px 14px 14px">
       <div class="tzrow" style="padding:0 0 8px"><label>Тон письма<select class="inp" id="ap-tone">${r.tones.map((t) => `<option value="${esc(t.id)}" ${t.id === r.tone ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
         <label>О себе<select class="inp" id="ap-preset"><option value="">Из резюме</option>${r.presets.filter((p) => p.id !== "resume").map((p) => `<option value="${esc(p.id)}" ${p.id === r.preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
