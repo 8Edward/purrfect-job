@@ -1621,11 +1621,21 @@ class WebApp:
             return self.bad("Оценки ИИ на сегодня закончились. Завтра снова можно.", 429)
         if not extras.candidate_text(m):
             return self.bad("Чтобы ИИ сравнил вакансии с вашим опытом, добавьте резюме во вкладке «▤ Резюме».")
-        pairs, _ = feed_pairs(m, m.load_inbox())
-        todo = [g[0] for g in extras.groups(pairs) if not any(v.get("ai") for _, v in g)]
+        body = await self.body(request)
+        inbox = m.load_inbox()
+        if body.get("view") == "fav":  # «Избранное → Оценить все»: starred vacancies without a score, up to what is left today
+            pairs = sorted(((k, v) for k, v in inbox.items() if VIEWS["fav"](v)), key=lambda kv: kv[1]["date"], reverse=True)
+            todo = [kv for kv in pairs if not kv[1].get("ai")]
+            cap = left
+        else:
+            pairs, _ = feed_pairs(m, inbox)
+            todo = [g[0] for g in extras.groups(pairs) if not any(v.get("ai") for _, v in g)]
+            cap = min(left, SCORE_BATCH)
         if not todo:
-            return self.bad("Все вакансии в ленте уже оценены.")
-        todo = todo[:min(left, SCORE_BATCH)]
+            return self.bad("Все вакансии уже оценены.")
+        if body.get("dry"):  # only count: the app shows «будет оценено N из M» and asks before it starts
+            return web.json_response({"unscored": len(todo), "will": min(len(todo), cap), "left": left})
+        todo = todo[:cap]
         jid = self.new_ai_job(m, "score_new", progress={"done": 0, "total": len(todo)})
 
         async def work():

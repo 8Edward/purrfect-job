@@ -277,6 +277,32 @@ function setFilter(f) {
   $$("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.f === "all" ? st.filter === "all" : set.has(c.dataset.f)));
   loadFeed().catch(fail);
 }
+/* «Избранное → Оценить все ИИ»: first tap says how many will be scored (the day's limit counts), the second runs it */
+async function scoreFav() {
+  const b = $("#score-fav");
+  if (st.scoringAll) return;
+  try {
+    if (!b.dataset.sure) {
+      const q = await api("/api/score/new", { view: "fav", dry: true });
+      b.dataset.sure = "1";
+      b.textContent = q.will < q.unscored ? `Оценю ${q.will} из ${q.unscored} (лимит на сегодня). Нажмите ещё раз` : `Оценю ${q.will}. Нажмите ещё раз`;
+      setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = `✨ Оценить все ИИ (${q.unscored})`; } }, 6000);
+      return;
+    }
+    st.scoringAll = true;
+    const d = await api("/api/score/new", { view: "fav" });
+    for (let n = 0; n < 400; n++) {
+      b.textContent = `✨ Оцениваю…`;
+      await new Promise((r) => setTimeout(r, 3000));
+      const j = await api("/api/resume/ai/" + d.job);
+      if (j.progress) b.textContent = `✨ Оцениваю ${j.progress.done} из ${j.progress.total}…`;
+      if (j.status === "error") throw new Error(j.error);
+      if (j.status === "done") { haptic("ok"); toast(`Оценил ${j.result.scored}` + (j.result.failed ? `, не вышло: ${j.result.failed}` : "")); break; }
+    }
+  } catch (e) { fail(e); }
+  st.scoringAll = false;
+  loadSaved().catch(() => {});
+}
 async function scoreNew() {
   if (st.scoringAll) return;
   const b = $("#score-new");
@@ -795,7 +821,9 @@ async function loadSaved() {
       archive: "Здесь будут вакансии, которые вы убрали в архив: откройте вакансию и нажмите «🗄 В архив»." };
     const batch = st.saved === "fav" && st.me && st.me.owner;  // «Откликнуться на все»: only the owner, for now
     const open = items.filter((i) => !(i.track && i.track.stage));
-    box.innerHTML = (batch && open.length ? `<div class="batchbar"><span class="hint">Отметьте вакансии — я подготовлю письма, вы проверите и отправите одним нажатием.</span>
+    const unscored = st.saved === "fav" && st.me && st.me.ai ? items.filter((i) => !i.ai).length : 0;
+    box.innerHTML = (unscored ? `<div class="batchbar"><button class="ai-btn" id="score-fav">✨ Оценить все ИИ (${unscored})</button></div>` : "")
+      + (batch && open.length ? `<div class="batchbar"><span class="hint">Отметьте вакансии — я подготовлю письма, вы проверите и отправите одним нажатием.</span>
         <button class="cta" id="batch-go">✉️ Откликнуться на отмеченные (<b id="batch-n">${Math.min(open.length, 10)}</b>)</button></div>` : "")
       + (items.length ? items.map((i, n) => {
         const done = i.track && i.track.stage;
@@ -809,6 +837,7 @@ async function loadSaved() {
       if (picked().length > 10) { c.checked = false; toast("Не больше 10 за раз"); }
       $("#batch-n").textContent = picked().length;
     }));
+    if ($("#score-fav")) $("#score-fav").onclick = scoreFav;
     if ($("#batch-go")) $("#batch-go").onclick = () => (picked().length ? batchFlow(picked()) : toast("Отметьте хотя бы одну вакансию"));
   } catch (e) { fail(e); }
 }
