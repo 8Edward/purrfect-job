@@ -479,7 +479,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert _asyncio.run(filtercheck.run(FakeAI())) == (4, 2)
     rep = filtercheck.report()
     assert rep["checked"] == 4 and rep["lost"] == 2 and rep["waiting"] == 0 and len(rep["items"]) == 2
-    assert not filtercheck.due() and _asyncio.run(filtercheck.run(FakeAI())) == (0, 0)  # once a day
+    assert not filtercheck.due() and _asyncio.run(filtercheck.run(FakeAI())) == (0, 0)  # once a week
     filtercheck.add(posts)  # already checked: not queued again
     assert filtercheck.load()["pending"] == []
     assert filtercheck.parse("no json here", 3) == {} and filtercheck.parse('{"9": true, "1": "yes"}', 3) == {}

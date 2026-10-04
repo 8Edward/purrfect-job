@@ -928,7 +928,7 @@ async function loadSources(all) {
   if (!d.items.length && !d.filter) { g.hidden = true; return; }
   g.hidden = false;
   const f = d.filter;
-  const filt = f ? `<p class="hint"><b>🧪 Проверка фильтра каналов</b> (раз в день Claude читает до 15 постов, которые фильтр отбросил,
+  const filt = f ? `<p class="hint"><b>🧪 Проверка фильтра каналов</b> (раз в неделю Claude читает до 15 постов, которые фильтр отбросил,
       хотя в них есть ваша роль). За ${f.days} дн. проверено ${f.checked}, из них настоящих вакансий: ${f.lost}${f.checked ? ` (${Math.round(100 * f.lost / f.checked)}%)` : ""}.
       Ждут проверки: ${f.waiting}.${Object.keys(f.why).length ? " Почему отбросил: " + Object.entries(f.why).map(([k, n]) => `${esc(k)} — ${n}`).join(", ") + "." : ""}</p>
     ${f.items.map((i) => `<div class="tg"><span>${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title)}<small>${esc(i.chat)} · ${esc(i.why)}</small></span></div>`).join("")}` : "";

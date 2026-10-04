@@ -2,7 +2,7 @@
 
 While reading the pool channels, posts that DO mention one of a person's roles but were turned
 down by the vacancy detector (no «вакансия» word, looks like an article, a stop word, too short)
-are kept aside. Once a day up to SAMPLE of them go to `claude -p` in one request: «is this a job
+are kept aside. Once a week up to SAMPLE of them go to `claude -p` in one request: «is this a job
 posting, not a résumé / an ad / an article?». The share of «yes» is the filter's loss rate,
 shown in «Ещё → 📡 Радар»; the lost posts are listed so the words can be tuned.
 Idea from JobMonitor (github.com/spichkinevgeniy/JobMonitor, MIT); the code is ours.
@@ -19,6 +19,7 @@ import tg_collect as tc
 PATH = tc.ROOT / "data" / "tg-filter-check.json"
 PENDING_MAX = 300
 SAMPLE = 15
+EVERY_DAYS = 7  # the check is a slow-moving statistic: once a week is enough and spares the subscription
 KEEP_DAYS = 30
 LOST_KEEP = 30
 TIMEOUT = 240
@@ -86,18 +87,21 @@ def parse(text, count):
 
 def due(data=None):
     data = data or load()
-    return data.get("last_run") != _today() and len(data["pending"]) >= 3
+    last = data.get("last_run")
+    if last and (datetime.now(timezone.utc).date() - datetime.fromisoformat(last).date()).days < EVERY_DAYS:
+        return False
+    return len(data["pending"]) >= 3
 
 
 async def run(ai, sample=SAMPLE):
-    """Once a day: ask Claude about a random sample of the turned-down posts. -> (checked, lost)."""
+    """Once a week: ask Claude about a random sample of the turned-down posts. -> (checked, lost)."""
     data = load()
     if not due(data):
         return 0, 0
     fresh_after = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     pool = [p for p in data["pending"] if p["date"] >= fresh_after] or data["pending"]
     posts = random.sample(pool, min(sample, len(pool)))
-    data["last_run"] = _today()  # one try a day, even if Claude fails: the subscription is shared
+    data["last_run"] = _today()  # one try a week, even if Claude fails: the subscription is shared
     save(data)
     got = parse(await ai.ask(SYSTEM, prompt_for(posts), timeout=TIMEOUT), len(posts))
     data = load()  # re-read: the reader may have added posts meanwhile
@@ -118,7 +122,7 @@ async def run(ai, sample=SAMPLE):
     return len(got), len(lost)
 
 
-def report(days=7):
+def report(days=30):
     data = load()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
     recent = [v for k, v in data["days"].items() if k >= cutoff]

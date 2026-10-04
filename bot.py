@@ -1260,7 +1260,7 @@ class JobRadar:
     # ------------------------------------------------------------ ☀️ morning digest, 📋 tracker reminders
 
     async def filter_pass(self):
-        """🧪 Once a day: Claude reads a sample of posts the filter turned down (filtercheck.py)."""
+        """🧪 Once a week: Claude reads a sample of posts the filter turned down (filtercheck.py)."""
         try:
             checked, lost = await filtercheck.run(self.webapp.ai)
             if checked:
