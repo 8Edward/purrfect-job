@@ -477,42 +477,29 @@ async function scoreJob(item) {
 
 async function applyFlow(item) {
   st.sheet = { apply: item };
+  const dataBlocks = (r.blocks || []).map((b, n) => [b, n]).filter(([b]) => b.key !== "about");
   $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
-    <div class="empty"><div class="spinner"></div><b>Собираю письмо</b>По шаблону из вашего резюме, на языке вакансии. Без ИИ.</div>`;
-  $("#sheet").hidden = $("#sheet-bg").hidden = false;
-  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
-  try {
-    const d = await api("/api/apply/prepare", { key: item.key });
-    const r = d.result || (await waitJob(d.job));
-    if (!st.sheet || st.sheet.apply !== item) return;
-    renderApply(item, r);
-  } catch (e) { closeSheet(); fail(e); }
-}
-function renderApply(item, r) {
-  const ch = r.channels;
-  const mails = ch.email.map((m) => `<button class="${r.smtp || r.dry ? "yes" : ""}" data-mail="${esc(m)}">📧 ${r.smtp || r.dry ? "Отправить на" : "Письмо на"} ${esc(m)}</button>`).join("");
-  const tgs = ch.tg.map((t) => `<button data-tg="${esc(t)}">💬 Открыть чат @${esc(t)}</button>`).join("");
-  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
-    <p class="hint">Проверьте и поправьте письмо. Резюме: «${esc(r.resume.name)}»${r.resume.lang !== r.lang ? " (другой язык, чем вакансия — можно перевести во вкладке «Резюме»)" : ""}. Ничего не уйдёт, пока вы не нажмёте кнопку.${r.dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
-    ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
+    <div class="ap-btns top">${ch.link ? '<button class="yes" data-site="1">🔗 Открыть вакансию</button>' : ""}${mails}${tgs}</div>
     ${r.tones ? `<div class="seg two" id="ap-lang" role="group" aria-label="Язык отклика"><button data-al="ru" aria-pressed="${r.lang === "ru"}">RUS</button><button data-al="en" aria-pressed="${r.lang === "en"}">ENG</button></div>` : ""}
-    ${r.tones ? `<div class="tzrow"><label>Тон письма<select class="inp" id="ap-tone">${r.tones.map((t) => `<option value="${esc(t.id)}" ${t.id === r.tone ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
-      <label>О себе<select class="inp" id="ap-preset"><option value="">Из резюме</option>${r.presets.filter((p) => p.id !== "resume").map((p) => `<option value="${esc(p.id)}" ${p.id === r.preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
-      <label class="fld"><span>Абзац «о себе» (можно написать свой)</span><textarea class="inp" id="ap-about" rows="3" maxlength="700">${esc((r.presets.find((p) => p.id === (r.preset || "resume")) || {}).text || "")}</textarea></label>
-      <div class="ap-btns"><button id="ap-rebuild">🔄 Пересобрать письмо</button><button id="ap-savepreset">💾 Сохранить «о себе»</button></div>
-      <div class="rl-own" id="ap-nameRow" hidden><input class="inp" id="ap-pname" maxlength="40" placeholder="Название, например: Коротко про меня"><button id="ap-psave">OK</button></div>` : ""}
+    ${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}
     ${ch.email.length ? `<label class="fld"><span>Тема письма</span><input class="inp" id="ap-subj" value="${esc(r.subject)}" maxlength="200"></label>` : ""}
     <label class="fld"><span>Письмо</span><textarea class="inp big" id="ap-text">${esc(r.letter)}</textarea></label>
-    <div class="ap-btns">${mails}${tgs}
-      ${ch.link ? '<button data-site="1">🔗 Открыть вакансию</button>' : ""}
+    <div class="ap-btns">
       <button data-copy="1">📋 Скопировать письмо</button>
-      ${r.tones ? '<button data-pdf="1">📎 Резюме (PDF) в чат с ботом</button>' : ""}
-      ${r.tones ? `<button data-ai="1">✨ Переписать с ИИ${r.ai_left != null ? ` (осталось ${r.ai_left})` : ""}</button>` : ""}</div>
+      ${r.tones ? '<button data-pdf="1">📎 Резюме (PDF) в чат с ботом</button>' : ""}</div>
     ${!r.smtp && !r.dry && ch.email.length ? '<p class="hint">Чтобы я отправлял письма сам, нужен «пароль приложения» Gmail в config.yml — спросите меня в чате, покажу по шагам.</p>' : ""}
-    ${r.blocks && r.blocks.length ? `<div class="lbl" style="margin-top:12px">Данные для формы на сайте (${r.lang === "ru" ? "RUS" : "ENG"})</div>
-      ${r.blocks.map((b, n) => `<div class="pk-row"><div class="pk-t"><small>${esc(b.label)}</small><span>${esc(b.text)}</span></div><button data-pk-copy="${n}" aria-label="Скопировать">📋</button></div>`).join("")}
+    ${dataBlocks.length ? `<div class="lbl" style="margin-top:12px">Данные для формы на сайте (${r.lang === "ru" ? "RUS" : "ENG"})</div>
+      ${dataBlocks.map(([b, n]) => `<div class="pk-row"><div class="pk-t"><small>${esc(b.label)}</small><span>${esc(b.text)}</span></div><button data-pk-copy="${n}" aria-label="Скопировать">📋</button></div>`).join("")}
       <p class="hint">Заполняются в «Ещё → Профиль для откликов».</p>` : (r.tones ? '<p class="hint">Ваши данные (ФИО, город, зарплата…) можно заполнить в «Ещё → Профиль для откликов»: они появятся здесь готовыми блоками.</p>' : "")}
-    <p class="hint">После «Открыть…» письмо и PDF резюме придут в чат с ботом, а вакансия отметится «Откликнулся».</p>
+    ${r.tones ? `<details class="group fold" id="ap-more"><summary><span class="sn">⚙️ О себе, тон и ИИ</span></summary><div class="pad" style="padding:2px 14px 14px">
+      <div class="tzrow" style="padding:0 0 8px"><label>Тон письма<select class="inp" id="ap-tone">${r.tones.map((t) => `<option value="${esc(t.id)}" ${t.id === r.tone ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
+        <label>О себе<select class="inp" id="ap-preset"><option value="">Из резюме</option>${r.presets.filter((p) => p.id !== "resume").map((p) => `<option value="${esc(p.id)}" ${p.id === r.preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
+      <label class="fld"><span>Абзац «о себе» (можно написать свой)</span><textarea class="inp" id="ap-about" rows="3" maxlength="700">${esc((r.presets.find((p) => p.id === (r.preset || "resume")) || {}).text || "")}</textarea></label>
+      <div class="ap-btns"><button id="ap-rebuild">🔄 Пересобрать письмо</button><button id="ap-savepreset">💾 Сохранить «о себе»</button>
+        <button data-ai="1">✨ Переписать с ИИ${r.ai_left != null ? ` (осталось ${r.ai_left})` : ""}</button></div>
+      <div class="rl-own" id="ap-nameRow" hidden><input class="inp" id="ap-pname" maxlength="40" placeholder="Название, например: Коротко про меня"><button id="ap-psave">OK</button></div>
+    </div></details>` : ""}
+    <p class="hint">Ничего не уйдёт, пока вы не нажмёте кнопку. Резюме: «${esc(r.resume.name)}»${r.resume.lang !== r.lang ? " (другой язык, чем вакансия)" : ""}.${r.dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""} После «Открыть…» письмо и PDF резюме придут в чат с ботом, а вакансия отметится «Откликнулся».</p>
     <div class="btns"><button class="wide" id="ap-cancel">Отмена</button></div>`;
   const text = () => $("#ap-text").value;
   const rebuild = async (aboutText) => {

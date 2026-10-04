@@ -452,6 +452,7 @@ class WebApp:
         self.results = {}            # person id -> {key: job} from their last search
         self.last_search = {}
         self.last_feedback = {}
+        self.jd_cache = {}
         self.warming = False
         self.runner = None
         self.ai = resume_ai.Claude(radar.cfg.get("claude_exe"))
@@ -1739,12 +1740,24 @@ class WebApp:
         mine = [{"id": "profile", "name": "Из профиля", "text": letters.pv(profile, "about", lang)}] if letters.pv(profile, "about", lang) and "about" in profile["use"] else []
         return mine + letters.resume_presets(md) + [{"id": p["id"], "name": p["name"], "text": p["text"]} for p in saved]
 
-    async def draft_tpl(self, m, key, item, tone="", preset="", lang_over=""):
-        """A response draft from templates (letters.py): the same fields as draft_one plus the choices shown in the sheet."""
+    async def cached_vacancy_text(self, m, key, item):
+        """The vacancy text for a letter. A site's full text comes from a page fetch (up to 40 s), so it is kept for
+        20 minutes: changing the tone, the «о себе» or the language in the sheet must not fetch it again."""
+        hit = self.jd_cache.get((m.id, key))
+        if hit and time.monotonic() - hit[0] < 1200:
+            return hit[1]
         try:
             text = await self.vacancy_text(m, {"job_key": key})
         except ValueError:
             text = item.get("text") or ""
+        self.jd_cache[(m.id, key)] = (time.monotonic(), text)
+        if len(self.jd_cache) > 200:
+            self.jd_cache.pop(next(iter(self.jd_cache)))
+        return text
+
+    async def draft_tpl(self, m, key, item, tone="", preset="", lang_over=""):
+        """A response draft from templates (letters.py): the same fields as draft_one plus the choices shown in the sheet."""
+        text = await self.cached_vacancy_text(m, key, item)
         head = f"{item.get('title') or ''}\n{item.get('company') or ''}\n{item.get('location') or ''}\n\n"
         lang = lang_over if lang_over in ("ru", "en") else resume.detect_lang(text or head)
         meta = apply.pick_version(m, lang)
