@@ -174,7 +174,7 @@ def compose(md, item, vacancy_text, lang, tone=DEFAULT_TONE, about=None, profile
         skills_line = t["skills_all"].format(skills=", ".join(info["skills"][:6]))
     else:
         skills_line = ""
-    opening = t["open"].format(**fill)
+    opening = re.sub(r"(?<=\w)\.\.(?=\s|$)", ".", t["open"].format(**fill))  # «Inc.» + the sentence's own dot
     if not about:  # nothing to introduce: the opening line must not end on a colon
         opening = opening.rstrip(":").rstrip() + "."
     parts = [t["hello"].format(**fill), opening, about, skills_line, t["close"], t["bye"] + ("\n" + info["name"] if info["name"] else ""),

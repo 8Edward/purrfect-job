@@ -477,6 +477,21 @@ async function scoreJob(item) {
 
 async function applyFlow(item) {
   st.sheet = { apply: item };
+  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
+    <div class="empty"><div class="spinner"></div><b>Собираю письмо</b>По шаблону из вашего резюме, на языке вакансии. Без ИИ.</div>`;
+  $("#sheet").hidden = $("#sheet-bg").hidden = false;
+  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
+  try {
+    const d = await api("/api/apply/prepare", { key: item.key });
+    const r = d.result || (await waitJob(d.job));
+    if (!st.sheet || st.sheet.apply !== item) return;
+    renderApply(item, r);
+  } catch (e) { closeSheet(); fail(e); }
+}
+function renderApply(item, r) {
+  const ch = r.channels;
+  const mails = ch.email.map((m) => `<button class="${r.smtp || r.dry ? "yes" : ""}" data-mail="${esc(m)}">📧 ${r.smtp || r.dry ? "Отправить на" : "Письмо на"} ${esc(m)}</button>`).join("");
+  const tgs = ch.tg.map((t) => `<button data-tg="${esc(t)}">💬 Открыть чат @${esc(t)}</button>`).join("");
   const dataBlocks = (r.blocks || []).map((b, n) => [b, n]).filter(([b]) => b.key !== "about");
   $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклик: ${esc(item.title)}</h3>
     <div class="ap-btns top">${ch.link ? '<button class="yes" data-site="1">🔗 Открыть вакансию</button>' : ""}${mails}${tgs}</div>
