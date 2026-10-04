@@ -65,8 +65,8 @@ const xmlText = (block, tag) => {
   const m = block.match(new RegExp(String.raw`<${tag}[^>]*>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*</${tag}>`));
   return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim() : '';
 };
-async function getJson(url) {
-  const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(25_000) });
+async function getJson(url, ms = 25_000) {
+  const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(ms) });
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
   return r.json();
 }
@@ -390,13 +390,15 @@ const FETCHERS = {
   },
   async sber() {
     const out = [];
-    for (let skip = 0; skip < 20000; skip += 200) {
+    for (let skip = 0, i = 0; i < 100; i++) {  // the API gives fewer than asked: step by what came back
       const j = await getJson(`https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications?skip=${skip}&take=200`);
-      for (const x of j.data?.vacancies || []) {
+      const vs = j.data?.vacancies || [];
+      skip += vs.length;
+      for (const x of vs) {
         const remote = /удал[её]нн|дистанцион/i.test(`${x.city || ''} ${x.conditions || ''}`);
         out.push({ title: x.title, url: `https://rabota.sber.ru/search/${x.internalId}`, company: x.company || 'Сбер', location: (remote ? 'Удалённо · ' : '') + (x.city || ''), posted: x.publicationDate || '' });
       }
-      if (skip + 200 >= (j.data?.total || 0)) break;
+      if (!vs.length || skip >= (j.data?.total || 0)) break;
       await pause(200);
     }
     return out;
@@ -551,8 +553,7 @@ const FETCHERS = {
         const m = b.match(/href="(\/vacancy\/[0-9a-f]{24})"[^>]*>([^<]+)</);
         if (!m || out.has(m[1])) continue;
         const company = b.match(/company-name">\s*<a[^>]*>([^<]+)</)?.[1] || '';
-        const info = b.slice(0, 2500).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-        out.set(m[1], { title: decode(m[2]), url: `https://geekjob.ru${m[1]}`, company: decode(company), location: /удал[её]нн/i.test(info) ? 'Удалённо' : '', posted: '' });
+        out.set(m[1], { title: decode(m[2]), url: `https://geekjob.ru${m[1]}`, company: decode(company), location: /remote-label|удал[её]нн/i.test(b.slice(0, 1500)) ? 'Удалённо' : '', posted: '' });
         added++;
       }
       if (!added) break;
@@ -562,8 +563,9 @@ const FETCHERS = {
   },
   async trudvsem() {  // «Работа России»: only distance-work vacancies («Дистанционная (удаленная) работа»)
     const out = [];
-    for (let page = 0; page < 60; page++) {
-      const j = await getJson(`https://opendata.trudvsem.ru/api/v1/vacancies?limit=100&offset=${page}&text=${encodeURIComponent('удаленная')}`);
+    const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 19) + 'Z';
+    for (let page = 0; page < 12; page++) {  // ~12 s per page: only what changed in the last week
+      const j = await getJson(`https://opendata.trudvsem.ru/api/v1/vacancies?limit=100&offset=${page}&modifiedFrom=${since}&text=${encodeURIComponent('удаленная')}`, 60_000);
       const vs = j.results?.vacancies || [];
       for (const { vacancy: v } of vs) {
         if (!/удал|дистанц/i.test(v.employment || '') || !v['job-name'] || !v.vac_url) continue;
@@ -646,7 +648,10 @@ const queue = [...ids];
 await Promise.all(Array.from({ length: PARALLEL }, async () => {
   while (queue.length) await fetchBoard(queue.shift());
 }));
-process.stdout.write(JSON.stringify(Object.fromEntries(ids.filter((id) => out[id]).map((id) => [id, out[id]]))) + '\n');
+// exit right away: a board that hit its time limit may still be paging in the background and
+// would otherwise keep this process (and the bot's wait) alive long after the answer is ready
+process.stdout.write(JSON.stringify(Object.fromEntries(ids.filter((id) => out[id]).map((id) => [id, out[id]]))) + '\n',
+  () => process.exit(0));
 
 async function fetchBoard(id) {
   const provider = id.startsWith('co-') ? {} : providers.get(id);
@@ -658,7 +663,12 @@ async function fetchBoard(id) {
     const run = () => withTimeout(id.startsWith('co-') ? fetchCompanies(id) : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
       PER_BOARD_TIMEOUT_MS);
     // one more try: most failures seen are one-off «aborted» / «fetch failed» timeouts
-    const jobs = await run().catch(async () => { await new Promise((r) => setTimeout(r, 3000)); return run(); });
+    // (not after a timeout: that board is just slow, a second try would only double the wait)
+    const jobs = await run().catch(async (e) => {
+      if (/^timeout after/.test(String(e?.message))) throw e;
+      await new Promise((r) => setTimeout(r, 3000));
+      return run();
+    });
     if (!Array.isArray(jobs)) throw new Error('fetch() did not return an array');
     out[id] = {
       jobs: jobs
