@@ -52,6 +52,22 @@ def compile_patterns(patterns):
     return [re.compile(flexible(p), re.IGNORECASE) for p in patterns or []]
 
 
+def role_regex(pattern):
+    """A «Что ищу» phrase of exactly two plain words matches in either order, up to 40 characters
+    apart (the in-app search always did: «антифрод аналитик» finds «аналитик в команду антифрод»).
+    Longer phrases, regexes and everything else keep their literal reading."""
+    plain = re.sub(r"\\(.)", r"\1", pattern).strip()
+    words = plain.split()
+    if len(words) == 2 and all(re.fullmatch(r"[\w+#.\-]+", w) for w in words):
+        a, b = (flexible(re.escape(w)) for w in words)
+        return f"(?:{a}[^\\n]{{0,40}}{b}|{b}[^\\n]{{0,40}}{a})"
+    return flexible(pattern)
+
+
+def compile_role(patterns):
+    return [re.compile(role_regex(p), re.IGNORECASE) for p in patterns or []]
+
+
 # Card-style channels (e.g. @revacancy_global) post «Title | Senior | IC / Company / 150k - 180k USD /
 # Skills: … / Contacts and Full Description» and never say «вакансия» or «hiring».
 JOB_CARD = re.compile(
@@ -62,7 +78,7 @@ JOB_CARD = re.compile(
 class JobFilter:
     def __init__(self, keywords, min_length):
         self.job = compile_patterns(keywords.get("job"))
-        self.role = compile_patterns(keywords.get("role"))
+        self.role = compile_role(keywords.get("role"))
         self.negative = compile_patterns(keywords.get("negative"))
         self.tags = {name: compile_patterns(p) for name, p in (keywords.get("tags") or {}).items()}
         self.min_length = min_length

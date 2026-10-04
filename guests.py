@@ -71,7 +71,7 @@ HH_RSS = "https://hh.ru/search/vacancy/rss"
 HH_EVERY = timedelta(minutes=30)
 HH_PAUSE = 3  # seconds between people's queries
 HH_QUERY_MAX = 200
-HH_PARTS_MAX = 6  # requests per hh.ru query (one per OR part)
+HH_PARTS_MAX = 12  # requests per hh.ru query (one per OR part)
 HH_VACANCY_RE = re.compile(r"^https://([a-z0-9-]+\.)?hh\.ru/vacancy/\d+")
 
 # Job boards that work as a whole board with no extra settings (each one checked
@@ -604,8 +604,10 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
 
     for key, followers in wanted.items():
         days = rescan_days or max(m.cfg().get("lookback_days", 1) for m in followers)
-        cutoff = now() - timedelta(days=days)
         start = {m.id: 0 if rescan_days else marks[m.id].get(key, 0) for m in followers}
+        if not rescan_days and min(start.values()) > 0:
+            days = max(days, 7)  # the watermark says where to stop; a PC that slept for days must not lose posts
+        cutoff = now() - timedelta(days=days)
         try:
             entity = await client.get_entity(key)
             msgs = []
@@ -780,7 +782,7 @@ def match_site_jobs(feed, member, listed, full=False):
     their «Что ищу» words and none of the stop words. full (a manual refresh): vacancies
     seen before but rejected by the old words get another chance; only the inbox dedups."""
     kw = member.cfg().get("keywords", {})
-    role, negative = tc.compile_patterns(kw.get("role")), tc.compile_patterns(kw.get("negative"))
+    role, negative = tc.compile_role(kw.get("role")), tc.compile_patterns(kw.get("negative"))
     if not role:
         return []
     state = member.load_state()
@@ -827,6 +829,18 @@ def set_hh(member, **fields):
 
 def clean_hh_query(text):
     return re.sub(r"\s+", " ", str(text)).strip()[:HH_QUERY_MAX]
+
+
+def words_hh_query(member):
+    """The CURRENT «Что ищу» words as an hh.ru query, a phrase of several words as «a AND b»
+    (hh then finds them in any order, like the feed's own filter). The saved query is
+    only a snapshot from when it was typed or built from a résumé."""
+    parts = []
+    for p in member.cfg().get("keywords", {}).get("role", []):
+        words = plain(p).split()
+        if words and all(re.match(r"^[\w.+#/-]+$", w) for w in words):
+            parts.append(" AND ".join(words))
+    return " OR ".join(dict.fromkeys(parts))
 
 
 def default_hh_query(member):
@@ -935,7 +949,7 @@ def match_hh_jobs(raw, member, full=False):
     """New hh.ru vacancies for one person: title must hold a «Что ищу» word (hh also
     matches the description, which drags in unrelated jobs), no stop words."""
     kw = member.cfg().get("keywords", {})
-    role, negative = tc.compile_patterns(kw.get("role")), tc.compile_patterns(kw.get("negative"))
+    role, negative = tc.compile_role(kw.get("role")), tc.compile_patterns(kw.get("negative"))
     state = member.load_state()
     seen = set(state.get("hh_seen", []))
     skip = set() if full else seen  # see match_site_jobs

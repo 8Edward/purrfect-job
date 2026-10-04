@@ -1162,6 +1162,10 @@ class JobRadar:
         if not wanted - {guests.HH_ID}:
             return
         feed = await guests.fetch_feed(sorted(wanted))
+        old = guests.read_json(webapp.FEED_CACHE_PATH, {}).get("feed", {})
+        for p, r in feed.items():  # a board that failed this time keeps what it gave last time
+            if "error" in r and (old.get(p) or {}).get("jobs"):
+                feed[p] = {"jobs": old[p]["jobs"], "stale": r["error"]}
         guests.write_json(webapp.FEED_CACHE_PATH, {"at": datetime.now(timezone.utc).isoformat(), "feed": feed})
         errors = {p: r["error"] for p, r in feed.items() if "error" in r}
         if errors:
@@ -1184,10 +1188,11 @@ class JobRadar:
         people = [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
         for m in people:
             settings = guests.hh_settings(m)
-            if guests.HH_ID not in m.sites(listed) or not settings["query"]:
+            query = " OR ".join(q for q in (settings["query"], guests.words_hh_query(m)) if q)
+            if guests.HH_ID not in m.sites(listed) or not query:
                 continue
             try:
-                raw = await guests.fetch_hh(settings["query"], settings["remote"])
+                raw = await guests.fetch_hh(query, settings["remote"])
             except Exception as e:
                 log.warning("hh.ru for %s: %s", m.name, e)
                 continue

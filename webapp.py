@@ -1589,10 +1589,10 @@ class WebApp:
             except asyncio.TimeoutError:
                 return web.json_response({"busy": True, "new": 0})
         if m.is_owner:
-            found = await self.radar.check(tg=True, web=False, rescan_days=1, manual=True) or []
+            found = await self.radar.check(tg=True, web=False, rescan_days=3, manual=True) or []
         else:
             async with self.radar.lock:
-                found = (await self.radar.check_pool([m], rescan_days=1))[m.id]
+                found = (await self.radar.check_pool([m], rescan_days=3))[m.id]
         more = False  # hh.ru and the sites go on in the background (they take longer); the page reloads later
         for task in ("hh_task", "sites_task") + (("boards_task",) if m.is_owner else ()):
             if hasattr(self.radar, task):  # hh.ru and sites: a full pass for this person, old vacancies are checked again with today's words

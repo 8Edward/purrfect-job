@@ -435,4 +435,12 @@ card = tc.JobFilter({"job": ["ваканси"], "role": ["data analyst", "sql"]}
 assert card.is_job("🟪 Senior Data Analyst | 5 year(s) | Senior | IC\n▫️ Acme | Fintech\n▫️ 90k - 120k USD Annually\nSkills: sql, python\n👉 Contacts and Full Description")
 assert not card.is_job("🟪 Senior Software Engineer | 5 year(s) | Senior | IC\n▫️ Acme | Fintech\n▫️ 90k - 120k USD Annually\nSkills: sql, golang\n👉 Contacts and Full Description")
 
+# role phrases of two words match in any order and any spelling (the audit found «антифрод аналитик» missing
+# «Ведущий системный аналитик в команду антифрод решений»); longer phrases stay literal
+roles = tc.compile_role(["антифрод аналитик", "Anti fraud", "data quality engineer"])
+assert roles[0].search("Ведущий системный аналитик в команду антифрод решений") and roles[0].search("Аналитик (Антифрод)")
+assert roles[1].search("Anti-fraud Analyst") and roles[1].search("antifraud") and not roles[0].search("Data Scientist (Антифрод)")
+assert roles[2].search("Data Quality Engineer") and not roles[2].search("engineer of data quality")
+assert not roles[0].search("аналитик" + " " * 60 + "антифрод")
+
 print("ok")

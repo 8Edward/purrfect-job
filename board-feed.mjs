@@ -364,8 +364,10 @@ for (const id of ids) {
     continue;
   }
   try {
-    const jobs = await withTimeout(id.startsWith('co-') ? fetchCompanies(id) : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
+    const run = () => withTimeout(id.startsWith('co-') ? fetchCompanies(id) : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
       PER_BOARD_TIMEOUT_MS);
+    // one more try: most failures seen are one-off «aborted» / «fetch failed» timeouts
+    const jobs = await run().catch(async () => { await new Promise((r) => setTimeout(r, 3000)); return run(); });
     if (!Array.isArray(jobs)) throw new Error('fetch() did not return an array');
     out[id] = {
       jobs: jobs
