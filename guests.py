@@ -604,7 +604,10 @@ async def migrate_owner_channels(client, owner):
     return sorted(moved)
 
 
-async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
+POOL_PARALLEL = 4
+
+
+async def scan_pool(client, members, pool, rescan_days=None, pause=0.5):
     """Read the ticked pool channels once each and filter per person.
 
     Incremental like the private-chat scan: per person and channel a watermark
@@ -622,19 +625,35 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
     found = {m.id: [] for m in members}
     missing, stats, rejected = [], [], []
 
+    plan = {}
     for key, followers in wanted.items():
         days = rescan_days or max(m.cfg().get("lookback_days", 1) for m in followers)
         start = {m.id: 0 if rescan_days else marks[m.id].get(key, 0) for m in followers}
         if not rescan_days and min(start.values()) > 0:
             days = max(days, 7)  # the watermark says where to stop; a PC that slept for days must not lose posts
-        cutoff = now() - timedelta(days=days)
-        try:
+        plan[key] = (start, now() - timedelta(days=days))
+
+    gate = asyncio.Semaphore(POOL_PARALLEL)  # a few channels at a time: one after another took 1.5 minutes for 37
+
+    async def fetch(key):
+        start, cutoff = plan[key]
+        async with gate:
             entity = await client.get_entity(key)
             msgs = []
             async for msg in client.iter_messages(entity, min_id=min(start.values())):
                 if msg.date < cutoff:
                     break
                 msgs.append(msg)
+            await asyncio.sleep(pause)  # gentle on Telegram
+            return entity, msgs
+    fetched = dict(zip(plan, await asyncio.gather(*[fetch(k) for k in plan], return_exceptions=True)))
+
+    for key, followers in wanted.items():
+        start, cutoff = plan[key]
+        try:
+            if isinstance(fetched[key], BaseException):
+                raise fetched[key]
+            entity, msgs = fetched[key]
         except Exception as e:
             log.warning("pool channel @%s: %s", key, e)
             missing.append(key)
@@ -673,7 +692,6 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
                     "tags": filters[m.id].tags_for(text),
                 })
             marks[m.id][key] = newest
-        await asyncio.sleep(pause)  # gentle on Telegram
 
     for m in members:
         state = m.load_state()  # re-read: the UI may have written to it meanwhile
