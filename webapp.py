@@ -468,7 +468,7 @@ class WebApp:
             "interval": int(self.radar.cfg.get("interval_minutes", 15)),
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
-            "funnel": extras.funnel(inbox),
+            "funnel": extras.funnel(inbox, fits_now(m)),
             "stats": {
                 "new": len(extras.groups(feed_pairs(m, inbox)[0])),
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),

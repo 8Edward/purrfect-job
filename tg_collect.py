@@ -40,8 +40,16 @@ PENDING_HEADERS = ("## pending", "## pendientes")
 
 # ---------------------------------------------------------------- filtering
 
+def flexible(pattern):
+    """A typed phrase matches however it is written: «Anti fraud» = anti-fraud = antifraud,
+    «антифрод» = анти-фрод. Spaces and hyphens between words are optional."""
+    pattern = re.sub(r"анти-?\s?фрод", lambda _: r"анти[\s\-]?фрод", pattern, flags=re.IGNORECASE)
+    pattern = re.sub(r"anti-?\s?fraud", lambda _: r"anti[\s\-]?fraud", pattern, flags=re.IGNORECASE)
+    return pattern.replace(" ", r"[\s\-–—_]*")
+
+
 def compile_patterns(patterns):
-    return [re.compile(p, re.IGNORECASE) for p in patterns or []]
+    return [re.compile(flexible(p), re.IGNORECASE) for p in patterns or []]
 
 
 # Card-style channels (e.g. @revacancy_global) post «Title | Senior | IC / Company / 150k - 180k USD /

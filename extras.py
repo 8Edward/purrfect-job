@@ -512,8 +512,9 @@ def summary(item, size=2):
     return lines[:3]
 
 
-def funnel(inbox):
+def funnel(inbox, fits=None):
     """Numbers for the feed header: vacancies found (duplicates merged), responses, interviews, offers.
+    «Found» counts what fits the person's current words, channels and sites (fits), whatever its status.
     A stage counts once it has been reached, so an interview is also a response."""
     reached = {"applied": 0, "interview": 0, "offer": 0}
     for item in inbox.values():
@@ -525,7 +526,8 @@ def funnel(inbox):
             reached["interview"] += 1
         if "offer" in log:
             reached["offer"] += 1
-    return {"jobs": len(groups(list(inbox.items()))), **reached}
+    shown = [(k, v) for k, v in inbox.items() if fits is None or fits(v)]
+    return {"jobs": len(groups(shown)), **reached}
 
 
 # ---------------------------------------------------------------- 📎 the résumé file as it was uploaded
