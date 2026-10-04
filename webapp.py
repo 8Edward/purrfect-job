@@ -312,6 +312,7 @@ def item_json(key, item, full=False):
         "tags": item.get("tags", []),
         "text": excerpt(item.get("text", ""), 4000 if full else 600),
         "salary": extras.salary_of(item),
+        "salary_usd": int(extras.salary_value(item)),
         "tz": extras.tz_label(item),
         "ai": item.get("ai"),
         "track": item.get("track"),
@@ -360,7 +361,7 @@ def page_json(pairs, sort="date", offset=0, limit=40):
     thousands stays light. -> (items, total)"""
     gs = extras.groups(pairs)  # pairs come newest first, and the sort is stable
     by = SORTS.get(sort, SORTS["date"])
-    gs.sort(key=lambda g: (int(any((v.get("reality") or {}).get("kind") for _, v in g)), by(g)))  # ♾ / 🪦 go below
+    gs.sort(key=lambda g: (int(any((v.get("reality") or {}).get("kind") in ("evergreen", "closed", "stale") for _, v in g)), by(g)))  # ♾ / 🪦 go below
     return grouped_json(gs[offset:offset + limit], grouped=True), len(gs)
 
 

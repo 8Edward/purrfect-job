@@ -707,8 +707,9 @@ def summary(item, size=2):
         lines.append(" · ".join(warn))
     real = item.get("reality")  # set by reality.apply: ♾ evergreen / 🪦 vanished from its site
     if real:
-        lines.append(("♾ похоже на вечную вакансию: " if real.get("kind") == "evergreen" else "🪦 похоже, уже закрыта: ")
-                     + str(real.get("why") or ""))
+        head = {"evergreen": "♾ похоже на вечную вакансию: ", "stale": "🕰 висит больше 30 дней: ", "reposted": "🔁 перевыложена: "}.get(
+            real.get("kind"), "🪦 похоже, уже закрыта: ")
+        lines.append(head + str(real.get("why") or ""))
     stack = [name for name, rx in STACK_RE if rx.search(blob)][:7]
     if stack:
         lines.append("🛠 " + ", ".join(stack))

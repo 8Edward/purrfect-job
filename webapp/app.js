@@ -72,7 +72,9 @@ const kindOf = (i) => (i.source === "tg" ? "tg" : i.origin === "hh.ru" ? "hh" : 
 const originOf = (i) => (i.source === "tg" ? "💬 " + i.origin : i.origin === "hh.ru" ? "hh.ru" : "🌐 " + i.origin);
 const tagsHtml = (tags) => (tags || []).map((t) =>
   `<span class="tag${t === "ru-company" ? " ru" : ""}">#${esc(t.replace(/-/g, "_"))}</span>`).join("");
-const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz, i.old && "🕰 старше 2 недель"].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
+/* the pay in one currency: «≈ $2 700/мес» next to what the vacancy says, unless it is dollars already */
+const salaryUsd = (i) => (i.salary_usd && !/\$|usd|доллар/i.test(i.salary || "") ? ` ≈ $${i.salary_usd.toLocaleString("ru-RU")}/мес` : "");
+const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary + salaryUsd(i), i.tz && "🕒 " + i.tz, i.old && "🕰 старше 2 недель"].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
 const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin).join(", ")}` : "");
 function aiLine(i) {
   if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
@@ -220,7 +222,7 @@ function renderList(items) {
   const box = $("#feed-list");
   box.innerHTML = items.map((i, n) => {
     const facts = [i.company, originOf(i), when(i.date)].filter(Boolean).join(" · ");
-    const extra = [i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz, i.also && "＋" + i.also.length].filter(Boolean).join(" · ");
+    const extra = [i.salary && "💰 " + i.salary + salaryUsd(i), i.tz && "🕒 " + i.tz, i.also && "＋" + i.also.length].filter(Boolean).join(" · ");
     return `<div class="lrow" data-n="${n}"><button class="lmain" data-open="${n}"><b>${esc(i.title)}${i.fav ? " ★" : ""}</b>
       <span class="s">${esc(facts)}</span>${extra ? `<span class="s x">${esc(extra)}</span>` : ""}${i.summary && i.summary[0] ? `<span class="s x">${esc(i.summary[0])}</span>` : ""}
       ${i.ai ? `<span class="sc">✨ ${i.ai.score}</span>` : ""}</button>

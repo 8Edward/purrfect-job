@@ -24,6 +24,8 @@ import tg_collect as tc
 
 PATH = tc.ROOT / "data" / "tg-job-history.json"
 OLD_DAYS = 90
+STALE_DAYS = 30          # a site vacancy open this long: «висит больше 30 дней» (archived for the owner)
+AUTO_ARCHIVE = ("closed", "evergreen", "stale")  # these go to «Мои → Архив» for the owner; «reposted» is only a label
 REPOST_MIN = 3
 MASS_MIN = 5
 CONVERGENCE = 2
@@ -107,7 +109,7 @@ def index(data):
 
 
 def verdict(item, data, roles, at=None):
-    """{"kind": "evergreen" | "closed", "why": text} or None."""
+    """{"kind": "closed" | "evergreen" | "stale" | "reposted", "why": text} or None."""
     at = at or now()
     url = extras.link_key(item.get("link") or "")
     mine = data["urls"].get(url) if url else None
@@ -127,6 +129,7 @@ def verdict(item, data, roles, at=None):
         age = 0
     open_now = [e for e in copies if not [r for r in data["boards"].get(e["b"], []) if r > e["l"]]]
     gone = len(copies) - len(open_now)
+    came_back = len([e for e in copies if e not in open_now and e is not mine])  # earlier copies, not this vacancy itself
     signals = []
     if age >= OLD_DAYS:
         signals.append(f"висит {age} дн.")
@@ -138,11 +141,16 @@ def verdict(item, data, roles, at=None):
         signals.append("«всегда ищем»")
     if len(signals) >= CONVERGENCE:
         return {"kind": "evergreen", "why": ", ".join(signals)}
+    if age >= STALE_DAYS and item.get("source") == "web":
+        return {"kind": "stale", "why": f"висит {age} дн."}
+    if came_back >= 1:
+        return {"kind": "reposted", "why": f"уже снималась и выкладывалась снова ({came_back} раз)"}
     return None
 
 
 def apply(member, data, roles):
-    """Set / clear item["reality"] in one person's inbox. -> how many are marked."""
+    """Set / clear item["reality"] in one person's inbox; for the owner, closed / evergreen / stale ones also go to
+    the archive (never a starred or responded one). -> how many are marked."""
     inbox = member.load_inbox()
     changed, marked = False, 0
     for item in inbox.values():
@@ -152,6 +160,10 @@ def apply(member, data, roles):
                 item["reality"] = v
             else:
                 item.pop("reality", None)
+            changed = True
+        if (v and v["kind"] in AUTO_ARCHIVE and member.is_owner and not item.get("archived") and not item.get("fav")
+                and not (item.get("track") or {}).get("stage")):
+            item["archived"] = True
             changed = True
         marked += bool(v)
     if changed:

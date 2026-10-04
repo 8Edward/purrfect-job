@@ -47,4 +47,48 @@ one["text"] = "We are always hiring great people for our talent pool"
 assert reality.verdict(one, young, reality.index(young), at=day(1))["kind"] == "evergreen"  # + evergreen words
 tg = {"source": "tg", "title": "Аналитик", "text": "Вакансия закрыта, спасибо всем", "date": day(0).isoformat()}
 assert reality.verdict(tg, young, {}, at=day(1))["kind"] == "closed"
+
+# a site vacancy open for a month: stale (alone, no other signal); a role that came back: reposted (a label only)
+mon = {"urls": {}, "boards": {}}
+reality.observe_feed({"co-d": {"jobs": [job("https://d/1", "BI Analyst", "Delta")]}}, data=mon, at=day(0))
+old = {"source": "web", "link": "https://d/1", "title": "BI Analyst", "company": "Delta", "date": day(0).isoformat()}
+assert reality.verdict(old, mon, reality.index(mon), at=day(10)) is None
+sv = reality.verdict(old, mon, reality.index(mon), at=day(35))
+assert sv and sv["kind"] == "stale" and "35" in sv["why"], sv
+rp = {"urls": {}, "boards": {}}
+reality.observe_feed({"co-e": {"jobs": [job("https://e/1", "Analyst", "Echo")]}}, data=rp, at=day(0))
+reality.observe_feed({"co-e": {"jobs": [job("https://e/2", "Analyst", "Echo")]}}, data=rp, at=day(5))
+reality.observe_feed({"co-e": {"jobs": [job("https://e/2", "Analyst", "Echo")]}}, data=rp, at=day(6))
+back = {"source": "web", "link": "https://e/2", "title": "Analyst", "company": "Echo", "date": day(5).isoformat()}
+rv = reality.verdict(back, rp, reality.index(rp), at=day(7))
+assert rv and rv["kind"] == "reposted", rv
+
+
+class Owner:
+    is_owner = True
+
+    def __init__(self, inbox):
+        self.inbox = inbox
+
+    def load_inbox(self):
+        return self.inbox
+
+    def save_inbox(self, inbox):
+        self.inbox = inbox
+
+
+# apply: the owner's stale ones are archived; a starred or responded one never; a guest's only marked
+own = Owner({"a": dict(old), "b": dict(old, fav=True), "c": dict(old, track={"stage": "applied"})})
+real_now = reality.now
+reality.now = lambda: day(35)
+try:
+    reality.apply(own, mon, reality.index(mon))
+    guest = Owner({"a": dict(old)})
+    guest.is_owner = False
+    reality.apply(guest, mon, reality.index(mon))
+finally:
+    reality.now = real_now
+assert own.inbox["a"].get("archived") and own.inbox["a"]["reality"]["kind"] == "stale"
+assert not own.inbox["b"].get("archived") and not own.inbox["c"].get("archived")
+assert not guest.inbox["a"].get("archived") and guest.inbox["a"]["reality"]["kind"] == "stale"
 print("ok")
