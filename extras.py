@@ -150,15 +150,23 @@ def _norm(s):
     return re.sub(r"[^\w]+", " ", str(s or "").lower().replace("ё", "е")).strip()
 
 
+def link_key(link):
+    """A link without tracking parameters. The query stays: on some career pages it IS the vacancy
+    (plata.careers/vacancy/details?id=…), and cutting it merged all 179 Plata vacancies into one."""
+    base, _, query = link.partition("?")
+    kept = sorted(p for p in query.split("&") if p and not re.match(r"(utm_|ref=|source=|fbclid|gclid|_ga)", p, re.I))
+    return (base.rstrip("/") + ("?" + "&".join(kept) if kept else "")).lower()
+
+
 def twin_keys(item):
     """Things that make two inbox items the same vacancy: same title + company, same link,
     same post text (a repost into another channel)."""
     keys = []
-    title, company = _norm(item.get("title")), _norm(item.get("company"))
+    title, company = _norm(item.get("title")), _norm(re.split(r"[.|(]\s", str(item.get("company") or ""))[0])  # «Альфа-Банк. Центральный офис» = «Альфа-Банк»
     if title and company:
         keys.append("tc:" + title + "|" + company)
     if item.get("link"):
-        keys.append("l:" + item["link"].split("?")[0].rstrip("/").lower())
+        keys.append("l:" + link_key(item["link"]))
     if item.get("source", "tg") == "tg" and len(item.get("text") or "") >= 120:
         keys.append("f:" + tc.fingerprint(item["text"]))
     return keys

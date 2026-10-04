@@ -78,9 +78,12 @@ def find_exe(configured=None):
     bases -= {None}
     found = []
     for base in bases:
-        for exe in (base / "Claude" / "claude-code").glob("*/claude.exe"):
+        root = base / "Claude" / "claude-code"
+        # claude-code/<version>/claude.exe, and since the app update claude-code/<version>/<hash>/claude.exe
+        for exe in list(root.glob("*/claude.exe")) + list(root.glob("*/*/claude.exe")):
             try:
-                found.append((tuple(int(x) for x in exe.parent.name.split(".")), exe))
+                ver = exe.parent.name if exe.parent.parent == root else exe.parent.parent.name
+                found.append((tuple(int(x) for x in ver.split(".")), exe))
             except ValueError:
                 continue
     if found:
