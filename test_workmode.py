@@ -45,6 +45,11 @@ assert wm.flags({"title": "BI", "text": "удалёнка", "location": ""},
 assert wm.flags({"title": "BI", "text": "удалёнка"}, orig={"remote": True, "text": "", "only": ["US"]}) == ["🌍 только США"]
 assert wm.flags({"title": "BI", "text": "удалёнка"}, orig={"text": "This is not a remote role."}) == ["⚠️ в оригинале офис"]
 assert wm.flags({"title": "BI", "text": "Полностью удалённая работа"}) == []
+# vacancy-bot posts: the work format on a line of its own
+post = "🟩 Business Engineer\n  ▫ ASML | Semiconductor\n\nOffice 🏢\nRequired languages: 🇬🇧\n\nSkills: sql"
+assert wm.format_line(post) == "onsite" and wm.flags({"title": "x", "text": post}) == ["⚠️ не удалёнка: офис"]
+assert wm.format_line("Hybrid 🏙\nSkills") == "hybrid" and wm.format_line("Work format: Office") == "onsite"
+assert wm.format_line("We are an office of 5 people.\nRemote 🏠") == "" and wm.format_line("Our office is great") == ""
 
 # links in posts and JSON-LD
 assert wm.post_links("Подробнее: https://career.habr.com/vacancies/1000.\nПиши @hr https://t.me/hr") == ["https://career.habr.com/vacancies/1000"]

@@ -113,6 +113,19 @@ RU_ONLY = re.compile(
     r"(?:удал[её]н\w*|удал[её]нка)\s+(?:только\s+)?(?:из|по|в\s+пределах)\s+(?P<d>рф|росси\w*)", re.I)
 
 
+# vacancy-bot posts print the work format on a line of its own: «Office 🏢», «Hybrid», «Remote 🏠»
+FORMAT_LINE = re.compile(r"^[ \t>*_•·▪️-]*(?:work(?:ing)?\s+(?:format|mode)\s*[:—–-]?\s*)?(?P<m>office|on-?site|офис|hybrid|гибрид)\b[ \t]*[^\w\s]{0,4}[ \t]*$",
+                         re.I | re.M)
+
+
+def format_line(text):
+    """'onsite' / 'hybrid' when a post states its work format on a line by itself, else ''."""
+    m = FORMAT_LINE.search(str(text or ""))
+    if not m:
+        return ""
+    return "hybrid" if m.group("m").lower() in ("hybrid", "гибрид") else "onsite"
+
+
 def fold(text):
     """Visible text: tags out, entities decoded, lower case, single spaces."""
     text = html.unescape(re.sub(r"<[^>]*>", " ", str(text or "")))
@@ -401,8 +414,11 @@ def flags(item, orig=None):
             out.append("⚠️ в оригинале гибрид")
         only = [_geo(x.lower()) or x for x in orig.get("only") or []] + only_from(orig.get("title"), orig.get("text"))
     if not out and text:
-        if remote_contradicted(text):
+        line = format_line(text)
+        if line == "onsite" or remote_contradicted(text):
             out.append("⚠️ не удалёнка: офис")
+        elif line == "hybrid":
+            out.append("⚠️ гибрид")
         elif mode_from_text(f"{loc}\n{text}") == "hybrid":
             out.append("⚠️ гибрид")
     only = list(dict.fromkeys(only + only_from(title, f"{loc}\n{text}")))

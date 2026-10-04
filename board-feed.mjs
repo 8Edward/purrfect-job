@@ -336,9 +336,17 @@ const FETCHERS = {
     }
     return [...out.values()];
   },
-  async agilefluent() {  // job board for jobs abroad: open JSON API, remote only
+  async agilefluent() {  // job board for jobs abroad: open JSON API. Its «remote» filter also returns office and hybrid
+    // jobs (checked 2026-10: of 3000 only 937 are remote), so every job's own `formats` is checked, and a remote job
+    // there belongs to its `countries` (the list the person must live in; «ww» = anywhere).
+    const ISO = { tha: 'Thailand', rus: 'Russian Federation', kaz: 'Kazakhstan', uzb: 'Uzbekistan', kgz: 'Kyrgyzstan', blr: 'Belarus',
+      ukr: 'Ukraine', geo: 'Georgia', arm: 'Armenia', aze: 'Azerbaijan', srb: 'Serbia', mne: 'Montenegro', tur: 'Turkey', cyp: 'Cyprus',
+      pol: 'Poland', deu: 'Germany', esp: 'Spain', prt: 'Portugal', are: 'United Arab Emirates', idn: 'Indonesia', vnm: 'Vietnam',
+      mys: 'Malaysia', phl: 'Philippines', ind: 'India', usa: 'United States', gbr: 'United Kingdom', nld: 'Netherlands',
+      bel: 'Belgium', fra: 'France', che: 'Switzerland', can: 'Canada', ita: 'Italy', bra: 'Brazil', egy: 'Egypt', cze: 'Czechia',
+      sau: 'Saudi Arabia', sgp: 'Singapore' };
     const out = [];
-    for (let page = 1; page <= 8; page++) {
+    for (let page = 1; page <= 70; page++) {
       const r = await fetch('https://jobboard.agilefluent.ru/api/jobs/search', {
         method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' },
         body: JSON.stringify({ filters: { formats: ['remote'] }, pagination: { limit: 50, page } }), signal: AbortSignal.timeout(25_000),
@@ -346,10 +354,18 @@ const FETCHERS = {
       if (!r.ok) throw new Error(`agilefluent: HTTP ${r.status}`);
       const j = await r.json();
       for (const x of j.data || []) {
-        out.push({ title: x.title, url: `https://jobboard.agilefluent.ru/jobs/${x.id}`, company: x.companyName, location: ['Удалённо', x.country, x.salaryLabel && x.salaryLabel !== 'Не указана' ? x.salaryLabel : ''].filter(Boolean).join(' · '), posted: x.createdAtIso || '' });
+        if (!(x.formats || []).includes('remote') || (x.formats || []).some((f) => f !== 'remote')) continue;  // office / hybrid
+        const codes = (x.countries && x.countries.length ? x.countries : [x.country]).filter(Boolean).map((c) => String(c).toLowerCase());
+        const anywhere = !codes.length || codes.includes('ww');
+        const names = anywhere ? [] : codes.map((c) => ISO[c] || c.toUpperCase());
+        out.push({
+          title: x.title, url: `https://jobboard.agilefluent.ru/jobs/${x.id}`, company: x.companyName, countries: names,
+          location: (anywhere ? 'Удалённо · весь мир' : 'Удалённо · только ' + names.slice(0, 3).join(', ')) + (x.salaryLabel && x.salaryLabel !== 'Не указана' ? ` · ${x.salaryLabel}` : ''),
+          posted: x.createdAtIso || '',
+        });
       }
       if (!j.hasMore) break;
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 250));
     }
     return out;
   },
