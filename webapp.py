@@ -1388,7 +1388,7 @@ class WebApp:
         log.info("resume built for %s: %s", m.name, meta["id"])
         return web.json_response(self.resume_payload(m))
 
-    async def vacancy_text(self, m, data):
+    async def vacancy_text(self, m, data, fetch_seconds=40):
         """The vacancy to match or tailor to: pasted text, or one of the person's vacancies by key
         (a Telegram post's text; for a site, the full text from the ATS when career-ops can fetch it)."""
         text = str(data.get("vacancy") or "").strip()
@@ -1404,11 +1404,14 @@ class WebApp:
             try:
                 proc = await asyncio.create_subprocess_exec("node", "fetch-jd.mjs", item["link"], cwd=str(tc.ROOT),
                                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-                out, _ = await asyncio.wait_for(proc.communicate(), 40)
+                out, _ = await asyncio.wait_for(proc.communicate(), fetch_seconds)
                 if proc.returncode == 0 and len(out.strip()) >= 80:
                     return out.decode("utf-8", "replace")[:12000]
             except Exception:
-                pass
+                try:
+                    proc.kill()  # a page that did not answer in time must not keep a process running
+                except Exception:
+                    pass
         raise ValueError("Текст этой вакансии не подтянулся. Откройте её по ссылке, скопируйте описание и вставьте сюда.")
 
     async def api_resume_match(self, request):
@@ -1747,7 +1750,7 @@ class WebApp:
         if hit and time.monotonic() - hit[0] < 1200:
             return hit[1]
         try:
-            text = await self.vacancy_text(m, {"job_key": key})
+            text = await self.vacancy_text(m, {"job_key": key}, fetch_seconds=8)  # a letter needs no more than that
         except ValueError:
             text = item.get("text") or ""
         self.jd_cache[(m.id, key)] = (time.monotonic(), text)
