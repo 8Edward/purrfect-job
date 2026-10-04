@@ -338,7 +338,8 @@ def page_json(pairs, sort="date", offset=0, limit=40):
     """One page of a list with duplicates merged: only the page gets turned into JSON, so a feed of
     thousands stays light. -> (items, total)"""
     gs = extras.groups(pairs)  # pairs come newest first, and the sort is stable
-    gs.sort(key=SORTS.get(sort, SORTS["date"]))
+    by = SORTS.get(sort, SORTS["date"])
+    gs.sort(key=lambda g: (int(any((v.get("reality") or {}).get("kind") for _, v in g)), by(g)))  # ♾ / 🪦 go below
     return grouped_json(gs[offset:offset + limit], grouped=True), len(gs)
 
 

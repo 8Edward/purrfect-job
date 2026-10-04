@@ -28,6 +28,7 @@ from telethon import Button, TelegramClient, events, functions, types
 import boards
 import extras
 import guests
+import reality
 import screens
 import sourcestats
 import tg_collect as tc
@@ -1174,6 +1175,16 @@ class JobRadar:
             raise
         sourcestats.record_many([("site:" + p, listed.get(p, p), "error" not in r, len(r.get("jobs") or []), r.get("error", ""))
                                  for p, r in feed.items()])
+        try:  # ♾ / 🪦: remember what each site lists, mark evergreen and vanished vacancies
+            ledger = reality.observe_feed(feed, listed)
+            reality.save(ledger)
+            roles_ = reality.index(ledger)
+            for m in [self.me] + people:
+                n = reality.apply(m, ledger, roles_)
+                if n:
+                    log.info("reality for %s: %d marked evergreen / closed", m.name, n)
+        except Exception:
+            log.exception("reality pass failed")
         old = guests.read_json(webapp.FEED_CACHE_PATH, {}).get("feed", {})
         for p, r in feed.items():  # a board that failed this time keeps what it gave last time
             if "error" in r and (old.get(p) or {}).get("jobs"):
