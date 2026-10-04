@@ -313,6 +313,7 @@ def item_json(key, item, full=False):
         "track": item.get("track"),
         "silent": extras.silent_days(item),
         "summary": extras.summary(item),
+        "old": extras.is_old(item),
     }
 
 
@@ -668,6 +669,10 @@ class WebApp:
         f = request.query.get("f", "all")
         if f in FILTERS:
             items = [(k, v) for k, v in items if FILTERS[f](v)]
+        age = request.query.get("age", "")
+        if age in ("1", "3", "7", "14"):
+            since = extras.age_cutoff(m, int(age))
+            items = [(k, v) for k, v in items if datetime.fromisoformat(v["date"]) >= since]
         page, total = page_json(items, request.query.get("sort", "date"), offset, limit)
         unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
         return web.json_response({"items": page, "total": total, "offset": offset, "tz_hidden": tz_hidden, "unscored": unscored})

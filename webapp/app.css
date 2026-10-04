@@ -456,8 +456,9 @@ html[data-skin="remote"] :is(.cv .preview, .remark, .wz-job, .chg, textarea.big,
 /* feed: funnel header, sort + «Оценить новые», summary lines, paging, folding settings */
 .stats.funnel { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .stats.funnel .stat span { font-size: 10.5px; }
-.feedbar { display: flex; gap: 8px; align-items: center; margin: -4px 0 10px; }
-.feedbar .inp.sm { width: auto; flex: 1 1 auto; min-width: 0; padding: 7px 10px; font-size: 13px; }
+.feedbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -4px 0 10px; }
+.feedbar .ai-btn { flex: 1 1 100%; }
+.feedbar .inp.sm { width: auto; flex: 1 1 40%; min-width: 0; padding: 7px 10px; font-size: 13px; }
 .ai-btn.sm { flex: 0 1 auto; padding: 7px 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .sum, .sheet .sum { display: grid; gap: 2px; font-size: 12.5px; line-height: 1.35; }
 .card .sum span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }

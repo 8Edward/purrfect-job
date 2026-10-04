@@ -15,7 +15,7 @@ const SKINS = {  // three cat themes; the old skin names still open the closest 
 };
 const OLD_SKINS = { radar: "hybrid", tropic: "remote", dossier: "office" };
 const MATCH = { exact: "точно" };
-const st = { me: null, feed: [], total: 0, sort: "date", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
+const st = { me: null, feed: [], total: 0, sort: "date", age: "", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
 try { if (localStorage.getItem("jr-feed") === "list") st.view = "list"; } catch (e) { /* blocked */ }
 const STAGES = { applied: "Откликнулся", test: "Тестовое", interview: "Собеседование", offer: "Оффер", rejected: "Отказ" };
 
@@ -72,7 +72,7 @@ const kindOf = (i) => (i.source === "tg" ? "tg" : i.origin === "hh.ru" ? "hh" : 
 const originOf = (i) => (i.source === "tg" ? "💬 " + i.origin : i.origin === "hh.ru" ? "hh.ru" : "🌐 " + i.origin);
 const tagsHtml = (tags) => (tags || []).map((t) =>
   `<span class="tag${t === "ru-company" ? " ru" : ""}">#${esc(t.replace(/-/g, "_"))}</span>`).join("");
-const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
+const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary, i.tz && "🕒 " + i.tz, i.old && "🕰 старше 2 недель"].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
 const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin).join(", ")}` : "");
 function aiLine(i) {
   if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
@@ -122,7 +122,7 @@ async function loadMe() {
 }
 /* the feed comes in pages (PAGE at a time) so thousands of vacancies never load at once */
 const PAGE = 40;
-const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&offset=${offset}&limit=${PAGE}`;
+const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&age=${st.age}&offset=${offset}&limit=${PAGE}`;
 async function loadFeed() {
   const d = await api(feedUrl(0));
   st.feed = d.items;
@@ -1193,6 +1193,7 @@ $$(".reset-words").forEach((b) => (b.onclick = () => {
   b.dataset.ask = setTimeout(() => { delete b.dataset.ask; b.textContent = "Сбросить"; }, 4000);
 }));
 $("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); loadFeed().catch(fail); };
+$("#age").onchange = () => { st.age = $("#age").value; haptic(); loadFeed().catch(fail); };
 $("#score-new").onclick = scoreNew;
 $("#refresh").onclick = refresh;
 $("#search-form").onsubmit = (e) => { e.preventDefault(); st.off.clear(); runSearch(); };

@@ -168,6 +168,13 @@ assert tierb.remember([{"company": "GitLab"}, {"company": "Yandex"}, {"company":
 assert tierb.load_seen()["GitLab"]["n"] == 2 and "Yandex" not in tierb.load_seen()
 tierb._names = None
 
+# -- 🗓 age
+_n = datetime.now(timezone.utc)
+assert extras.is_old({"date": (_n - timedelta(days=15)).isoformat()}) and not extras.is_old({"date": (_n - timedelta(days=13)).isoformat()})
+assert not extras.is_old({}) and not extras.is_old({"date": "junk"})
+_me = SimpleNamespace(is_owner=True, load_search=lambda: {})
+assert _n - timedelta(days=1) <= extras.age_cutoff(_me, 1) <= _n and abs((_n - extras.age_cutoff(_me, 7)).days - 7) <= 0
+
 # -- 🔗 duplicates
 now = datetime.now(timezone.utc)
 a = {"source": "web", "title": "Data Analyst", "company": "Uzum", "link": "https://a/1", "site": "Himalayas", "date": now.isoformat()}

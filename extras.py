@@ -146,6 +146,27 @@ def tz_fits(item, tz):
     return not offs or any(tz_gap(o, tz["mine"]) <= tz["spread"] for o in offs)
 
 
+# ---------------------------------------------------------------- 🗓 how old a vacancy is
+
+OLD_DAYS = 14
+
+
+def is_old(item):
+    """Posted more than two weeks ago (likely already filled)."""
+    try:
+        return (now() - datetime.fromisoformat(item["date"])).days > OLD_DAYS
+    except (TypeError, ValueError, KeyError):
+        return False
+
+
+def age_cutoff(member, days):
+    """Posted since: 1 = today (the person's calendar day), 3 / 7 / 14 = that many days back."""
+    if days <= 1:
+        local = now() + timedelta(hours=tz_settings(member)["mine"])
+        return local.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=tz_settings(member)["mine"])
+    return now() - timedelta(days=days)
+
+
 # ---------------------------------------------------------------- 🌏 which countries a vacancy hires from
 
 # key (Himalayas' own country name) -> (Russian name, other spellings, regions it belongs to)
