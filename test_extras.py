@@ -433,4 +433,22 @@ async def main():
 
 asyncio.run(main())
 time.sleep(0)
+
+# -- 📊 source counters: failed ≠ empty ≠ gone quiet
+import sourcestats  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    sourcestats.PATH = Path(tmp) / "stats.json"
+    sourcestats.record("site:a", "A", True, 50)
+    sourcestats.record("site:b", "B", False, 0, "HTTP 403")
+    sourcestats.record("site:c", "C", True, 0)
+    rep = {r["id"]: r for r in sourcestats.report()}
+    assert rep["site:a"]["state"] == "ok" and rep["site:b"]["state"] == "fail" and "403" in rep["site:b"]["label"]
+    assert rep["site:c"]["state"] == "empty" and [r["id"] for r in sourcestats.report()][0] == "site:b"
+    data = sourcestats.load()
+    day = lambda n: (datetime.now(timezone.utc).date() - timedelta(days=n)).isoformat()  # noqa: E731
+    data["site:c"]["days"] = {day(5): {"ok": 3, "fail": 0, "max": 40, "sum": 40},
+                              **{day(n): {"ok": 3, "fail": 0, "max": 0, "sum": 0} for n in (2, 1, 0)}}
+    sourcestats.save(data)
+    assert sourcestats.status(sourcestats.load()["site:c"])["state"] == "quiet"
+    assert [r["id"] for r in sourcestats.report({"site:a"})] == ["site:a"]
 print("ok")

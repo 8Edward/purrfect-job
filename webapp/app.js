@@ -908,6 +908,27 @@ function renderRadar() {
   $("#int-note").textContent = m.owner ? "для всех, кто пользуется Purrfect Job" : "меняет владелец бота";
 }
 
+/* ---------------------------------------------------------------- 📊 sources: answered / failed / gone quiet («Ещё») */
+
+const SRC_ICON = { fail: "❌", quiet: "🔇", empty: "⚪", unknown: "⏳", ok: "✅" };
+
+async function loadSources(all) {
+  const g = $("#g-src");
+  let d;
+  try { d = await api("/api/source-health"); } catch (e) { g.hidden = true; return; }
+  if (!d.items.length) { g.hidden = true; return; }
+  g.hidden = false;
+  const bad = d.items.filter((i) => i.state === "fail" || i.state === "quiet").length;
+  const shown = all ? d.items : d.items.slice(0, Math.max(6, bad));
+  const rows = shown.map((i) => `<div class="tg"><span>${SRC_ICON[i.state] || ""} ${esc(i.name)}<small>${esc(i.label)}</small></span></div>`).join("");
+  $("#src-list").innerHTML = `<p class="hint">❌ — источник не ответил (сайт упал, сменил страницу или просит капчу): вакансий там может быть много, мы их просто не видим.
+      🔇 — отвечает, но уже несколько дней пусто, хотя раньше было. ⚪ — проверен, вакансий правда нет. Сначала проблемные.</p>
+    <p class="hint">${bad ? `Требуют внимания: ${bad}` : "Все источники отвечают"} · всего ${d.items.length}</p>${rows}
+    ${shown.length < d.items.length ? `<button class="link block" id="src-all">Показать все (${d.items.length})</button>` : ""}`;
+  const more = $("#src-all");
+  if (more) more.onclick = () => loadSources(true);
+}
+
 /* ---------------------------------------------------------------- 🤖 roles Claude guessed (owner, «Ещё») */
 
 let rolesShown = 8;
@@ -1115,7 +1136,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadRoles(); }
+  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSources(); loadRoles(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

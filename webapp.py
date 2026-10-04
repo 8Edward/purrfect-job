@@ -34,6 +34,7 @@ import guests
 import resume
 import resume_ai
 import roles
+import sourcestats
 import tg_collect as tc
 
 log = logging.getLogger("job-radar.app")
@@ -453,6 +454,7 @@ class WebApp:
         r.add_get("/api/search", self.api_search)
         r.add_post("/api/search/{key}/{action}", self.api_search_action)
         r.add_get("/api/roles", self.api_roles)
+        r.add_get("/api/source-health", self.api_source_health)
         r.add_post("/api/roles", self.api_roles)
         r.add_get("/api/sources", self.api_sources)
         r.add_post("/api/sources", self.api_sources_change)
@@ -564,6 +566,17 @@ class WebApp:
             except Exception as e:
                 log.warning("roles: Claude labelling failed: %s", e)
         self.roles_task = asyncio.create_task(run())
+
+    async def api_source_health(self, request):
+        """«Ещё → 📡 Радар»: how each source did lately (sourcestats). Owner: every source;
+        a guest: only the sites, hh.ru and pool channels they ticked."""
+        m = self.member(request)
+        ids = None
+        if not m.is_owner:
+            listed = guests.listed_sites()
+            ids = {("hh" if s == guests.HH_ID else "site:" + s) for s in m.sites(listed)}
+            ids |= {"tg:" + k for k in m.selected(guests.load_pool())}
+        return web.json_response({"items": sourcestats.report(ids)})
 
     async def api_roles(self, request):
         """Owner: Claude's labels to check (✓/✗), counts; POST {key, ok} or {reset: true}."""
