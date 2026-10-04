@@ -437,7 +437,7 @@ def to_item(job):
 
 
 def job_action(member, key, item, action):
-    """take / hide / restore / fav on one stored vacancy (changes `item`; the caller saves).
+    """take / hide / restore / fav / archive / unarchive on one stored vacancy (changes `item`; the caller saves).
     Returns (changed, note). For you, «take» also puts it into career-ops pipeline.md."""
     if action in ("take", "hide") and item["status"] != "new":
         return False, "Уже разобрано"
@@ -463,6 +463,12 @@ def job_action(member, key, item, action):
     if action == "fav":
         item["fav"] = not item.get("fav", False)
         return True, "⭐ В избранном" if item["fav"] else "Убрал из избранного"
+    if action == "archive":
+        item["archived"] = True
+        return True, "🗄 В архиве"
+    if action == "unarchive":
+        item.pop("archived", None)
+        return True, "↩️ Вернул из архива"
     return False, None
 
 

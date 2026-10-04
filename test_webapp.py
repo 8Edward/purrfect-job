@@ -258,6 +258,17 @@ async def main():
                 assert [j["key"] for j in jobs["items"]] == ["hh.ru/vacancy/1"] and jobs["items"][0]["tags"] == ["ru-company"]
                 r = await (await c.post("/api/jobs/hh.ru%2Fvacancy%2F1/fav", headers=auth)).json()
                 assert r["ok"] and r["item"]["fav"]
+                # 🗄 archive: out of «Избранное» and the feed, into «Архив», and back
+                r = await (await c.post("/api/jobs/hh.ru%2Fvacancy%2F1/archive", headers=auth)).json()
+                assert r["ok"] and r["item"]["archived"]
+                keys = lambda v: [j["key"] for j in v["items"]]
+                assert keys(await (await c.get("/api/jobs?view=fav", headers=auth)).json()) == []
+                assert keys(await (await c.get("/api/jobs?view=new", headers=auth)).json()) == []
+                assert keys(await (await c.get("/api/jobs?view=archive", headers=auth)).json()) == ["hh.ru/vacancy/1"]
+                assert (await (await c.get("/api/me", headers=auth)).json())["stats"]["archived"] == 1
+                r = await (await c.post("/api/jobs/hh.ru%2Fvacancy%2F1/unarchive", headers=auth)).json()
+                assert r["ok"] and not r["item"]["archived"]
+                assert keys(await (await c.get("/api/jobs?view=fav", headers=auth)).json()) == ["hh.ru/vacancy/1"]
                 assert (await c.post("/api/jobs/nope/take", headers=auth)).status == 404
                 assert (await c.post("/api/jobs/hh.ru%2Fvacancy%2F1/explode", headers=auth)).status == 400
 

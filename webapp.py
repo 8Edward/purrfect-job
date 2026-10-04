@@ -56,12 +56,13 @@ QUERY_MAX = 80
 RESULTS_MAX = 80
 NEAR_SLOTS = 30                   # «similar»: places kept for neighbour roles when the role itself has plenty
 SEARCH_COOLDOWN = 0.5             # seconds between one person's searches (graph taps come fast)
-ACTIONS = ("take", "hide", "restore", "fav")
+ACTIONS = ("take", "hide", "restore", "fav", "archive", "unarchive")
 VIEWS = {
     "new": lambda i: i["status"] == "new",
-    "fav": lambda i: i.get("fav"),  # «Избранное»: swiping right stars a vacancy (there is no «в работе» any more)
+    "fav": lambda i: i.get("fav") and not i.get("archived"),  # «Избранное»: swiping right stars a vacancy
     "taken": lambda i: i["status"] == "taken",
-    "hidden": lambda i: i["status"] == "hidden",
+    "hidden": lambda i: i["status"] == "hidden" and not i.get("archived"),
+    "archive": lambda i: i.get("archived"),  # «Мои → Архив»: put away by hand, out of the other lists until returned
     "all": lambda i: True,
 }
 
@@ -301,6 +302,7 @@ def item_json(key, item, full=False):
         "date": item["date"] if isinstance(item["date"], str) else item["date"].isoformat(),
         "status": item.get("status", "new"),
         "fav": bool(item.get("fav")),
+        "archived": bool(item.get("archived")),
         "tags": item.get("tags", []),
         "text": excerpt(item.get("text", ""), 4000 if full else 600),
         "salary": extras.salary_of(item),
@@ -384,7 +386,7 @@ def feed_pairs(m, inbox):
     """The «new» feed: newest first, the person's time zone filter applied. -> (pairs, filtered out)"""
     tz = extras.tz_settings(m)
     fits = fits_now(m)
-    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
+    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
     keep = [(k, v) for k, v in new if extras.tz_fits(v, tz)]
     return keep, len(new) - len(keep)
@@ -604,7 +606,8 @@ class WebApp:
             "stats": {
                 "new": len(extras.groups(feed_pairs(m, inbox)[0])),
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
-                "fav": sum(1 for i in inbox.values() if i.get("fav")),
+                "fav": sum(1 for i in inbox.values() if VIEWS["fav"](i)),
+                "archived": sum(1 for i in inbox.values() if i.get("archived")),
                 "hidden": sum(1 for i in inbox.values() if i["status"] == "hidden"),
                 "channels": len(m.selected(pool)) + (len(tc.load_channels(tc.CHANNELS_PATH)) if m.is_owner else 0),
                 "sites": len(m.sites(listed)),
@@ -1614,7 +1617,7 @@ class WebApp:
         data = await self.body(request)
         inbox = m.load_inbox()
         keys = [str(k) for k in data.get("keys") or []] or [k for k, v in sorted(inbox.items(), key=lambda kv: kv[1]["date"], reverse=True)
-                                                            if v.get("fav")]
+                                                            if VIEWS["fav"](v)]
         todo = [(k, inbox[k]) for k in keys if k in inbox and not (inbox[k].get("track") or {}).get("stage")][:apply.BATCH_MAX]
         if not todo:
             return self.bad("Все вакансии из избранного уже с откликом — откликаться дважды не буду.")

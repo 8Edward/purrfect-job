@@ -322,7 +322,7 @@ async function openSheet(item, viaSearch) {
 function renderSheet() {
   const { item: i } = st.sheet;
   const fresh = i.status === "new" || i.status === "found";
-  const status = { hidden: "✕ Скрыта" }[i.status] || (i.fav ? "★ В избранном" : "");
+  const status = i.archived ? "🗄 В архиве" : { hidden: "✕ Скрыта" }[i.status] || (i.fav ? "★ В избранном" : "");
   $("#sheet").innerHTML = `<div class="grip"></div>
     <div class="src">${esc(originOf(i))} · ${esc(when(i.date))}</div>
     <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
@@ -340,11 +340,13 @@ function renderSheet() {
       ${fresh ? "" : `<button data-a="fav" class="wide">${i.fav ? "★ Убрать из избранного" : "☆ В избранное"}</button>`}
       ${st.me && st.me.owner ? '<button data-a="apply" class="yes wide">✉️ Откликнуться</button>' : ""}
       ${i.link ? `<button data-a="open" class="wide">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
+      ${viaSearchOrFresh(i) ? "" : `<button data-a="${i.archived ? "unarchive" : "archive"}" class="wide">${i.archived ? "↩ Вернуть из архива" : "🗄 В архив"}</button>`}
     </div>`;
   $$("#sheet [data-a]").forEach((b) => (b.onclick = () => sheetAction(b.dataset.a)));
   $$("#sheet [data-stage]").forEach((b) => (b.onclick = () => setStage(st.sheet.item, b.dataset.stage)));
   $$("#sheet [data-also]").forEach((b) => (b.onclick = () => openLink(i.also[+b.dataset.also].link)));
 }
+const viaSearchOrFresh = (i) => (st.sheet && st.sheet.viaSearch) || i.status === "new" || i.status === "found";
 function aiBox(i) {
   if (i.ai) {
     return `<div class="aibox"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}${i.ai.thin ? " <small>(оценка по названию: полный текст не подтянулся)</small>" : ""}
@@ -601,6 +603,7 @@ async function sheetAction(action) {
     st.sheet.item = { ...item, ...d.item, text: item.text, match: item.match };
     st.feed = st.feed.map((i) => (i.key === item.key ? { ...i, ...d.item, text: i.text } : i)).filter((i) => i.status === "new");
     st.results = st.results.map((i) => (i.key === item.key ? { ...i, status: d.item.status, fav: d.item.fav } : i));
+    if (action === "archive" || action === "unarchive") { closeSheet(); loadSaved(); loadMe().catch(() => {}); return; }
     renderSheet();
     renderStack();
     renderResults();
@@ -720,7 +723,8 @@ async function loadSaved() {
   const box = $("#saved");
   try {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
-    const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет." };
+    const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет.",
+      archive: "Здесь будут вакансии, которые вы убрали в архив: откройте вакансию и нажмите «🗄 В архив»." };
     const batch = st.saved === "fav" && st.me && st.me.owner;  // «Откликнуться на все»: only the owner, for now
     const open = items.filter((i) => !(i.track && i.track.stage));
     box.innerHTML = (batch && open.length ? `<div class="batchbar"><span class="hint">Отметьте вакансии — я подготовлю письма, вы проверите и отправите одним нажатием.</span>
