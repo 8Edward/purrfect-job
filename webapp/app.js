@@ -298,10 +298,23 @@ async function refresh() {
     clearTimeout(slow);
     toast(d.busy ? "Проверка уже идёт, загляни через минуту" : d.waited ? "Только что проверил все источники — лента свежая"
       : (d.new ? `В каналах ${d.new} ${plural(d.new, "новая", "новые", "новых")}` : "В каналах новых нет") + (d.more ? " · сайты и hh.ru догружаю" : ""));
+    const before = st.me ? st.me.stats.new : 0;
     await Promise.all([loadMe(), loadFeed()]);
-    if (d.more) setTimeout(() => { loadMe().catch(() => {}); loadFeed().catch(() => {}); }, 30000);
+    if (d.more) followRefresh(before);
   } catch (e) { clearTimeout(slow); fail(e); }
   b.classList.remove("spin");
+}
+/* hh.ru and the sites go on in the background (minutes): look every 15 s until the bot says it's done, show what came */
+async function followRefresh(before) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 6 * 60000) {
+    await new Promise((r) => setTimeout(r, 15000));
+    try { await loadMe(); } catch (e) { return; }
+    if (!st.me.refreshing) break;
+  }
+  await loadFeed().catch(() => {});
+  const got = st.me.stats.new - before;
+  toast(got > 0 ? `Сайты и hh.ru проверены: ${got} ${plural(got, "новая вакансия", "новые вакансии", "новых вакансий")}` : "Сайты и hh.ru проверены: новых нет");
 }
 
 /* ---------------------------------------------------------------- detail sheet */

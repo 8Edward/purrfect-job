@@ -649,6 +649,7 @@ class WebApp:
                 "sites": len(m.sites(listed)),
             },
             "checked_at": last,
+            "refreshing": bool(getattr(self.radar, "hh_busy", False) or getattr(self.radar, "sites_busy", False)),  # a manual refresh is still reading hh.ru / sites
             "next_check": self.radar.minutes_to_next_check() if m.is_owner else None,
         })
 
