@@ -609,11 +609,13 @@ class WebApp:
         async def read(key):
             async with gate:
                 return await self.channel_posts(key, m)
+        t0 = time.monotonic()
         hh_task = asyncio.create_task(self.hh_search(m, query, terms))  # hh.ru and Himalayas go meanwhile
         hima_task = asyncio.create_task(self.himalayas_search(m, query)) if "himalayas" in m.sites(guests.listed_sites()) else None
         for posts in await asyncio.gather(*(read(k) for k in m.selected(guests.load_pool()))):
             for post in posts:
                 add(post, "channels")
+        t1 = time.monotonic()
         listed = guests.listed_sites()
         feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
         for provider in m.sites(listed):
@@ -625,6 +627,7 @@ class WebApp:
                 add(guests.web_job(j, listed.get("himalayas", "Himalayas"), m), "sites")
         for j in await hh_task:
             add(guests.web_job(j, guests.HH_NAME, m), "hh")
+        log.info("search timing: channels %.1fs, then sites/hh %.1fs, %d candidates", t1 - t0, time.monotonic() - t1, len(jobs))
         return jobs, counts
 
     async def himalayas_search(self, m, query):

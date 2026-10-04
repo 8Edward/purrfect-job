@@ -1188,7 +1188,7 @@ class JobRadar:
         people = [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]
         for m in people:
             settings = guests.hh_settings(m)
-            query = " OR ".join(q for q in (settings["query"], guests.words_hh_query(m)) if q)
+            query = " OR ".join(q for q in (guests.words_hh_query(m), settings["query"]) if q)
             if guests.HH_ID not in m.sites(listed) or not query:
                 continue
             try:

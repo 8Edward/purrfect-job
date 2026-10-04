@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import asyncio
+import functools
 import hashlib
 import json
 import os
@@ -48,8 +49,14 @@ def flexible(pattern):
     return pattern.replace(" ", r"[\s\-–—_]*")
 
 
+@functools.lru_cache(maxsize=4096)
+def _compiled(pattern, role=False):
+    return re.compile(role_regex(pattern) if role else flexible(pattern), re.IGNORECASE)
+
+
 def compile_patterns(patterns):
-    return [re.compile(flexible(p), re.IGNORECASE) for p in patterns or []]
+    # cached: a search builds a filter for thousands of vacancies, and compiling each time took a minute
+    return [_compiled(p) for p in patterns or []]
 
 
 def role_regex(pattern):
@@ -65,7 +72,7 @@ def role_regex(pattern):
 
 
 def compile_role(patterns):
-    return [re.compile(role_regex(p), re.IGNORECASE) for p in patterns or []]
+    return [_compiled(p, True) for p in patterns or []]
 
 
 # Card-style channels (e.g. @revacancy_global) post «Title | Senior | IC / Company / 150k - 180k USD /
