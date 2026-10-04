@@ -43,6 +43,8 @@ log = logging.getLogger("job-radar.app")
 WEB_DIR = tc.TG_DIR / "webapp"
 GRAPH_PATH = tc.TG_DIR / "rolegraph.yml"
 FEED_CACHE_PATH = tc.ROOT / "data" / "tg-feed-cache.json"
+FEEDBACK_PATH = tc.ROOT / "data" / "tg-feedback.json"   # «Ещё → Обратная связь»: [{who, id, text, at}], newest last
+FEEDBACK_MAX, FEEDBACK_KEEP, FEEDBACK_GAP = 1500, 300, 30  # characters, stored messages, seconds between two from one person
 HOST, PORT = "127.0.0.1", 8787
 SKINS = ("hybrid", "remote", "office")  # cat themes; old names map onto them
 OLD_SKINS = {"radar": "hybrid", "tropic": "remote", "dossier": "office"}
@@ -315,6 +317,7 @@ def item_json(key, item, full=False):
         "silent": extras.silent_days(item),
         "summary": extras.summary(item),
         "old": extras.is_old(item),
+        "grade": extras.grade_of(item),
     }
 
 
@@ -325,6 +328,20 @@ SORTS = {  # feed order: newest first, or by pay / AI score / starred, newest fi
     "fav": lambda g: -int(any(v.get("fav") for _, v in g)),
     "az": lambda g: (min((v.get("title") or "").casefold().lstrip(" \"'«([#") for _, v in g), min((v.get("company") or "").casefold() for _, v in g)),
 }
+SOURCE_FILTERS = ("tg", "web", "hh")
+
+
+def apply_filters(items, spec):
+    """spec = «tg,web,ru»: the source chips (channels / sites / hh.ru) add up (any of them), the tag chips (ru, pt)
+    all have to match; «nohh» = everything except hh.ru."""
+    chips = [c for c in str(spec).split(",") if c in FILTERS or c == "nohh"]
+    sources = [FILTERS[c] for c in chips if c in SOURCE_FILTERS]
+    if "nohh" in chips:
+        sources.append(lambda v: not FILTERS["hh"](v))
+    tags = [FILTERS[c] for c in chips if c not in SOURCE_FILTERS and c != "nohh"]
+    return [(k, v) for k, v in items if (not sources or any(s(v) for s in sources)) and all(t(v) for t in tags)]
+
+
 PAGE_MAX = 100
 INTERVALS = [15, 30, 60, 120, 240]  # «Как часто искать», minutes
 FILTERS = {  # the feed's chips
@@ -420,6 +437,7 @@ class WebApp:
         self.posts_dirty = None
         self.results = {}            # person id -> {key: job} from their last search
         self.last_search = {}
+        self.last_feedback = {}
         self.warming = False
         self.runner = None
         self.ai = resume_ai.Claude(radar.cfg.get("claude_exe"))
@@ -479,6 +497,7 @@ class WebApp:
         r.add_get("/api/track", self.api_track)
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
+        r.add_post("/api/feedback", self.api_feedback)
         r.add_get("/api/plan", self.api_plan)
         r.add_post("/api/plan", self.api_plan_make)
         r.add_get("/api/cv", self.api_cv)
@@ -671,9 +690,10 @@ class WebApp:
             limit = min(PAGE_MAX, max(1, int(request.query.get("limit", 40))))
         except ValueError:
             offset, limit = 0, 40
-        f = request.query.get("f", "all")
-        if f in FILTERS:
-            items = [(k, v) for k, v in items if FILTERS[f](v)]
+        items = apply_filters(items, request.query.get("f", "all"))
+        grade = request.query.get("grade", "")
+        if grade in dict(extras.GRADES):
+            items = [(k, v) for k, v in items if extras.grade_fits(v, grade)]
         age = request.query.get("age", "")
         if age in ("1", "3", "7", "14"):
             since = extras.age_cutoff(m, int(age))
@@ -1827,6 +1847,29 @@ class WebApp:
             return self.bad(str(e))
         m.save_inbox(inbox)
         return web.json_response({"ok": True, "item": item_json(key, item)})
+
+    async def api_feedback(self, request):
+        """A person's note about the app (a wish, a bug): saved, and the owner gets it in the bot chat."""
+        m = self.member(request)
+        text = str((await self.body(request)).get("text") or "").strip()[:FEEDBACK_MAX]
+        if len(text) < 3:
+            raise web.HTTPBadRequest(text='{"error": "Напишите хотя бы пару слов"}', content_type="application/json")
+        now_ = time.monotonic()
+        if now_ - self.last_feedback.get(m.id, -999) < FEEDBACK_GAP:
+            raise web.HTTPTooManyRequests(text='{"error": "Подождите полминуты перед следующим сообщением"}', content_type="application/json")
+        self.last_feedback[m.id] = now_
+        name = "Эдуард" if m.is_owner else (m.info.get("name") or m.name)
+        notes = guests.read_json(FEEDBACK_PATH, [])
+        notes.append({"who": name, "id": m.id, "text": text, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        guests.write_json(FEEDBACK_PATH, notes[-FEEDBACK_KEEP:])
+        owner = getattr(self.radar, "owner", None)
+        if owner and not m.is_owner:
+            try:
+                await self.radar.bot.send_message(owner, f"💬 Отзыв о приложении от {name}:\n\n{text}")
+            except Exception as e:
+                log.warning("feedback to the owner: %s", e)
+        log.info("feedback from %s (%d characters)", name, len(text))
+        return web.json_response({"ok": True})
 
     async def api_track_add(self, request):
         """A response sent somewhere else (not from the feed), typed by hand."""

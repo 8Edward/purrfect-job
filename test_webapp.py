@@ -218,6 +218,9 @@ class FakeBot:
     async def send_file(self, to, path, **kw):
         self.sent.append((to, path))
 
+    async def send_message(self, to, text, **kw):
+        self.sent.append((to, text))
+
 
 class FakeClaude:
     def __init__(self, answers, fail=None):
@@ -354,6 +357,13 @@ async def main():
                 assert r["ok"] and g.load_inbox()[hh_hit["key"]]["status"] == "taken" and g.load_inbox()[hh_hit["key"]]["via"] == "search"
                 assert (await c.post("/api/search/unknown/take", headers=auth)).status == 404
                 assert (await c.get("/api/roles", headers=auth)).status == 403  # reviewing Claude's roles: owner only
+
+                # feedback: short ones refused, saved, a guest's note reaches the owner, no flooding
+                webapp.FEEDBACK_PATH = Path(tempfile.mkdtemp()) / "fb.json"
+                assert (await c.post("/api/feedback", headers=auth, json={"text": "a"})).status == 400
+                assert (await c.post("/api/feedback", headers=auth, json={"text": "Кнопка не жмётся"})).status == 200
+                assert (await c.post("/api/feedback", headers=auth, json={"text": "ещё раз сразу"})).status == 429
+                assert guests.read_json(webapp.FEEDBACK_PATH, [])[0]["text"] == "Кнопка не жмётся"
 
                 # sources
                 src = await (await c.get("/api/sources", headers=auth)).json()

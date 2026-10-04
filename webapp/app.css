@@ -549,3 +549,5 @@ html[data-skin="remote"] .bitem { border-radius: 16px; }
 .rl-nav button:not(.link) { width: 40px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: transparent; font-size: 20px; color: var(--fg); }
 .rl-nav button[disabled] { opacity: .35; }
 .rl-nav .link { margin-left: auto; }
+
+#g-feedback > .pad { padding: 2px 14px 14px; }

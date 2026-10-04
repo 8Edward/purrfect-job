@@ -43,12 +43,17 @@
       <button class="chip" data-f="tg" aria-pressed="false">Каналы</button>
       <button class="chip" data-f="web" aria-pressed="false">Сайты</button>
       <button class="chip" data-f="hh" aria-pressed="false">hh.ru</button>
+      <button class="chip" data-f="nohh" aria-pressed="false">Без hh.ru</button>
       <button class="chip" data-f="pt" aria-pressed="false">Part-time</button>
     </div>
     <div class="feedbar">
       <select class="inp sm" id="sort" aria-label="Сортировка">
         <option value="date">Сначала новые</option><option value="salary">По зарплате</option>
         <option value="ai">По оценке ИИ</option><option value="fav">Сначала избранное</option><option value="az">По алфавиту А–Я</option>
+      </select>
+      <select class="inp sm" id="grade" aria-label="Грейд">
+        <option value="">Любой грейд</option><option value="intern">Стажёр</option><option value="junior">Junior</option>
+        <option value="middle">Middle</option><option value="senior">Senior</option><option value="lead">Lead</option>
       </select>
       <select class="inp sm" id="age" aria-label="Дата публикации">
         <option value="">Любая дата</option><option value="1">Сегодня</option><option value="3">3 дня</option>
@@ -144,6 +149,10 @@
     <details class="group fold" id="g-roleai" hidden><summary><span class="sn">🧠 ИИ и словарь ролей</span></summary><div class="pad" id="roleai"></div></details>
     <details class="group fold" id="g-src" hidden><summary><span class="sn">📊 Источники: кто молчит</span></summary><div class="pad" id="src-list"></div></details>
     <details class="group fold" id="g-roles" hidden><summary><span class="sn">🤖 Роли, которые угадал ИИ</span></summary><div class="pad" id="roles-list"></div></details>
+    <details class="group fold" id="g-feedback"><summary><span class="sn">💬 Обратная связь</span></summary>
+      <div class="pad"><p class="hint" style="margin:0 0 8px">Что не работает, что неудобно или чего не хватает. Сообщение придёт владельцу бота.</p>
+        <form id="fb-form"><textarea class="inp" id="fb-text" rows="4" maxlength="1500" placeholder="Напишите своими словами"></textarea>
+          <button class="cta" id="fb-send" style="margin-top:8px;width:100%">Отправить</button></form></div></details>
     <button class="row" id="memo"><b>❓ Вопросы и ответы</b><span class="m">FAQ</span><span class="s">Как всё устроено и как пользоваться</span></button>
     <button class="link block" id="again">Показать обучение</button>
     <button class="danger-btn" id="reset">♻️ Начать заново</button>

@@ -146,6 +146,33 @@ def tz_fits(item, tz):
     return not offs or any(tz_gap(o, tz["mine"]) <= tz["spread"] for o in offs)
 
 
+# ---------------------------------------------------------------- 🎚 grade (level) of a vacancy
+
+GRADES = [("intern", "Стажёр"), ("junior", "Junior"), ("middle", "Middle"), ("senior", "Senior"), ("lead", "Lead")]
+GRADE_RE = [  # every level the title names counts: «Middle/Senior» is both
+    ("lead", re.compile(r"\b(lead|head of|principal|staff|team ?lead|тимлид|руководитель|начальник|директор|head)\b", re.I)),
+    ("senior", re.compile(r"\b(senior|sr\.?|старший|ведущий|главный|сеньор)(?!\w)", re.I)),
+    ("middle", re.compile(r"\b(middle|mid|миддл|мидл)\b", re.I)),
+    ("junior", re.compile(r"\b(junior|jr\.?|младший|джуниор|джун)(?!\w)", re.I)),
+    ("intern", re.compile(r"\b(intern|internship|trainee|стажёр|стажер|стажировка)\b", re.I)),
+]
+
+
+def grade_of(item):
+    """Level named in the title, else '' (the vacancy says nothing). «Middle/Senior» counts as both."""
+    title = item.get("title") or ""
+    found = [g for g, rx in GRADE_RE if rx.search(title)]
+    return ",".join(found) if found else ""
+
+
+def grade_fits(item, wanted):
+    """No filter, an unnamed level, or the wanted level among the named ones."""
+    if not wanted:
+        return True
+    have = grade_of(item)
+    return not have or wanted in have.split(",")
+
+
 # ---------------------------------------------------------------- 🗓 how old a vacancy is
 
 OLD_DAYS = 14

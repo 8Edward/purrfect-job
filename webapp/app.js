@@ -15,7 +15,7 @@ const SKINS = {  // three cat themes; the old skin names still open the closest 
 };
 const OLD_SKINS = { radar: "hybrid", tropic: "remote", dossier: "office" };
 const MATCH = { exact: "точно" };
-const st = { me: null, feed: [], total: 0, sort: "date", age: "", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
+const st = { me: null, feed: [], total: 0, sort: "date", age: "", grade: "", unscored: 0, loading: false, filter: "all", saved: "fav", mode: "exact", off: new Set(), results: [], sources: null, sheet: null, scoring: new Set(), tzHidden: 0, view: "cards" };
 try { if (localStorage.getItem("jr-feed") === "list") st.view = "list"; } catch (e) { /* blocked */ }
 const STAGES = { applied: "Откликнулся", test: "Тестовое", interview: "Собеседование", offer: "Оффер", rejected: "Отказ" };
 
@@ -122,7 +122,7 @@ async function loadMe() {
 }
 /* the feed comes in pages (PAGE at a time) so thousands of vacancies never load at once */
 const PAGE = 40;
-const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&age=${st.age}&offset=${offset}&limit=${PAGE}`;
+const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&age=${st.age}&grade=${st.grade}&offset=${offset}&limit=${PAGE}`;
 async function loadFeed() {
   const d = await api(feedUrl(0));
   st.feed = d.items;
@@ -264,9 +264,17 @@ function drag(card) {
   card.addEventListener("pointerup", end);
   card.addEventListener("pointercancel", end);
 }
+/* st.filter is a comma list: channel / site / hh.ru chips add up, #ru_company and part-time narrow, «Без hh.ru» stands alone */
 function setFilter(f) {
-  st.filter = f;
-  $$("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.f === f));
+  let set = new Set(st.filter === "all" ? [] : st.filter.split(","));
+  if (f === "all") set = new Set();
+  else if (f === "nohh") { const had = set.has("nohh"); set = new Set(had ? [] : ["nohh"]); }
+  else {
+    set.delete("nohh");
+    if (set.has(f)) set.delete(f); else set.add(f);
+  }
+  st.filter = set.size ? [...set].join(",") : "all";
+  $$("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.f === "all" ? st.filter === "all" : set.has(c.dataset.f)));
   loadFeed().catch(fail);
 }
 async function scoreNew() {
@@ -1226,6 +1234,13 @@ $$(".reset-words").forEach((b) => (b.onclick = () => {
   b.dataset.ask = setTimeout(() => { delete b.dataset.ask; b.textContent = "Сбросить"; }, 4000);
 }));
 $("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); loadFeed().catch(fail); };
+$("#grade").onchange = () => { st.grade = $("#grade").value; haptic(); loadFeed().catch(fail); };
+$("#fb-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("#fb-text").value.trim();
+  if (text.length < 3) return toast("Напишите хотя бы пару слов");
+  try { haptic(); await api("/api/feedback", { text }); $("#fb-text").value = ""; toast("Спасибо, отправлено"); } catch (err) { fail(err); }
+};
 $("#age").onchange = () => { st.age = $("#age").value; haptic(); loadFeed().catch(fail); };
 $("#score-new").onclick = scoreNew;
 $("#refresh").onclick = refresh;
