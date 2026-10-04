@@ -151,6 +151,19 @@ e = {"source": "web", "title": "Welder", "company": "Uzum", "link": "https://c/3
 gs = extras.groups([("a", a), ("b", b), ("c", c), ("d", d), ("e", e)])
 assert [[k for k, _ in g] for g in gs] == [["b", "a"], ["c", "d"], ["e"]]   # richest first (has pay)
 assert sorted(extras.twins_of({"a": a, "b": b, "e": e}, "a")) == ["b"]
+# same company + title on ONE site: separate openings unless the texts match ≥95% (freehire jobhash port)
+p1 = {"source": "web", "title": "Data Analyst", "company": "Plata", "link": "https://p/1", "site": "Plata", "text": "credit risk models " * 5}
+p2 = {"source": "web", "title": "Data Analyst", "company": "Plata", "link": "https://p/2", "site": "Plata", "text": "marketing attribution funnels " * 5}
+p3 = {"source": "web", "title": "Data Analyst, Mexico City", "company": "Plata", "link": "https://p/3", "site": "Plata", "text": "credit risk models " * 5}
+p4 = {"source": "web", "title": "Data Analyst", "company": "Plata", "link": "https://p/4", "site": "Plata"}
+p5 = {"source": "web", "title": "Data Analyst (Remote)", "company": "Plata", "link": "https://hh/5", "site": "hh.ru"}
+assert extras.role_title("Data Analyst, Mexico City") == "data analyst" and extras.role_title("Analyst, Berlin") == "analyst berlin"
+assert extras.role_title("Data Analyst (Remote)") == "data analyst remote" and extras.role_title("Front-end Developer") == "front end developer"
+gs = [sorted(k for k, _ in g) for g in extras.groups([("1", p1), ("2", p2), ("3", p3), ("4", p4)])]
+assert sorted(gs) == [["1", "3"], ["2"], ["4"]], gs                # empty text never merges within a site
+assert extras.desc_similarity(set(), set()) == 0
+gs = [sorted(k for k, _ in g) for g in extras.groups([("1", p1), ("6", dict(p5, title="Data Analyst"))])]
+assert gs == [["1", "6"]]                                           # another site: one role cross-posted
 
 # -- 📋 tracker
 item = {"title": "BA", "status": "taken"}

@@ -29,9 +29,11 @@ import boards
 import extras
 import guests
 import screens
+import sourcestats
 import tg_collect as tc
 import tunnel
 import webapp
+import workmode
 
 INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
 DISCARD_LOG = tc.ROOT / "data" / "discard.log"
@@ -603,6 +605,7 @@ class JobRadar:
         self.hh_run = None
         self.hh_busy = False
         self.daily_run = None
+        self.orig_busy = False
         self.last_seen = {}  # guest id -> time of the last action (anti-flood)
         self.bot_username = None
         self.app_url = None  # the mini app's public address (tunnel.py), None while offline
@@ -906,6 +909,7 @@ class JobRadar:
             if not self.daily_run or now - self.daily_run >= timedelta(minutes=10):
                 self.daily_run = now
                 await self.daily_pass()
+                asyncio.create_task(self.orig_pass())
             await asyncio.sleep(60)
 
     # ------------------------------------------------------------ messages
@@ -1163,7 +1167,13 @@ class JobRadar:
         wanted = {s for m in people + [self.me] for s in m.sites(listed)}  # yours too: the app's search reads the cache
         if not wanted - {guests.HH_ID}:
             return
-        feed = await guests.fetch_feed(sorted(wanted))
+        try:
+            feed = await guests.fetch_feed(sorted(wanted))
+        except Exception as e:
+            sourcestats.record_many([("site:" + p, listed.get(p, p), False, 0, str(e)) for p in sorted(wanted) if p != guests.HH_ID])
+            raise
+        sourcestats.record_many([("site:" + p, listed.get(p, p), "error" not in r, len(r.get("jobs") or []), r.get("error", ""))
+                                 for p, r in feed.items()])
         old = guests.read_json(webapp.FEED_CACHE_PATH, {}).get("feed", {})
         for p, r in feed.items():  # a board that failed this time keeps what it gave last time
             if "error" in r and (old.get(p) or {}).get("jobs"):
@@ -1197,7 +1207,9 @@ class JobRadar:
                 raw = await guests.fetch_hh(query, settings["remote"])
             except Exception as e:
                 log.warning("hh.ru for %s: %s", m.name, e)
+                sourcestats.record("hh", "hh.ru", False, 0, str(e))
                 continue
+            sourcestats.record("hh", "hh.ru", True, len(raw))
             items = self.store_for(m, guests.match_hh_jobs(raw, m, full == m.id))
             log.info("hh.ru for %s: %d of %d new", m.name, len(items), len(raw))
             if items:
@@ -1232,6 +1244,35 @@ class JobRadar:
             self.sites_busy = False
 
     # ------------------------------------------------------------ ☀️ morning digest, 📋 tracker reminders
+
+    async def orig_pass(self):
+        """Fake remote: for fresh Telegram posts with a vacancy link, read the original page (the
+        employer's ATS / JSON-LD) once; the card then says «⚠️ в оригинале офис» / «🌍 только США»."""
+        if self.orig_busy:
+            return
+        self.orig_busy = True
+        loop = asyncio.get_running_loop()
+        try:
+            for m in [self.me] + [g for g in guests.all_guests(guests.load_registry()) if not g.load_state().get("step")]:
+                found = {}
+                for key, url in workmode.pending(m.load_inbox()):
+                    try:
+                        found[key] = workmode.slim(await loop.run_in_executor(None, workmode.resolve, url))
+                    except Exception as e:
+                        found[key] = {"fail": str(e)[:120]}  # could not check ≠ not a vacancy
+                    await asyncio.sleep(1)
+                if found:
+                    inbox = m.load_inbox()  # re-read: other passes may have written meanwhile
+                    for key, orig in found.items():
+                        if key in inbox:
+                            inbox[key]["orig"] = orig
+                    m.save_inbox(inbox)
+                    log.info("originals for %s: %d read, %d flagged", m.name, len(found),
+                             sum(bool(workmode.flags(inbox[k], o)) for k, o in found.items() if k in inbox))
+        except Exception:
+            log.exception("originals pass failed")
+        finally:
+            self.orig_busy = False
 
     async def daily_pass(self):
         """Once a day after 9:00 (the person's time zone): the 5 best new vacancies of the last day.

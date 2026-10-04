@@ -5,6 +5,7 @@ Rules, no AI, except `score_prompt`/`plan_prompt` (run through resume_ai.Claude 
 subscription, with their own daily caps).
 """
 
+import html
 import json
 import os
 import re
@@ -14,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 import resume
 import resume_ai
 import tg_collect as tc
+import workmode
 
 # ---------------------------------------------------------------- 💰 salary range
 
@@ -158,11 +160,48 @@ def link_key(link):
     return (base.rstrip("/") + ("?" + "&".join(kept) if kept else "")).lower()
 
 
+# Ported from freehire (MIT), Copyright (c) 2026 freehire contributors
+# (internal/job/jobhash: rolekey.go, rolefingerprint.go, descsimilarity.go).
+# «Senior Analyst, Berlin» / «Senior Analyst — Remote» -> «senior analyst»: the last clause after a comma or a
+# spaced dash / pipe / @ goes, unless that leaves under two words; brackets are unwrapped, their words kept.
+TRAILING_CLAUSE = re.compile(r"(\s*,\s*|\s+[|@]\s*|\s+[-–—]\s*)[^,|@\-–—]*$")
+DESC_SAME = 0.95  # Jaccard of description words: per-city copies of one role score above, different roles far below
+
+
+def role_title(title):
+    t = re.sub(r"[()\[\]]", " ", str(title or ""))
+    stripped = TRAILING_CLAUSE.sub("", t)
+    return _norm(stripped if len(stripped.split()) >= 2 else t)
+
+
+def desc_words(text):
+    """The set of distinct words longer than 3 letters (a set: repeating a word says nothing more)."""
+    return {w for w in re.findall(r"\w+", re.sub(r"<[^>]*>", " ", html.unescape(str(text or ""))).lower().replace("ё", "е"))
+            if len(w) > 3}
+
+
+def desc_similarity(a, b):
+    """Jaccard index; an empty description is never similar to anything, itself included."""
+    if not a or not b:
+        return 0.0
+    shared = len(a & b)
+    return shared / (len(a) + len(b) - shared)
+
+
+def same_role(a, b):
+    """Two items with the same company + role title: the same vacancy when they come from different
+    sources (one role cross-posted). From ONE source they are separate postings (a company can open
+    three «Data Analyst» roles in different teams) unless their texts match ≥95% (per-city copies)."""
+    if origin(a) != origin(b) or a.get("source") != b.get("source"):
+        return True
+    return desc_similarity(desc_words(a.get("text")), desc_words(b.get("text"))) >= DESC_SAME
+
+
 def twin_keys(item):
-    """Things that make two inbox items the same vacancy: same title + company, same link,
-    same post text (a repost into another channel)."""
+    """Things that make two inbox items the same vacancy: same role title + company (see same_role),
+    same link, same post text (a repost into another channel)."""
     keys = []
-    title, company = _norm(item.get("title")), _norm(re.split(r"[.|(]\s", str(item.get("company") or ""))[0])  # «Альфа-Банк. Центральный офис» = «Альфа-Банк»
+    title, company = role_title(item.get("title")), _norm(re.split(r"[.|(]\s", str(item.get("company") or ""))[0])  # «Альфа-Банк. Центральный офис» = «Альфа-Банк»
     if title and company:
         keys.append("tc:" + title + "|" + company)
     if item.get("link"):
@@ -187,11 +226,16 @@ def groups(pairs):
             x = parent[x]
         return x
 
-    owner = {}
+    owner, bucket = {}, {}
     for key, item in pairs:
         find(key)
         for t in twin_keys(item):
-            if t in owner:
+            if t.startswith("tc:"):  # company + role title: merged only where same_role says so
+                for k2, it2 in bucket.setdefault(t, []):
+                    if same_role(item, it2):
+                        parent[find(key)] = find(k2)
+                bucket[t].append((key, item))
+            elif t in owner:
                 parent[find(key)] = find(owner[t])
             else:
                 owner[t] = key
@@ -504,6 +548,9 @@ def summary(item, size=2):
     title, text = item.get("title") or "", item.get("text") or ""
     blob = f"{title}\n{text}"
     lines = []
+    warn = workmode.flags(item, item.get("orig"))  # fake remote: office / hybrid / one country only
+    if warn:
+        lines.append(" · ".join(warn))
     stack = [name for name, rx in STACK_RE if rx.search(blob)][:7]
     if stack:
         lines.append("🛠 " + ", ".join(stack))

@@ -19,7 +19,7 @@ import { parseHimalayasResponse } from '../providers/himalayas.mjs';
 import { parseJobicyResponse } from '../providers/jobicy.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PER_BOARD_TIMEOUT_MS = 120_000;
+const PER_BOARD_TIMEOUT_MS = 240_000;
 const MAX_JOBS_PER_BOARD = 3000;
 
 const ids = (process.argv[2] || '').split(',').map((s) => s.trim()).filter((s) => /^[a-z0-9-]{2,40}$/.test(s));
@@ -60,7 +60,7 @@ async function fetchPaged(spec) {
 
 // «co-<name>»: one company's career page of chosen companies (telegram/companies.yml): free public ATS feeds
 // and hh.ru employer RSS. Every job carries ru:true for Russian-speaking companies.
-const UA = { 'User-Agent': 'Mozilla/5.0 (JobRadar personal job alerts)' };
+const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; JobRadar personal job alerts) AppleWebKit/537.36 Chrome/124 Safari/537.36' };
 const xmlText = (block, tag) => {
   const m = block.match(new RegExp(String.raw`<${tag}[^>]*>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*</${tag}>`));
   return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim() : '';
@@ -74,6 +74,43 @@ async function getText(url) {
   const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(25_000) });
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
   return r.text();
+}
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const decode = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').trim();
+async function postJson(url, body, headers = {}) {
+  const r = await fetch(url, {
+    method: 'POST', headers: { ...UA, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(25_000),
+  });
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  return r.json();
+}
+// «Удалённо · Москва» when the site's own work-format words say remote, else just the place.
+function remoteLoc(formats, place) {
+  const words = [].concat(formats || []).join(' ');
+  return (/удал|remote|дистанц/i.test(words) ? 'Удалённо · ' : '') + (place || '');
+}
+// Nuxt «devalue» payload: a flat array where objects hold indexes into it (Ported from freehire, MIT).
+function unflatten(raw) {
+  const memo = new Map();
+  const ref = (v) => (typeof v === 'number' ? hydrate(v) : v);
+  function hydrate(i) {
+    if (i < 0 || i >= raw.length) return null;
+    if (memo.has(i)) return memo.get(i);
+    const tok = raw[i];
+    let out = tok;
+    if (Array.isArray(tok)) {
+      out = typeof tok[0] === 'string' ? (tok.length > 1 ? ref(tok[1]) : null) : [];
+      memo.set(i, out);
+      if (typeof tok[0] !== 'string') for (const r of tok) out.push(ref(r));
+    } else if (tok && typeof tok === 'object') {
+      out = {};
+      memo.set(i, out);
+      for (const [k, v] of Object.entries(tok)) out[k] = ref(v);
+    }
+    memo.set(i, out);
+    return out;
+  }
+  return hydrate(0);
 }
 const FETCHERS = {
   async greenhouse(c) {
@@ -315,6 +352,253 @@ const FETCHERS = {
       await browser.close();
     }
   },
+  // ---- Ported from freehire (MIT), Copyright (c) 2026 freehire contributors
+  // (internal/ingest/sources/*.go): list endpoints only, no per-vacancy detail requests.
+  async ozon() {  // only «external_vacancy» (the rest are internal moves); the link is the hh.ru copy
+    const out = [];
+    for (let page = 1; page <= 200; page++) {
+      const j = await getJson(`https://job-api.ozon.ru/v2/vacancy?page=${page}&limit=50`);
+      for (const x of j.items || []) {
+        if (x.vacancyType !== 'external_vacancy' || !x.hhId) continue;
+        out.push({ title: x.title, url: `https://hh.ru/vacancy/${x.hhId}`, location: remoteLoc(x.workFormat, x.city), posted: '' });
+      }
+      if (page >= (j.meta?.totalPages || 1)) break;
+      await pause(150);
+    }
+    return out;
+  },
+  async tbank() {  // the site's own request (2026-10): generatedGraphQL filter, 10 per page, all three categories
+    const g = {
+      type: 'T_CAREER', status: 'ACTIVE', includeSeoAndPcPublications: false, includeInternshipPublications: true,
+      userGroup: { groups: ['Control'], type: 'SPECIFIC' }, collapsePredstavitelPublications: true,
+      or: ['tcareer_it', 'tcareer_back_office', 'tcareer_work_with_clients'].map((category) => ({ category })),
+    };
+    const out = [];
+    for (let offset = 0, i = 0; i < 80; i++) {
+      const j = await postJson('https://www.tbank.ru/pfpjobs/papi/getVacancies', { filters: { generatedGraphQL: g }, pagination: { offset } });
+      if (j.resultCode !== 'OK') throw new Error(`tbank: ${j.errorMessage || j.resultCode}`);
+      for (const x of j.payload?.vacancies || []) {
+        if (!x.urlSlug || x.redirectUrl) continue;
+        out.push({ title: x.title, url: `https://www.tbank.ru/career/it/vacancy/all/${x.seoSlug}/${x.urlSlug}/`, location: remoteLoc(x.tags, x.subtitle), posted: '' });
+      }
+      const next = j.payload?.nextPagination || {};
+      if (next.isFinished || !(next.offset > offset)) break;
+      offset = next.offset;
+      await pause(250);
+    }
+    return out;
+  },
+  async sber() {
+    const out = [];
+    for (let skip = 0; skip < 20000; skip += 200) {
+      const j = await getJson(`https://rabota.sber.ru/public/app-candidate-public-api-gateway/api/v1/publications?skip=${skip}&take=200`);
+      for (const x of j.data?.vacancies || []) {
+        const remote = /удал[её]нн|дистанцион/i.test(`${x.city || ''} ${x.conditions || ''}`);
+        out.push({ title: x.title, url: `https://rabota.sber.ru/search/${x.internalId}`, company: x.company || 'Сбер', location: (remote ? 'Удалённо · ' : '') + (x.city || ''), posted: x.publicationDate || '' });
+      }
+      if (skip + 200 >= (j.data?.total || 0)) break;
+      await pause(200);
+    }
+    return out;
+  },
+  async getmatch() {  // an aggregator: every offer carries its own company; location_items[].format = remote/hybrid/office
+    const out = [];
+    for (let offset = 0; offset < 20000; offset += 100) {
+      const j = await getJson(`https://getmatch.ru/api/offers?offset=${offset}&limit=100`);
+      for (const o of j.offers || []) {
+        const items = o.location_items || [];
+        const remote = items.some((l) => l.format === 'remote' && !l.exclude);
+        const where = [...new Set(items.filter((l) => !l.exclude).map((l) => l.label))].join(', ');
+        const sal = o.salary_display_from || o.salary_display_to ? ` · ${[o.salary_display_from, o.salary_display_to].filter(Boolean).join('–')} ${o.salary_currency || ''}`.trimEnd() : '';
+        out.push({ title: o.position, url: `https://getmatch.ru${o.url}`, company: o.company?.name || '', location: (remote ? 'Удалённо · ' : '') + where + sal, posted: o.published_at || '' });
+      }
+      if (!(j.offers || []).length || offset + 100 >= (j.meta?.total || 0)) break;
+      await pause(250);
+    }
+    return out;
+  },
+  async huntflow(c) {  // <slug>.huntflow.io/_payload.json: a Nuxt «devalue» flat array, unflattened here
+    const node = unflatten(await getJson(`https://${c.slug}.huntflow.io/_payload.json`));
+    return (node?.data?.vacancies?.items || []).filter((x) => !x.archived_at).map((x) => ({
+      title: x.position, url: `https://${c.slug}.huntflow.io/vacancy/${x.slug}`, location: x.city || '', posted: '',
+    }));
+  },
+  async yandex() {  // cursor pages; skip publications that only redirect elsewhere or are «fast track» events
+    const base = 'https://yandex.ru/jobs/api/publications';
+    const out = [];
+    const seen = new Set();
+    let url = `${base}?page_size=100`;
+    for (let i = 0; url && i < 100; i++) {
+      const j = await getJson(url);
+      for (const x of j.results || []) {
+        if (x.redirect_url || x.fast_track) continue;
+        const remote = (x.vacancy?.work_modes || []).some((m) => /remote/.test(m.slug || '') || /удал/i.test(m.name || ''));
+        const cities = (x.vacancy?.cities || []).map((c) => c.name).join(', ');
+        out.push({ title: x.title, url: `https://yandex.ru/jobs/vacancies/${x.publication_slug_url}`, location: (remote ? 'Удалённо · ' : '') + cities, posted: x.modified || '' });
+      }
+      const cursor = j.next ? new URL(j.next).searchParams.get('cursor') : '';
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+      url = `${base}?page_size=100&cursor=${encodeURIComponent(cursor)}`;
+      await pause(200);
+    }
+    return out;
+  },
+  async mts() {  // the public API key sits in the site's own config (apiKey:"...")
+    const key = (await getText('https://job.mts.ru/')).match(/apiKey:"([^"]+)"/)?.[1];
+    if (!key) throw new Error('mts: apiKey not found');
+    const out = [];
+    for (let offset = 0; offset < 10000; offset += 200) {
+      const j = await postJson('https://api.job.mts.ru/v1/vacancies/filtered/career', { offset, limit: 200 }, { 'x-api-key': key });
+      for (const x of j.data?.vacancies || []) {
+        out.push({ title: x.name, url: `https://job.mts.ru/vacancy/${x.id}`, company: x.info?.brand || 'МТС', location: remoteLoc(x.info?.worktype, x.info?.city), posted: '' });
+      }
+      if (offset + 200 >= (j.data?.pageInfo?.total || 0)) break;
+      await pause(250);
+    }
+    return out;
+  },
+  async vk() {
+    const out = [];
+    let url = 'https://team.vk.company/career/api/v2/vacancies/?limit=50&offset=0';
+    for (let i = 0; url && i < 60; i++) {
+      const j = await getJson(url.replace(/^http:/, 'https:'));
+      for (const x of j.results || []) {
+        out.push({ title: x.title, url: `https://team.vk.company/vacancy/${x.id}/`, company: x.group?.name ? `VK · ${x.group.name}` : 'VK', location: (x.remote ? 'Удалённо · ' : '') + (x.town?.name || ''), posted: '' });
+      }
+      url = j.next || '';
+      await pause(250);
+    }
+    return out;
+  },
+  async alfabank() {
+    const cities = Object.fromEntries(((await getJson('https://job.alfabank.ru/api/vacancies/options?listId=cities')).optionLists?.cities || []).map((c) => [c.id, c.text]));
+    const out = [];
+    for (let skip = 0; skip < 10000; skip += 100) {
+      const j = await getJson(`https://job.alfabank.ru/api/vacancies?skip=${skip}&take=100`);
+      for (const x of j.items || []) {
+        if (x.isHidden || x.isInternal) continue;
+        const city = cities[x.cityId] || '';
+        const remote = String(x.slug || '').includes('/remote-job/') || /удал/i.test(city);
+        out.push({ title: x.name, url: `https://job.alfabank.ru${x.slug}`, location: (remote ? 'Удалённо · ' : '') + city, posted: x.createdAt || '' });
+      }
+      if (!(j.items || []).length || skip + 100 >= (j.total || 0)) break;
+      await pause(200);
+    }
+    return out;
+  },
+  async rwb() {  // Wildberries & Russ; the API gives at most 50 per page whatever the limit
+    const out = [];
+    for (let offset = 0, i = 0; i < 100; i++) {
+      const j = await getJson(`https://career.rwb.ru/crm-api/api/v1/pub/vacancies?limit=50&offset=${offset}`);
+      const items = j.data?.items || [];
+      for (const x of items) {
+        out.push({ title: x.name, url: `https://career.rwb.ru/vacancies/${x.id}`, location: remoteLoc((x.employment_types || []).map((e) => e.title), x.city_title), posted: '' });
+      }
+      offset += items.length;
+      if (!items.length || offset >= (j.data?.range?.count || 0)) break;
+      await pause(200);
+    }
+    return out;
+  },
+  async lamoda() {
+    const out = [];
+    for (let start = 0, i = 0; i < 50; i++) {
+      const j = await getJson(`https://job.lamoda.ru/api/hr/vacancies/compact?pagination[limit]=100&pagination[start]=${start}`);
+      for (const x of j.data || []) {
+        out.push({ title: x.name, url: `https://job.lamoda.ru/vacancies/${x.slug}`, location: x.location?.name || '', posted: x.externalPublicationDate || '' });
+      }
+      start += (j.data || []).length;
+      if (!(j.data || []).length || start >= (j.meta?.total || 0)) break;
+      await pause(200);
+    }
+    return out;
+  },
+  async kuper() {
+    const out = [];
+    for (let page = 1, pages = 1; page <= pages && page <= 50; page++) {
+      const j = await getJson(`https://vacancies-api.sbermarket.ru/api/vacancy_pagination/?page=${page}`);
+      for (const blk of j.result || []) {
+        if (blk.category === 'pagination') pages = blk.data?.pages || 1;
+        if (blk.category !== 'vacancies') continue;
+        for (const x of blk.data || []) {
+          out.push({ title: x.title, url: `https://kuper.ru/rabota/${x.friendlyUrl}-${x.idForUrl}`, location: remoteLoc(x.wf, x.city), posted: '' });
+        }
+      }
+      await pause(200);
+    }
+    return out;
+  },
+  async dodo() {
+    const j = await getJson('https://career-api.dodoteam.ru/api/v1/vacancies');
+    return (j.data || []).flatMap((g) => g.items || []).map((x) => ({
+      title: x.position, url: `https://dodo.team/vacancy/${x.id}`, company: x.brand || 'Dodo Brands', location: remoteLoc(x.work_format, x.vacancy_location), posted: '',
+    }));
+  },
+  async domclick() {
+    const j = await getJson('https://career.domclick.ru/api/v1/vacancy/');
+    return (j.result || []).map((x) => ({
+      title: x.title, url: `https://career.domclick.ru/vacancy/${x.slug}`,
+      location: ((x.vacancycontent?.work_format || []).includes('REMOTE') ? 'Удалённо · ' : '') + (x.area?.name || ''), posted: '',
+    }));
+  },
+  async geekjob() {  // aggregator; list pages /vacancies/N, 20 cards each
+    const out = new Map();
+    for (let page = 1; page <= 30; page++) {
+      const html = await getText(`https://geekjob.ru/vacancies/${page}`);
+      let added = 0;
+      for (const b of html.split('<p class="truncate vacancy-name">').slice(1)) {
+        const m = b.match(/href="(\/vacancy\/[0-9a-f]{24})"[^>]*>([^<]+)</);
+        if (!m || out.has(m[1])) continue;
+        const company = b.match(/company-name">\s*<a[^>]*>([^<]+)</)?.[1] || '';
+        const info = b.slice(0, 2500).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+        out.set(m[1], { title: decode(m[2]), url: `https://geekjob.ru${m[1]}`, company: decode(company), location: /удал[её]нн/i.test(info) ? 'Удалённо' : '', posted: '' });
+        added++;
+      }
+      if (!added) break;
+      await pause(400);
+    }
+    return [...out.values()];
+  },
+  async trudvsem() {  // «Работа России»: only distance-work vacancies («Дистанционная (удаленная) работа»)
+    const out = [];
+    for (let page = 0; page < 60; page++) {
+      const j = await getJson(`https://opendata.trudvsem.ru/api/v1/vacancies?limit=100&offset=${page}&text=${encodeURIComponent('удаленная')}`);
+      const vs = j.results?.vacancies || [];
+      for (const { vacancy: v } of vs) {
+        if (!/удал|дистанц/i.test(v.employment || '') || !v['job-name'] || !v.vac_url) continue;
+        const sal = v.salary ? ` · ${v.salary} ₽` : '';
+        out.push({ title: v['job-name'], url: v.vac_url, company: v.company?.name || '', location: `Удалённо · ${v.region?.name || ''}${sal}`, posted: v['creation-date'] || '' });
+      }
+      if (vs.length < 100 || (page + 1) * 100 >= (j.meta?.total || 0)) break;
+      await pause(300);
+    }
+    return out;
+  },
+  async djinni() {  // aggregator (Ukraine / remote); JSON-LD JobPosting list in each page
+    const out = [];
+    for (let page = 1; page <= 30; page++) {
+      const r = await fetch(`https://djinni.co/jobs/?page=${page}`, { headers: UA, signal: AbortSignal.timeout(25_000) });
+      if (!r.ok) { if (out.length) break; throw new Error(`djinni: HTTP ${r.status}`); }
+      if (!r.url.includes(`page=${page}`)) break;  // past the end it redirects to /jobs/
+      const html = await r.text();
+      let added = 0;
+      for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
+        let j; try { j = JSON.parse(m[1]); } catch { continue; }
+        for (const p of [].concat(j)) {
+          if (p?.['@type'] !== 'JobPosting' || !p.url) continue;
+          const remote = String(p.jobLocationType || '').toUpperCase() === 'TELECOMMUTE';
+          const a = p.applicantLocationRequirements?.address || {};
+          out.push({ title: p.title, url: p.url, company: p.hiringOrganization?.name || '', location: (remote ? 'Удалённо · ' : '') + (a.addressCountry || a.addressRegion || ''), posted: p.datePosted || '' });
+          added++;
+        }
+      }
+      if (!added) break;
+      await pause(600);
+    }
+    return out;
+  },
+  // ---- end of the freehire port
   async hh(c) {
     const out = [];
     const seen = new Set();
@@ -357,11 +641,18 @@ async function fetchCompanies(id) {
 }
 
 const out = {};
-for (const id of ids) {
+const PARALLEL = 4;  // boards fetched at once (each board itself stays polite: one request at a time)
+const queue = [...ids];
+await Promise.all(Array.from({ length: PARALLEL }, async () => {
+  while (queue.length) await fetchBoard(queue.shift());
+}));
+process.stdout.write(JSON.stringify(Object.fromEntries(ids.filter((id) => out[id]).map((id) => [id, out[id]]))) + '\n');
+
+async function fetchBoard(id) {
   const provider = id.startsWith('co-') ? {} : providers.get(id);
   if (!provider) {
     out[id] = { error: 'unknown provider' };
-    continue;
+    return;
   }
   try {
     const run = () => withTimeout(id.startsWith('co-') ? fetchCompanies(id) : PAGED[id] ? fetchPaged(PAGED[id]) : provider.fetch({ name: id, provider: id }, ctx),
@@ -372,6 +663,8 @@ for (const id of ids) {
     out[id] = {
       jobs: jobs
         .filter((j) => j && typeof j.title === 'string' && /^https?:\/\//i.test(j.url || ''))
+        // big Russian boards (Sber, Alfa…) are mostly office jobs: remote ones go first so the cap keeps them
+        .sort((a, b) => Number(/^Удалённо/.test(b.location || '')) - Number(/^Удалённо/.test(a.location || '')))
         .slice(0, MAX_JOBS_PER_BOARD)
         .map((j) => ({
           title: clean(j.title, 200),
@@ -386,4 +679,3 @@ for (const id of ids) {
     out[id] = { error: clean(String(err?.message || err), 200) };
   }
 }
-process.stdout.write(JSON.stringify(out) + '\n');

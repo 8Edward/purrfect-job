@@ -34,6 +34,7 @@ import yaml
 from telethon import utils
 
 import boards
+import sourcestats
 import tg_collect as tc
 
 USERS_DIR = tc.TG_DIR / "users"
@@ -611,7 +612,7 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
     seen = {m.id: set(states[m.id].get("fingerprints", [])) for m in members}
     marks = {m.id: dict(states[m.id].get("pool_ids", {})) for m in members}
     found = {m.id: [] for m in members}
-    missing = []
+    missing, stats = [], []
 
     for key, followers in wanted.items():
         days = rescan_days or max(m.cfg().get("lookback_days", 1) for m in followers)
@@ -629,8 +630,10 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
         except Exception as e:
             log.warning("pool channel @%s: %s", key, e)
             missing.append(key)
+            stats.append(("tg:" + key, "@" + key, False, 0, str(e)))
             continue
         title = getattr(entity, "title", None) or "@" + key
+        stats.append(("tg:" + key, title, True, len(msgs), ""))
         chat_id = utils.get_peer_id(entity)
         msgs.reverse()  # oldest first
         for m in followers:
@@ -664,6 +667,11 @@ async def scan_pool(client, members, pool, rescan_days=None, pause=1.0):
             state["pool_run"] = now().isoformat()
         m.save_state(state)
         found[m.id].sort(key=lambda j: j["date"])
+    if not rescan_days:  # a manual rescan re-reads old posts: not a fair daily count
+        try:
+            sourcestats.record_many(stats)
+        except Exception as e:
+            log.warning("source stats not saved: %s", e)
     return found, missing
 
 
@@ -907,17 +915,104 @@ def hh_parts(query):
     return list(dict.fromkeys(parts))[:HH_PARTS_MAX] or [query]
 
 
+# Full hh.ru search page: the page embeds its whole result as JSON in
+# <template id="HH-Lux-InitialState"> — up to 100 per page instead of the RSS's 20.
+# Ported from freehire (MIT), Copyright (c) 2026 freehire contributors (internal/ingest/sources/hhru.go).
+HH_SEARCH = "https://hh.ru/search/vacancy"
+HH_PAGE_SIZE = 100
+HH_PAGES = 2  # per query part: 200 newest
+HH_BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml", "Accept-Language": "ru-RU,ru;q=0.9"}
+HH_STATE_RE = re.compile(r'<template[^>]*id="HH-Lux-InitialState"[^>]*>(.*?)</template>', re.S)
+
+
+def hh_search_url(query, remote, page=0):
+    params = {"text": query, "search_field": "name", "order_by": "publication_time",
+              "items_on_page": HH_PAGE_SIZE, "page": page}
+    if remote:
+        params["schedule"] = "remote"
+    return HH_SEARCH + "?" + urlencode(params)
+
+
+def _hh_money(c):
+    c = c or {}
+    lo, hi, cur = c.get("from"), c.get("to"), c.get("currencyCode") or ""
+    cur = {"RUR": "₽", "RUB": "₽", "USD": "$", "EUR": "€"}.get(cur, cur)
+    if lo and hi:
+        return f"{lo:,}–{hi:,} {cur}".replace(",", " ")
+    if lo:
+        return f"от {lo:,} {cur}".replace(",", " ")
+    if hi:
+        return f"до {hi:,} {cur}".replace(",", " ")
+    return ""
+
+
+def parse_hh_search(page_html):
+    """hh.ru search page HTML -> [{title, url, company, location, comp, posted, mode}];
+    None when the page has no result state (layout changed / captcha)."""
+    m = HH_STATE_RE.search(page_html)
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    try:
+        state = json.loads(raw if raw.startswith("{\"") else html.unescape(raw))
+    except ValueError:
+        return None
+    jobs = []
+    for v in (state.get("vacancySearchResult") or {}).get("vacancies") or []:
+        vid = v.get("vacancyId")
+        if not vid or v.get("@isAdv"):
+            continue
+        company = ((v.get("company") or {}).get("visibleName") or (v.get("company") or {}).get("name") or "")
+        formats = {e.upper() for wf in v.get("workFormats") or [] for e in wf.get("workFormatsElement") or []}
+        mode = "remote" if "REMOTE" in formats else "hybrid" if "HYBRID" in formats else "onsite" if "ON_SITE" in formats else ""
+        jobs.append({
+            "title": re.sub(r"\s+", " ", v.get("name") or "").strip()[:200] or "Вакансия",
+            "url": f"https://hh.ru/vacancy/{vid}",
+            "company": company.split("::")[0].strip()[:120],
+            "location": ((v.get("area") or {}).get("name") or "")[:120],
+            "comp": _hh_money(v.get("compensation")),
+            "posted": ((v.get("publicationTime") or {}).get("$") or "")[:40],
+            "mode": mode,
+        })
+    return jobs
+
+
+def _hh_part(part, remote):
+    """One query part: the full search pages, falling back to the RSS (20) if hh.ru
+    changes its page or asks for a captcha."""
+    jobs = []
+    try:
+        for page in range(HH_PAGES):
+            if page:
+                time.sleep(0.7)
+            with urlopen(Request(hh_search_url(part, remote, page), headers=HH_BROWSER), timeout=30) as resp:
+                got = parse_hh_search(resp.read(8_000_000).decode("utf-8", "replace"))
+            if got is None:
+                raise ValueError("no HH-Lux-InitialState")
+            jobs += got
+            if len(got) < HH_PAGE_SIZE:
+                break
+        return jobs
+    except Exception as e:
+        if jobs:
+            return jobs
+        logging.getLogger("job-radar.guests").info("hh.ru full search failed (%s), using RSS", e)
+    req = Request(hh_url(part, remote), headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"})
+    with urlopen(req, timeout=30) as resp:
+        return parse_hh_rss(resp.read(3_000_000))
+
+
 def _hh_get(query, remote):
     jobs, seen = [], set()
     for i, part in enumerate(hh_parts(query)):
         if i:
             time.sleep(0.7)
-        req = Request(hh_url(part, remote), headers={"User-Agent": "Mozilla/5.0 (JobRadar personal job alerts)"})
-        with urlopen(req, timeout=30) as resp:
-            for j in parse_hh_rss(resp.read(3_000_000)):
-                if j["url"] not in seen:
-                    seen.add(j["url"])
-                    jobs.append(j)
+        for j in _hh_part(part, remote):
+            if j["url"] not in seen:
+                seen.add(j["url"])
+                jobs.append(j)
     return jobs
 
 
