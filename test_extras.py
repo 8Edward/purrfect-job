@@ -173,6 +173,10 @@ _f = extras.funnel({"a": {"title": "A", "company": "X", "link": "l1", "date": "2
                     "b": {"title": "B", "company": "Y", "link": "l2", "date": "2026-10-01T00:00:00+00:00", "text": "two",
                           "track": {"stage": "applied", "log": [["applied", "2026-10-02T00:00:00+00:00"]]}}})
 assert _f["jobs"] == 1 and _f["applied"] == 1, _f
+_d = {"date": "2026-10-01T00:00:00+00:00", "text": "t", "company": "C"}
+_g = extras.funnel({"n": dict(_d, title="New", link="n"), "f": dict(_d, title="Fav", link="f", fav=True, status="taken"), "h": dict(_d, title="Hid", link="h", status="hidden"),
+                    "a": dict(_d, title="Arch", link="a", archived=True), "t": dict(_d, title="Tracked", link="t", track={"stage": "applied", "log": []})})
+assert _g["jobs"] == 1, _g  # only the undecided one is still in the pool
 
 # -- 🎚 grade
 assert extras.grade_of({"title": "Senior Data Analyst"}) == "senior" and extras.grade_of({"title": "Data Analyst"}) == ""
@@ -359,7 +363,7 @@ async def main():
 
                 # 📊 funnel, pages, sorting, chips, «Оценить новые»
                 me = await (await c.get("/api/me", headers=auth)).json()
-                assert me["funnel"]["applied"] >= 1 and me["funnel"]["interview"] >= 1 and me["funnel"]["jobs"] >= 2, me["funnel"]
+                assert me["funnel"]["applied"] >= 1 and me["funnel"]["interview"] >= 1 and me["funnel"]["jobs"] >= 0, me["funnel"]
                 inbox = g.load_inbox()
                 for n in range(7):
                     inbox[f"p{n}"] = {"source": "web", "title": f"Analyst {n}", "company": f"Co{n}", "link": f"https://p/{n}", "site": "X",

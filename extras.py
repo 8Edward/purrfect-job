@@ -718,8 +718,10 @@ def funnel(inbox, fits=None):
             reached["interview"] += 1
         if "offer" in log:
             reached["offer"] += 1
-    # a vacancy already responded to is done with: it leaves the «вакансий» count (responses are counted next to it)
-    shown = [(k, v) for k, v in inbox.items() if (fits is None or fits(v)) and not (v.get("track") or {}).get("stage")]
+    # «вакансий» = the pool still to go through: what fits the settings and has not been decided on (not starred, hidden,
+    # archived or responded to). Every decision except the AI score takes a vacancy out of it.
+    shown = [(k, v) for k, v in inbox.items() if (fits is None or fits(v)) and v.get("status", "new") == "new"
+             and not v.get("archived") and not v.get("fav") and not (v.get("track") or {}).get("stage")]
     return {"jobs": len(groups(shown)), **reached}
 
 
