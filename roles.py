@@ -30,6 +30,7 @@ CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
 PER_RUN = 2         # calls per background run (each ~20 s, the résumé AI waits meanwhile)
 DAILY = 40          # calls per day (owner's subscription, shared with everything else)
+DEEP_DAILY = 20     # description calls per day, a budget of their own (title labelling used to eat the whole cap)
 DEEP_PER_RUN = 6    # vacancies per second-look call (each page is read first, then one Claude call)
 DEEP_CHARS = 1800   # description characters given to Claude per vacancy
 MAX_ENTRIES = 30000
@@ -84,6 +85,11 @@ def label_of(job, data=None):
 def calls_left(data=None):
     meta = (data or load())["meta"]
     return DAILY - (meta.get("n", 0) if meta.get("day") == date.today().isoformat() else 0)
+
+
+def deep_calls_left(data=None):
+    meta = (data or load())["meta"]
+    return DEEP_DAILY - (meta.get("dn", 0) if meta.get("dday") == date.today().isoformat() else 0)
 
 
 def unknown(jobs, known):
@@ -196,7 +202,7 @@ async def deep(ai, jobs, graph):
     import asyncio
     import jdfetch
     data = load()
-    if calls_left(data) <= 0 or not jobs:
+    if deep_calls_left(data) <= 0 or not jobs:
         return 0
     texts = await asyncio.gather(*(asyncio.to_thread(jdfetch.describe, jdfetch.link_of(j)) for j in jobs))
     got_text = [(j, t) for j, t in zip(jobs, texts) if t]
@@ -208,7 +214,7 @@ async def deep(ai, jobs, graph):
     today = date.today().isoformat()
     meta = data["meta"]
     if got_text:
-        meta.update(day=today, n=(meta.get("n", 0) if meta.get("day") == today else 0) + 1)
+        meta.update(dday=today, dn=(meta.get("dn", 0) if meta.get("dday") == today else 0) + 1)
     for j in jobs:
         v = data["labels"].get(key_of(j))
         if not v or v.get("ok") is not None:
