@@ -69,7 +69,7 @@ roles:
   data-engineer:
     names: [data engineer, дата инженер, инженер данных, etl developer, etl разработчик, dwh developer, dwh разработчик]
     also: [big data engineer, data warehouse engineer, data warehouse developer, data warehousing engineer, etl engineer,
-           data platform engineer, data integration engineer, data integration specialist, data pipeline engineer,
+           data platform engineer, data integration engineer, data integration specialist, data pipeline engineer, data developer, big data developer, data architect,
            dwh engineer, dwh инженер, разработчик хранилища данных, spark developer, hadoop developer, разработчик etl,
            data migration specialist, database developer, разработчик баз данных, sql developer, sql разработчик]
     links: {data-quality: far, ml-engineer: far, solution-architect: far}
