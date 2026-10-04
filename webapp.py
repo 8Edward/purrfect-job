@@ -34,6 +34,7 @@ import filtercheck
 import guests
 import resume
 import letters
+import scoring
 import resume_ai
 import roles
 import sourcestats
@@ -716,7 +717,14 @@ class WebApp:
         if age in ("1", "3", "7", "14"):
             since = extras.age_cutoff(m, int(age))
             items = [(k, v) for k, v in items if datetime.fromisoformat(v["date"]) >= since]
-        page, total = page_json(items, request.query.get("sort", "date"), offset, limit)
+        sort = request.query.get("sort", "date")
+        ctx = scoring.context(m)
+        if sort == "algo":  # «По совпадению слов»: the quick score, best first (newest first among equals)
+            items = sorted(items, key=lambda kv: -(scoring.score(ctx, kv[1])["score"] or 0))
+            sort = "date"
+        page, total = page_json(items, sort, offset, limit)
+        for d in page:
+            d["algo"] = scoring.score(ctx, inbox.get(d["key"]) or {})
         unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
         origins = {}
         if view == "new":  # the sources in today's pool, biggest first (for «Исключить источник»)

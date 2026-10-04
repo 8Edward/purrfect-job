@@ -76,8 +76,9 @@ const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 "
 const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin).join(", ")}` : "");
 function aiLine(i) {
   if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
+  const algo = i.algo && i.algo.score ? `<div class="algo" title="${esc(i.algo.why.join("; "))}">⚖️ ${i.algo.score}/5 по совпадению слов${i.algo.why.length ? " · " + esc(i.algo.why[0]) : ""}</div>` : "";
   if (st.scoring.has(i.key)) return '<div class="ai busy">✨ ИИ оценивает…</div>';
-  return st.me && st.me.ai ? '<button class="ai-btn" data-score>✨ Оценить ИИ: подходит ли мне</button>' : "";
+  return algo + (st.me && st.me.ai ? '<button class="ai-btn" data-score>✨ Оценить ИИ: подходит ли мне</button>' : "");
 }
 function openLink(url) {
   if (!url) return;
