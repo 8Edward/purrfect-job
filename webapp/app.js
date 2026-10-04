@@ -635,22 +635,35 @@ async function runSearch() {
      every later portion only adds what the earlier ones did not find */
   const LATER = [["chan", "свежие посты каналов"], ["hh", "hh.ru"], ["hima", "Himalayas"]];
   const src = {}, names = [["inbox", "лента"], ["channels", "каналы"], ["sites", "сайты"], ["hh", "hh.ru"]];
-  let noRole = false;
+  let noRole = false, waitingFor = "";
   const head = (waiting) => {
+    waitingFor = waiting || "";
     const parts = names.filter(([k]) => src[k]).map(([k, n]) => `${n} ${src[k]}`);
     $("#res-head").innerHTML = (noRole ? "Этой роли пока нет в графе: показываю точные совпадения. Граф можно дополнить в rolegraph.yml.<br>" : "")
-      + `Найдено: <b>${st.results.length}</b>` + (parts.length ? ` · просмотрел: ${esc(parts.join(", "))}` : "")
+      + `Найдено: <b>${Math.min(st.reveal, st.results.length)}</b>` + (parts.length ? ` · просмотрел: ${esc(parts.join(", "))}` : "")
       + (waiting ? ` · ещё ищу: ${esc(waiting)}…` : "");
   };
+  /* the counter climbs one vacancy at a time, smoothly (a whole portion takes about a second), and the rows appear with it */
+  st.reveal = 0;
+  st.results = [];
+  clearInterval(st.revealT);
+  st.revealT = setInterval(() => {
+    if (seq !== st.searchSeq) return clearInterval(st.revealT);
+    const left = st.results.length - st.reveal;
+    if (left <= 0) return;
+    st.reveal += Math.max(1, Math.ceil(left / 25));  // 25 ticks of ~60 ms at most per portion
+    head(waitingFor);
+    renderResults();
+  }, 60);
   try {
     const d = await api(base + "&part=fast");
     if (seq !== st.searchSeq) return;  // a newer search is on its way: drop this answer
     st.results = d.items;
+    if (!d.items.length) $("#results").innerHTML = "";  // no skeleton while the slower sources are still searching
     noRole = d.no_role;
     renderGraph(d.graph);
     for (const [k, n] of Object.entries(d.sources || {})) src[k] = (src[k] || 0) + n;
     head(LATER[0][1]);
-    renderResults();
     haptic();
     for (let i = 0; i < LATER.length; i++) {
       let more;
@@ -659,18 +672,22 @@ async function runSearch() {
       st.results = st.results.concat(more.items);
       for (const [k, n] of Object.entries(more.sources || {})) src[k] = (src[k] || 0) + n;
       head(LATER[i + 1] && LATER[i + 1][1]);
-      if (more.items.length) renderResults();
     }
     head("");
+    while (st.reveal < st.results.length && seq === st.searchSeq) await new Promise((r) => setTimeout(r, 50));  // let the counter finish
+    clearInterval(st.revealT);
+    st.reveal = Infinity;
+    head("");
     renderResults();
-  } catch (e) { $("#results").innerHTML = ""; $("#res-head").textContent = ""; fail(e); }
+  } catch (e) { clearInterval(st.revealT); $("#results").innerHTML = ""; $("#res-head").textContent = ""; fail(e); }
 }
 function renderResults() {
-  $("#results").innerHTML = st.results.length ? st.results.map((i, n) => {
+  const shown = st.results.slice(0, st.reveal ?? st.results.length);  // while searching, the rows appear with the counter
+  $("#results").innerHTML = shown.length || st.results.length ? shown.map((i, n) => {
     const mark = i.status === "hidden" ? " ✕" : i.fav ? " ★" : "";
     return `<button class="row" data-n="${n}"><b>${esc(i.title)}${mark}</b><span class="m ${i.match.kind === "exact" ? "exact" : ""}">${esc(i.match.label)}</span>
       <span class="s">${esc([i.company, originOf(i), when(i.date)].filter(Boolean).join(" · "))}</span></button>`;
-  }).join("") : ($("#q").value.trim() && $("#res-head").textContent.startsWith("Найдено") ? '<div class="empty"><b>Ничего</b>Попробуйте «Похожие роли» или другое слово.</div>' : "");
+  }).join("") : ($("#q").value.trim() && st.reveal === Infinity && $("#res-head").textContent.startsWith("Найдено") ? '<div class="empty"><b>Ничего</b>Попробуйте «Похожие роли» или другое слово.</div>' : "");
   $$("#results .row").forEach((r) => (r.onclick = () => openSheet(st.results[+r.dataset.n], true)));
 }
 function renderGraph(g) {
