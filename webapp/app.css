@@ -689,3 +689,30 @@ html[data-skin="office"] .feed-set { font-family: var(--f-body); }
 .skin .sw3 { box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); }
 .hero .m-office rect[x="84"], .hero .m-office rect[x="94"] { fill: #c9a24a; }  /* the briefcase: navy on a navy panel was invisible */
 .hero .m-office path[d^="M91 60"] { stroke: #c9a24a; }
+
+/* 🐾 living cats: blink, tail, small idle moves. Only transforms and opacity (cheap); off for «reduce motion». */
+.mascot svg * { transform-box: fill-box; }
+@keyframes cat-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes cat-tail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
+@keyframes cat-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+@keyframes cat-ear { 0%, 86%, 100% { transform: rotate(0); } 89% { transform: rotate(-12deg); } 92% { transform: rotate(4deg); } }
+@keyframes cat-led { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes cat-sway { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes cat-sun { to { transform: rotate(360deg); } }
+@keyframes cat-bird { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+/* eyes: the yellow circles */
+.mascot circle[fill="#d8a846"] { transform-origin: center; animation: cat-blink 4.5s infinite; }
+.mascot .m-office circle[fill="#d8a846"] { animation-delay: 1.2s; }
+/* tails: the round-capped strokes in the cat's colour */
+.mascot path[stroke="#96929c"] { transform-origin: 0% 100%; animation: cat-tail 2.6s ease-in-out infinite; }
+/* hybrid: head bobs to the music, one ear twitches, the laptop light blinks */
+.mascot .m-hybrid { animation: cat-breathe 3s ease-in-out infinite; }
+.mascot .m-hybrid path[d^="M46 20"] { transform-origin: 50% 100%; animation: cat-ear 5s infinite; }
+.mascot .m-hybrid circle[cx="61"][cy="64"] { animation: cat-led 1.6s ease-in-out infinite; }
+/* remote: the hammock sways, the sun turns, the bird hops */
+.mascot .m-remote { transform-origin: 50% 0%; animation: cat-sway 4s ease-in-out infinite; }
+.mascot .m-remote g[stroke="#ffc531"] { transform-origin: 100px 16px; transform-box: view-box; animation: cat-sun 12s linear infinite; }
+.mascot .m-remote circle[cx="22"], .mascot .m-remote circle[cx="20"], .mascot .m-remote path[d^="M24 30"] { animation: cat-bird 1.4s ease-in-out infinite; }
+/* office: calm breathing */
+.mascot .m-office { animation: cat-breathe 3.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mascot svg, .mascot svg * { animation: none !important; } }
