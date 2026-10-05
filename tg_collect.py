@@ -141,6 +141,8 @@ class JobFilter:
             return "стоп-слово"
         if looks_like_article(text):
             return "похож на статью"
+        if JOB_CARD.search(text):
+            return "роль не в названии"
         return "нет слова «вакансия»"
 
     def tags_for(self, text):

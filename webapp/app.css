@@ -528,7 +528,7 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 #watch .lbl { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .srow { display: flex; align-items: center; gap: 8px; }
 .srow .row { flex: 1; min-width: 0; }
-.srow .bpick { width: 20px; height: 20px; flex: none; margin-bottom: 7px; accent-color: var(--accent); }
+.srow .bpick { width: 20px; height: 20px; flex: none; margin: 0 0 7px; accent-color: var(--accent); }
 .srow .sdone { width: 20px; flex: none; text-align: center; color: var(--ok); font-weight: 700; margin-bottom: 7px; }
 .bitem { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; margin: 8px 0; background: var(--surface); }
 .bitem small { display: block; color: var(--muted); font-size: 12px; }

@@ -915,7 +915,7 @@ async function loadSaved() {
         const done = i.track && i.track.stage;
         return `<div class="srow">${batch ? (done ? '<span class="sdone" title="Отклик уже есть">✓</span>'
           : `<input type="checkbox" class="bpick" data-k="${esc(i.key)}" ${open.indexOf(i) < 10 ? "checked" : ""} aria-label="Откликнуться">`) : ""}
-          <button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "отклик: " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button></div>`;
+          <button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "✓ " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button></div>`;
       }).join("") : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`);
     $$("#saved .row").forEach((r) => (r.onclick = () => openSheet(items[+r.dataset.n], false)));
     const picked = () => $$("#saved .bpick").filter((c) => c.checked).map((c) => c.dataset.k);
