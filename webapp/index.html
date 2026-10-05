@@ -37,6 +37,7 @@
         <div class="stat"><b id="fn-offer">–</b><span>офферов</span></div>
       </div>
     </header>
+    <button class="watchbar" id="watchbar" hidden></button>
     <div class="chips wrap" id="filters" role="group" aria-label="Фильтр">
       <button class="chip" data-f="all" aria-pressed="true">Все</button>
       <button class="chip" data-f="ru" aria-pressed="false">#ru_company</button>
@@ -133,6 +134,8 @@
   <!-- СОХРАНЁННОЕ -->
   <section class="screen" id="s-saved" hidden>
     <h2 class="h2">Мои вакансии</h2>
+    <details class="group fold" id="watchbox"><summary><span class="sn">⭐ Избранные компании</span><small id="sum-watch"></small></summary>
+      <div class="pad" id="watch"></div></details>
     <div class="seg three" role="group" aria-label="Список">
       <button data-v="fav" aria-pressed="true">★ Избранное</button>
       <button data-v="hidden" aria-pressed="false">✕ Скрытые</button>

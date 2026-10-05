@@ -35,6 +35,7 @@ import sourcestats
 import tierb
 import tg_collect as tc
 import tunnel
+import watch
 import webapp
 import workmode
 
@@ -1322,6 +1323,11 @@ class JobRadar:
                     log.info("digest for %s: %d of %d", m.name, len(items), total)
                     if items:
                         await self.send_screen(*self.digest_screen(items, total), guest=self.g(m))
+                if not m.load_state().get("alerts_off"):
+                    fresh = watch.to_announce(m)
+                    if fresh:
+                        await self.send_screen(*self.watch_screen(fresh), guest=self.g(m))
+                        watch.mark_announced(m, [k for k, _ in fresh])
                 if not 9 <= extras.local_now(m).hour < 22:
                     continue
                 inbox = m.load_inbox()
@@ -1349,6 +1355,19 @@ class JobRadar:
         if total > len(items):
             lines.append(f"\nВсего новых за сутки: {total}")
         rows = [[app_button(self.app_url, "📱 Разобрать в приложении")]] if self.app_url else []
+        return "\n".join(lines), rows + [[HOME_BTN]]
+
+    def watch_screen(self, fresh):
+        """⭐ New vacancies at companies from favourites."""
+        lines = [f"⭐ <b>{len(fresh)} {plural(len(fresh), 'новая вакансия', 'новые вакансии', 'новых вакансий')} у избранных компаний</b>", ""]
+        for _, item in fresh[:8]:
+            title = esc(short(title_of(item), 60))
+            if item.get("link"):
+                title = f'<a href="{esc(item["link"])}">{title}</a>'
+            lines.append(f"• <b>{esc(short(item.get('company', ''), 30))}</b>: {title}")
+        if len(fresh) > 8:
+            lines.append(f"…и ещё {len(fresh) - 8}")
+        rows = [[app_button(self.app_url, "⭐ Открыть в приложении")]] if self.app_url else []
         return "\n".join(lines), rows + [[HOME_BTN]]
 
     def reminder_screen(self, due):

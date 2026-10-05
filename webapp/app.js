@@ -120,6 +120,9 @@ async function loadMe() {
     + (m.next_check ? ` · следующая через ${m.next_check} мин` : "");
   const f = m.funnel || {};
   for (const k of ["jobs", "applied", "interview", "offer"]) $("#fn-" + k).textContent = f[k] ?? "–";
+  const wb = $("#watchbar");
+  wb.hidden = !m.watch_new;
+  wb.textContent = m.watch_new ? `⭐ ${m.watch_new} ${plural(m.watch_new, "новая вакансия", "новые вакансии", "новых вакансий")} у избранных компаний →` : "";
   $("#badge").hidden = !s.new;
   $("#badge").textContent = s.new > 99 ? "99+" : s.new;
 }
@@ -876,7 +879,26 @@ function renderGraph(g) {
 
 /* ---------------------------------------------------------------- my vacancies */
 
+/* ⭐ Избранные компании: companies of favourites (or added by hand) and their NEW vacancies */
+async function loadWatch() {
+  const d = await api("/api/watch");
+  const box = $("#watch");
+  $("#sum-watch").textContent = d.new ? `${d.new} ${plural(d.new, "новая", "новые", "новых")}` : d.companies.length ? `${d.companies.length}` : "";
+  box.innerHTML = (d.new ? `<div class="lbl">Новые вакансии</div>${d.items.map((i, n) => `<button class="row" data-wn="${n}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")}` : "")
+    + `<div class="lbl">${d.companies.length ? "Следим за компаниями (из избранного и добавленные)" : "Пока никого: добавьте вакансию в избранное или впишите компанию"}</div>`
+    + `<div class="wcos">${d.companies.map((c) => `<span class="wco"><span>${esc(c.name)}${c.new ? ` <b>+${c.new}</b>` : ""}</span><button data-wx="${esc(c.key)}" aria-label="Убрать ${esc(c.name)}">✕</button></span>`).join("")}</div>`
+    + `<div class="wadd"><input class="inp" id="watch-name" maxlength="80" placeholder="Название компании"><button class="chip" id="watch-add">Добавить</button></div>`;
+  $$("#watch [data-wn]").forEach((b) => (b.onclick = () => openSheet(d.items[+b.dataset.wn], false)));
+  $$("#watch [data-wx]").forEach((b) => (b.onclick = async () => { try { await api("/api/watch", { op: "remove", key: b.dataset.wx }); loadWatch(); loadMe().catch(() => {}); } catch (e) { fail(e); } }));
+  $("#watch-add").onclick = async () => {
+    const name = $("#watch-name").value.trim();
+    if (!name) return;
+    try { await api("/api/watch", { op: "add", name }); toast("Слежу за компанией"); loadWatch(); } catch (e) { fail(e); }
+  };
+}
+
 async function loadSaved() {
+  loadWatch().catch(() => {});
   $$("#s-saved .seg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === st.saved));
   const box = $("#saved");
   try {
@@ -1408,6 +1430,7 @@ $("#view-toggle").onclick = () => {
   toast(st.view === "list" ? "Лента списком" : "Лента карточками");
   renderStack();
 };
+$("#watchbar").onclick = () => { $("#watchbox").open = true; show("saved"); };
 $$("#s-saved .seg button").forEach((b) => (b.onclick = () => { st.saved = b.dataset.v; loadSaved(); }));
 $("#b-yes").onclick = () => topCard() && decide(topCard(), true);
 $("#b-no").onclick = () => topCard() && decide(topCard(), false);

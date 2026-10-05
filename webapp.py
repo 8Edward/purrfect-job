@@ -38,6 +38,7 @@ import resume_ai
 import roles
 import sourcestats
 import tg_collect as tc
+import watch
 
 log = logging.getLogger("job-radar.app")
 
@@ -509,6 +510,8 @@ class WebApp:
         r.add_post("/api/apply/batch/send", self.api_apply_batch_send)
         r.add_get("/api/resume/original", self.api_original)
         r.add_post("/api/resume/original/send", self.api_original_send)
+        r.add_get("/api/watch", self.api_watch)
+        r.add_post("/api/watch", self.api_watch_change)
         r.add_get("/api/track", self.api_track)
         r.add_post("/api/track", self.api_track_set)
         r.add_post("/api/track/add", self.api_track_add)
@@ -682,6 +685,7 @@ class WebApp:
             "intervals": INTERVALS,
             "ai": resume_ai.allowed(m),
             "roles_ai": self.roles_summary() if m.is_owner else None,
+            "watch_new": len(watch.overview(m)[1]),
             "funnel": {**extras.funnel(inbox, jobs=False), "jobs": new_count},  # «вакансий» = the feed's own pool
             "stats": {
                 "new": new_count,
@@ -2012,6 +2016,27 @@ class WebApp:
             log.exception("original to %s failed", m.id)
             return self.bad("Не получилось отправить файл в чат. Откройте чат с ботом и нажмите Start.", 500)
         return web.json_response({"ok": True})
+
+    async def api_watch(self, request):
+        """⭐ Избранные компании: the companies and their new vacancies."""
+        m = self.member(request)
+        companies, fresh = watch.overview(m)
+        return web.json_response({"companies": companies, "items": grouped_json(fresh[:60]), "new": len(fresh)})
+
+    async def api_watch_change(self, request):
+        """{op: "add", name} / {op: "remove", key}."""
+        m = self.member(request)
+        data = await self.body(request)
+        try:
+            if data.get("op") == "add":
+                watch.add(m, data.get("name"))
+            elif data.get("op") == "remove":
+                watch.remove(m, data.get("key"))
+            else:
+                return self.bad("Не понял действие")
+        except ValueError as e:
+            return self.bad(str(e))
+        return await self.api_watch(request)
 
     async def api_track(self, request):
         m = self.member(request)
