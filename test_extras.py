@@ -471,27 +471,6 @@ async def main():
                 s = await (await c.post("/api/apply/send", headers=auth, json={"key": "mail1", "to": "hr@uzum.com", "subject": r["subject"],
                                                                                 "text": r["letter"], "vid": r["resume"]["vid"]})).json()
                 assert s["result"] == "dry" and s["item"]["track"]["stage"] == "applied" and s["item"]["fav"]
-                # ✉️ batch: drafts for starred vacancies without a response, one confirmation, never twice
-                apply.BATCH_PAUSE = 0
-                inbox = g.load_inbox()
-                for n in range(2):
-                    inbox[f"fav{n}"] = {"source": "web", "title": f"BI Analyst {n}", "company": "Co", "site": "X", "link": f"https://x/{n}",
-                                        "status": "taken", "fav": True, "tags": [], "date": now.isoformat(),
-                                        "text": f"BI analyst, SQL. Send CV to jobs{n}@co.com" if n == 0 else "BI analyst, SQL. Apply on the site."}
-                g.save_inbox(inbox)
-                app.ai = FakeClaude([json.dumps({"text": "Hello! I am a data analyst writing SQL queries to PostgreSQL. " * 3})] * 2)
-                job = await (await c.post("/api/apply/batch", headers=auth, json={"keys": ["fav0", "fav1", "mail1"]})).json()
-                assert job["total"] == 2  # mail1 already has a response
-                j = await wait(c, auth, job["job"])
-                assert j["status"] == "done" and len(j["result"]["drafts"]) == 2, j
-                d0, d1 = j["result"]["drafts"]
-                items = [{"key": d["key"], "to": (d["channels"]["email"] or [""])[0], "subject": d["subject"], "text": d["letter"],
-                          "vid": d["resume"]["vid"]} for d in (d0, d1)]
-                rep = (await (await c.post("/api/apply/batch/send", headers=auth, json={"items": items})).json())["report"]
-                assert [r["result"] for r in rep] == ["dry", "manual"], rep
-                assert g.load_inbox()["fav0"]["track"]["stage"] == "applied" and "track" not in g.load_inbox()["fav1"]
-                rep = (await (await c.post("/api/apply/batch/send", headers=auth, json={"items": items[:1]})).json())["report"]
-                assert rep[0]["result"] == "already"
                 del os.environ["JR_APPLY_DRY"]
 
                 # 🗑 deleting the last résumé version sticks (it used to come back from cv.txt)

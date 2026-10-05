@@ -478,7 +478,13 @@ details.fold > summary::after { flex: none; }
 .bulk { display: flex; gap: 8px; padding: 0 14px 10px; }
 .bulk button { flex: 1; border: 1px solid var(--line); background: var(--surface2); color: var(--fg); border-radius: var(--r-sm); padding: 8px 6px; font-size: 13px; }
 details.fold .words { padding: 0 14px 8px; }
-.stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 495px), 420px); }  /* room for the sort bar */
+.stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 465px), 440px); }  /* room for the folded filters */
+/* «⚙︎ Фильтры» folded next to «✨ Оценить ИИ»; open, the block takes the whole row */
+.ftop { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-bottom: 10px; }
+.ftop #fbox { flex: 1 1 160px; min-width: 0; margin: 0; }
+.ftop #fbox[open] { flex-basis: 100%; }
+.ftop #fbox .pad { padding: 0 12px 4px; }
+.ftop #score-new { flex: none; align-self: stretch; }
 
 /* FAQ, radar settings, original file */
 .faq details { border-bottom: 1px solid var(--line); padding: 10px 0; }
@@ -512,7 +518,6 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 .ap-btns button.yes { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 #ap-text { min-height: 34vh; }
 
-/* ✉️ batch responses */
 .batchbar { display: grid; gap: 6px; margin-bottom: 10px; }
 .watchbar { display: block; width: 100%; margin: 0 0 10px; padding: 10px 12px; text-align: left; border: 1px solid var(--accent); border-radius: var(--r-sm); background: var(--surface); font-size: 14px; font-weight: 600; }
 .watchbar[hidden] { display: none; }
@@ -526,17 +531,6 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 #watch .wadd input { flex: 1; min-width: 0; width: 0; }
 #watch .wadd .chip { padding: 0 12px; }
 #watch .lbl { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
-.srow { display: flex; align-items: center; gap: 8px; }
-.srow .row { flex: 1; min-width: 0; }
-.srow .bpick { width: 20px; height: 20px; flex: none; margin: 0 0 7px; accent-color: var(--accent); }
-.srow .sdone { width: 20px; flex: none; text-align: center; color: var(--ok); font-weight: 700; margin-bottom: 7px; }
-.bitem { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; margin: 8px 0; background: var(--surface); }
-.bitem small { display: block; color: var(--muted); font-size: 12px; }
-.bitem details summary { cursor: pointer; color: var(--accent); font-weight: 700; font-size: 13px; margin-top: 6px; }
-.bitem details .inp { margin-top: 6px; }
-.bitem.done { opacity: .5; }
-.bsum p { font-size: 13px; line-height: 1.45; margin: 6px 0; }
-html[data-skin="remote"] .bitem { border-radius: 16px; }
 
 /* 🤖 roles Claude guessed («Ещё») */
 #roles-list .hint, #roleai .hint { margin: 0 14px 10px; }

@@ -38,6 +38,8 @@
       </div>
     </header>
     <button class="watchbar" id="watchbar" hidden></button>
+    <div class="ftop">
+    <details class="group fold" id="fbox"><summary><span class="sn">⚙︎ Фильтры</span><small id="sum-filters"></small></summary><div class="pad">
     <div class="chips wrap" id="filters" role="group" aria-label="Фильтр">
       <button class="chip" data-f="all" aria-pressed="true">Все</button>
       <button class="chip" data-f="ru" aria-pressed="false">#ru_company</button>
@@ -65,7 +67,9 @@
         <option value="">Любая дата</option><option value="1">Сегодня</option><option value="3">3 дня</option>
         <option value="7">7 дней</option><option value="14">14 дней</option>
       </select>
-      <button class="ai-btn sm" id="score-new" hidden>✨ Оценить новые</button>
+    </div>
+    </div></details>
+    <button class="ai-btn sm" id="score-new" hidden>✨ Оценить новые</button>
     </div>
     <div class="stack" id="stack"></div>
     <div id="feed-list" hidden></div>
@@ -79,8 +83,25 @@
   <!-- ПОИСК -->
   <section class="screen" id="s-search" hidden>
     <h2 class="h2">Поиск</h2>
+    <h3 class="feed-set">⌕ Поиск по всем источникам</h3>
+    <form class="field" id="search-form">
+      <span aria-hidden="true">⌕</span>
+      <input id="q" placeholder="Например: бизнес аналитик" autocomplete="off" enterkeyhint="search" maxlength="80">
+      <button class="go" type="submit">Найти</button>
+    </form>
+    <div class="seg" role="group" aria-label="Режим">
+      <button id="m-exact" aria-pressed="true">🎯 Точно</button>
+      <button id="m-similar" aria-pressed="false">🕸 Похожие роли</button>
+    </div>
+    <div class="hint" id="mode-hint"></div>
+    <div id="graphbox" hidden>
+      <div class="graph" id="graph"></div>
+      <div class="legend"><span><i></i>синоним</span><span><i class="a"></i>смежная</span><span><i class="f"></i>дальняя</span><span>· нажми, чтобы убрать</span></div>
+    </div>
+    <div class="res-head" id="res-head"></div>
+    <div id="results"></div>
     <h3 class="feed-set">📥 Что попадает в ленту</h3>
-    <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск ниже они не влияют. Нажмите на блок, чтобы открыть.</div>
+    <div class="hint">Настройки для вкладки «Лента»: по ним бот сам приносит новые вакансии. На поиск выше они не влияют. Нажмите на блок, чтобы открыть.</div>
     <details class="group fold" id="g-words"><summary><span class="sn">🎯 Что искать</span><small id="sum-role"></small></summary><div class="words" id="w-role"></div>
       <button type="button" class="link reset-words" data-g="role">Сбросить</button>
       <form class="add" data-group="role"><input placeholder="Добавить слова через запятую" maxlength="300"><button>+</button></form></details>
@@ -103,23 +124,6 @@
     <details class="group fold" id="g-country"><summary><span class="sn">🌏 Откуда берут</span><small id="sum-country"></small></summary>
       <div class="tg"><span>Скрывать вакансии, куда не берут из моей страны<small>например «только США» или «только Европа»; где страна не указана, вакансия остаётся</small></span><button class="sw" id="country-on" aria-pressed="false" aria-label="Фильтр по стране"></button></div>
       <div class="tzrow one"><label>Я живу в<select class="inp" id="country-key"></select></label></div></details>
-    <h3 class="feed-set">⌕ Поиск по всем источникам</h3>
-    <form class="field" id="search-form">
-      <span aria-hidden="true">⌕</span>
-      <input id="q" placeholder="Например: бизнес аналитик" autocomplete="off" enterkeyhint="search" maxlength="80">
-      <button class="go" type="submit">Найти</button>
-    </form>
-    <div class="seg" role="group" aria-label="Режим">
-      <button id="m-exact" aria-pressed="true">🎯 Точно</button>
-      <button id="m-similar" aria-pressed="false">🕸 Похожие роли</button>
-    </div>
-    <div class="hint" id="mode-hint"></div>
-    <div id="graphbox" hidden>
-      <div class="graph" id="graph"></div>
-      <div class="legend"><span><i></i>синоним</span><span><i class="a"></i>смежная</span><span><i class="f"></i>дальняя</span><span>· нажми, чтобы убрать</span></div>
-    </div>
-    <div class="res-head" id="res-head"></div>
-    <div id="results"></div>
   </section>
 
   <!-- РЕЗЮМЕ -->

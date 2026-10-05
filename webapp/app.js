@@ -151,6 +151,14 @@ function renderExclude(d) {
   $("#ex-rvc").dataset.name = rvc || "";
   $("#ex-rvc").setAttribute("aria-pressed", gone.some((n) => RVC.test(n)));
   $$("[data-exoff]").forEach((b) => (b.onclick = () => excludeSource(b.dataset.exoff, false)));
+  st.excluded = gone.length;
+  renderFilterSum();
+}
+/* the folded «Фильтры» block says how many filters are on, so a narrowed feed is never a surprise */
+function renderFilterSum() {
+  const n = (st.filter === "all" ? 0 : st.filter.split(",").length) + (st.excluded || 0)
+    + (st.sort !== "date" ? 1 : 0) + (st.grade ? 1 : 0) + (st.age ? 1 : 0);
+  $("#sum-filters").textContent = n ? "вкл. " + n : "нет";
 }
 async function excludeSource(origin, on) {
   try {
@@ -203,7 +211,7 @@ function renderStack() {
   }
   $("#acts").hidden = false;
   if (items.length < 8) moreFeed();
-  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · вправо — в избранное, влево — скрыть, вверх — оценка ИИ, вниз — отклик, тап — подробно` + (st.tzHidden ? ` · не подходят по поясу или стране: ${st.tzHidden}` : "");
+  $("#left").textContent = `Ещё ${Math.max(items.length, st.total)} · → ★ · ← скрыть · ↑ ИИ · ↓ отклик` + (st.tzHidden ? ` · не по поясу или стране: ${st.tzHidden}` : "");
   box.innerHTML = items.slice(0, 3).reverse().map((i, n, arr) => {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
@@ -316,6 +324,7 @@ function setFilter(f) {
   }
   st.filter = set.size ? [...set].join(",") : "all";
   $$("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.f === "all" ? st.filter === "all" : set.has(c.dataset.f)));
+  renderFilterSum();
   loadFeed().catch(fail);
 }
 /* «Избранное → Оценить все ИИ»: first tap says how many will be scored (the day's limit counts), the second runs it */
@@ -602,89 +611,6 @@ function renderApply(item, r) {
     try { await navigator.clipboard.writeText(text()); toast("Письмо скопировано"); } catch (e) { toast("Не получилось скопировать — выделите текст вручную"); }
   }));
 }
-/* ✉️ «Откликнуться на все»: drafts in the background → one review list → one confirmation */
-async function batchFlow(keys) {
-  st.sheet = { batch: true };
-  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Готовлю отклики</h3>
-    <div class="empty"><div class="spinner"></div><b id="bt-prog">0 из ${keys.length}</b>Пишу письмо под каждую вакансию, только по фактам из резюме.</div>`;
-  $("#sheet").hidden = $("#sheet-bg").hidden = false;
-  try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
-  try {
-    const d = await api("/api/apply/batch", { keys });
-    let j;
-    for (let n = 0; n < 600; n++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      j = await api("/api/resume/ai/" + d.job);
-      if (j.progress && $("#bt-prog")) $("#bt-prog").textContent = `${j.progress.done} из ${j.progress.total}`;
-      if (j.status !== "running") break;
-    }
-    if (j.status === "error") throw new Error(j.error);
-    renderBatch(j.result);
-  } catch (e) { closeSheet(); fail(e); }
-}
-function renderBatch(res) {
-  const ds = res.drafts, auto = (r) => (r.smtp || r.dry) && r.channels.email.length;
-  const where = (r) => auto(r) ? "📧 " + r.channels.email[0] : r.channels.email.length ? "📧 " + r.channels.email[0] + " (черновик)"
-    : r.channels.tg.length ? "💬 @" + r.channels.tg[0] : "🔗 сайт вакансии";
-  $("#sheet").innerHTML = `<div class="grip"></div><h3>✉️ Отклики готовы: ${ds.length}</h3>
-    <p class="hint">Проверьте письма (нажмите «Письмо», чтобы прочитать и поправить) и снимите галочки с лишних.${ds[0] && ds[0].dry ? " <b>Сухой режим: письма не отправляются.</b>" : ""}</p>
-    ${res.failed.length ? `<p class="hint">⚠️ Не получилось: ${res.failed.map((f) => esc(f.title) + " — " + esc(f.error)).join("; ")}</p>` : ""}
-    ${ds.map((r, n) => `<div class="bitem"><label class="check"><input type="checkbox" class="bsel" data-n="${n}" checked>
-        <span><b>${esc(r.title)}</b>${r.company ? " · " + esc(r.company) : ""}<small>${esc(where(r))} · резюме «${esc(r.resume.name)}»</small></span></label>
-      <details><summary>Письмо</summary>${r.channels.email.length ? `<input class="inp" data-subj="${n}" value="${esc(r.subject)}" maxlength="200">` : ""}
-        <textarea class="inp" data-text="${n}" rows="8">${esc(r.letter)}</textarea>${r.warning ? `<p class="hint">⚠️ ${esc(r.warning)}</p>` : ""}</details></div>`).join("")}
-    <div class="bsum" id="bt-sum"></div>
-    <div class="btns"><button class="yes" id="bt-send">Отправить выбранные</button><button id="bt-cancel">Отмена</button></div>`;
-  const chosen = () => $$(".bsel").filter((c) => c.checked).map((c) => +c.dataset.n);
-  const summary = () => {
-    const sel = chosen(), mail = sel.filter((n) => auto(ds[n])), hand = sel.filter((n) => !auto(ds[n]));
-    $("#bt-sum").innerHTML = (mail.length ? `<p><b>Уйдёт по почте (${mail.length}):</b> ${mail.map((n) => esc(ds[n].channels.email[0]) + " — " + esc(ds[n].title)).join("; ")}</p>` : "")
-      + (hand.length ? `<p><b>Откроем вручную (${hand.length}):</b> ${hand.map((n) => esc(ds[n].title)).join("; ")} — письмо уже будет готово, останется вставить.</p>` : "");
-    $("#bt-send").textContent = `Отправить выбранные (${sel.length})`;
-    delete $("#bt-send").dataset.sure;
-  };
-  $$(".bsel").forEach((c) => (c.onchange = summary));
-  summary();
-  $("#bt-cancel").onclick = closeSheet;
-  $("#bt-send").onclick = async () => {
-    const b = $("#bt-send"), sel = chosen();
-    if (!sel.length) return toast("Ничего не выбрано");
-    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = `Точно отправить ${sel.length}? Нажмите ещё раз`; return; }
-    b.disabled = true; b.textContent = "Отправляю…";
-    const items = sel.map((n) => ({ key: ds[n].key, to: auto(ds[n]) ? ds[n].channels.email[0] : "", vid: ds[n].resume.vid,
-      subject: ($(`[data-subj="${n}"]`) || {}).value || ds[n].subject, text: $(`[data-text="${n}"]`).value }));
-    try {
-      const d = await api("/api/apply/batch/send", { items });
-      const byKey = Object.fromEntries(d.report.map((r) => [r.key, r]));
-      const sent = d.report.filter((r) => r.result === "sent" || r.result === "dry").length;
-      const manual = sel.filter((n) => (byKey[ds[n].key] || {}).result === "manual");
-      haptic("ok");
-      toast(`Отправлено: ${sent}` + (manual.length ? ` · вручную: ${manual.length}` : ""));
-      if (manual.length) renderManualQueue(manual.map((n) => ({ ...ds[n], text: items[sel.indexOf(n)].text })));
-      else { closeSheet(); loadSaved(); loadMe().catch(() => {}); }
-    } catch (e) { b.disabled = false; fail(e); }
-  };
-}
-function renderManualQueue(list) {
-  $("#sheet").innerHTML = `<div class="grip"></div><h3>Осталось вручную: ${list.length}</h3>
-    <p class="hint">Нажмите — откроется вакансия, чат или почта, письмо уже скопировано, а письмо и PDF придут в чат с ботом. Вакансия отметится «Откликнулся».</p>
-    ${list.map((r, n) => `<div class="bitem"><b>${esc(r.title)}</b>${r.company ? " · " + esc(r.company) : ""}
-      <div class="ap-btns">${r.channels.email.map((m) => `<button data-q="${n}" data-how="mail" data-to="${esc(m)}">📧 Письмо на ${esc(m)}</button>`).join("")}
-        ${r.channels.tg.map((t) => `<button data-q="${n}" data-how="tg" data-to="${esc(t)}">💬 Открыть чат @${esc(t)}</button>`).join("")}
-        ${r.channels.link ? `<button data-q="${n}" data-how="site">🔗 Открыть вакансию</button>` : ""}</div></div>`).join("")}
-    <div class="btns"><button class="wide" id="mq-close">Готово</button></div>`;
-  $("#mq-close").onclick = () => { closeSheet(); loadSaved(); loadMe().catch(() => {}); };
-  $$("[data-q]").forEach((b) => (b.onclick = async () => {
-    const r = list[+b.dataset.q], how = b.dataset.how, to = b.dataset.to;
-    try { await navigator.clipboard.writeText(r.text); } catch (e) { /* copying may be blocked */ }
-    if (how === "mail") openLink(`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(r.subject)}&body=${encodeURIComponent(r.text)}`);
-    else if (how === "tg") openLink("https://t.me/" + to);
-    else openLink(r.channels.link);
-    try { await api("/api/apply/done", { key: r.key, how: how === "site" ? "на сайте" : how === "tg" ? "Telegram @" + to : "письмо " + to, text: r.text, vid: r.resume.vid }); }
-    catch (e) { fail(e); }
-    b.closest(".bitem").classList.add("done");
-  }));
-}
 function afterApply(item, fresh) {
   closeSheet();
   if (fresh) st.feed = st.feed.filter((i) => i.key !== item.key);
@@ -905,26 +831,14 @@ async function loadSaved() {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
     const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет.",
       archive: "Здесь будут вакансии, которые вы убрали в архив: откройте вакансию и нажмите «🗄 В архив»." };
-    const batch = st.saved === "fav" && st.me && st.me.owner;  // «Откликнуться на все»: only the owner, for now
-    const open = items.filter((i) => !(i.track && i.track.stage));
     const unscored = st.saved === "fav" && st.me && st.me.ai ? items.filter((i) => !i.ai).length : 0;
     box.innerHTML = (unscored ? `<div class="batchbar"><button class="ai-btn" id="score-fav">✨ Оценить все ИИ (${unscored})</button></div>` : "")
-      + (batch && open.length ? `<div class="batchbar"><span class="hint">Отметьте вакансии — я подготовлю письма, вы проверите и отправите одним нажатием.</span>
-        <button class="cta" id="batch-go">✉️ Откликнуться на отмеченные (<b id="batch-n">${Math.min(open.length, 10)}</b>)</button></div>` : "")
       + (items.length ? items.map((i, n) => {
         const done = i.track && i.track.stage;
-        return `<div class="srow">${batch ? (done ? '<span class="sdone" title="Отклик уже есть">✓</span>'
-          : `<input type="checkbox" class="bpick" data-k="${esc(i.key)}" ${open.indexOf(i) < 10 ? "checked" : ""} aria-label="Откликнуться">`) : ""}
-          <button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "✓ " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button></div>`;
+        return `<button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "✓ " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`;
       }).join("") : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`);
     $$("#saved .row").forEach((r) => (r.onclick = () => openSheet(items[+r.dataset.n], false)));
-    const picked = () => $$("#saved .bpick").filter((c) => c.checked).map((c) => c.dataset.k);
-    $$("#saved .bpick").forEach((c) => (c.onchange = () => {
-      if (picked().length > 10) { c.checked = false; toast("Не больше 10 за раз"); }
-      $("#batch-n").textContent = picked().length;
-    }));
     if ($("#score-fav")) $("#score-fav").onclick = scoreFav;
-    if ($("#batch-go")) $("#batch-go").onclick = () => (picked().length ? batchFlow(picked()) : toast("Отметьте хотя бы одну вакансию"));
   } catch (e) { fail(e); }
 }
 
@@ -1333,11 +1247,11 @@ function showReset() {
 
 const FAQ = [
   ["Что такое Purrfect Job?", "Личный помощник по поиску удалённой работы. Он сам читает каналы с вакансиями, сайты удалёнки и hh.ru и собирает подходящее в одну ленту. Он только <b>читает</b>: никому не пишет и никуда не откликается, откликаетесь вы сами."],
-  ["С чего начать? Лента пустая", "Сначала Purrfect Job не знает, что вы ищете. Проще всего загрузить резюме во вкладке «▤ Резюме»: я найду в нём роли и навыки и предложу слова, запрос для hh.ru и каналы. Заполню, только когда вы нажмёте «Да». Или настройте вручную: «Поиск» → блоки «Что попадает в ленту» наверху."],
+  ["С чего начать? Лента пустая", "Сначала Purrfect Job не знает, что вы ищете. Проще всего загрузить резюме во вкладке «▤ Резюме»: я найду в нём роли и навыки и предложу слова, запрос для hh.ru и каналы. Заполню, только когда вы нажмёте «Да». Или настройте вручную: «Поиск» → блоки «Что попадает в ленту» под поиском."],
   ["Как разбирать ленту?", "Свайп <b>вправо</b> или ★ — в избранное, <b>влево</b> или ✕ — скрыть, <b>вверх</b> — оценка ИИ, <b>вниз</b> — подготовить отклик (ничего не отправится без вашего нажатия), тап — полный текст и ссылка. Кнопка ☰ вверху показывает ленту списком, ↻ — проверить источники прямо сейчас."],
   ["Что за цифры в шапке?", "Ваша воронка: сколько вакансий найдено (одинаковые из разных источников считаются один раз), сколько откликов, собеседований и офферов. Отклики и этапы считаются по «📋 Мои отклики»."],
   ["Как отмечать отклики?", "Откройте вакансию и выберите этап: «Откликнулся», «Тестовое», «Собеседование», «Оффер» или «Отказ». Все отклики — во «Ещё» → «📋 Мои отклики», там же можно добавить отклик вручную. Если по отклику неделю тишина, бот напомнит в чате."],
-  ["Как откликнуться через приложение?", "Пока это есть только у владельца бота. Кнопка «✉️ Откликнуться» в вакансии (или свайп вниз) готовит письмо по вашему резюме и находит контакт: почту, @телеграм или ссылку. Вы читаете письмо и сами решаете, отправлять ли. Можно сразу на несколько: «Мои» → «Избранное», отметьте галочками (до 10) → «Откликнуться на отмеченные». Данные для писем (ФИО, город, зарплата, о себе) — во «Ещё» → «🧾 Профиль для откликов», поля на русском и английском (RUS / ENG)."],
+  ["Как откликнуться через приложение?", "Пока это есть только у владельца бота. Кнопка «✉️ Откликнуться» в вакансии (или свайп вниз) готовит письмо по вашему резюме и находит контакт: почту, @телеграм или ссылку. Вы читаете письмо и сами решаете, отправлять ли. Данные для писем (ФИО, город, зарплата, о себе) — во «Ещё» → «🧾 Профиль для откликов», поля на русском и английском (RUS / ENG)."],
   ["Как работает оценка?", "На каждой карточке сразу есть быстрая оценка 1–5 <b>без ИИ</b>: сколько ваших навыков из резюме названо в вакансии, совпадает ли название с тем, что вы ищете, и нет ли подвохов (офис, одна страна, старая). «✨ Оценить ИИ» — внимательная оценка по резюме с причинами; «✨ Оценить ИИ (N)» над лентой оценивает все новые. У ИИ дневной лимит."],
   ["Как сортировать и фильтровать?", "Над лентой: сначала новые, по зарплате, по совпадению слов, по оценке ИИ, избранное сначала, по алфавиту; грейд (Junior…Lead) и дата публикации. Чипы: #ru_company (русскоязычные компании), каналы, сайты, hh.ru, part-time. «Исключить источник…» убирает из ленты один канал или сайт."],
   ["Куда деваются офисные вакансии?", "Если в тексте вакансии (или в оригинале по ссылке) сказано «офис» или «гибрид», либо берут только из другой страны, она сразу уходит в «Мои» → «🗄 Архив», без уведомления. Оттуда её можно вернуть. На остальных карточках бывают пометки «⚠️ в оригинале офис» или «🌍 только США»."],
@@ -1445,15 +1359,15 @@ $$(".reset-words").forEach((b) => (b.onclick = () => {
   b.textContent = "Точно очистить всё? Нажмите ещё раз";
   b.dataset.ask = setTimeout(() => { delete b.dataset.ask; b.textContent = "Сбросить"; }, 4000);
 }));
-$("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); loadFeed().catch(fail); };
-$("#grade").onchange = () => { st.grade = $("#grade").value; haptic(); loadFeed().catch(fail); };
+$("#sort").onchange = () => { st.sort = $("#sort").value; haptic(); renderFilterSum(); loadFeed().catch(fail); };
+$("#grade").onchange = () => { st.grade = $("#grade").value; haptic(); renderFilterSum(); loadFeed().catch(fail); };
 $("#fb-form").onsubmit = async (e) => {
   e.preventDefault();
   const text = $("#fb-text").value.trim();
   if (text.length < 3) return toast("Напишите хотя бы пару слов");
   try { haptic(); await api("/api/feedback", { text }); $("#fb-text").value = ""; toast("Спасибо, отправлено"); } catch (err) { fail(err); }
 };
-$("#age").onchange = () => { st.age = $("#age").value; haptic(); loadFeed().catch(fail); };
+$("#age").onchange = () => { st.age = $("#age").value; haptic(); renderFilterSum(); loadFeed().catch(fail); };
 $("#score-new").onclick = scoreNew;
 $("#ex-pick").onchange = () => { const v = $("#ex-pick").value; if (v) excludeSource(v, true); };
 $("#ex-rvc").onclick = () => { const b = $("#ex-rvc"); if (b.dataset.name) excludeSource(b.dataset.name, b.getAttribute("aria-pressed") !== "true"); };

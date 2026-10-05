@@ -28,8 +28,6 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}", re.IGNORECASE)
 TG_RE = re.compile(r"(?:(?<![\w@./])@|t\.me/)([a-z][a-z0-9_]{4,31})\b", re.IGNORECASE)
 SKIP_MAIL = re.compile(r"(no-?reply|noreply|example\.|domain\.|\.(png|jpe?g|gif|webp)$)", re.IGNORECASE)
 SKIP_TG = {"joinchat", "share", "addlist", "proxy", "iv", "s", "c"}
-BATCH_MAX = 10    # «Откликнуться на все»: at most this many at a time
-BATCH_PAUSE = 8   # seconds between two emails of a batch
 
 
 def contacts(item, text):

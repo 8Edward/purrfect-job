@@ -506,8 +506,6 @@ class WebApp:
         r.add_post("/api/apply/prepare", self.api_apply_prepare)
         r.add_post("/api/apply/send", self.api_apply_send)
         r.add_post("/api/apply/done", self.api_apply_done)
-        r.add_post("/api/apply/batch", self.api_apply_batch)
-        r.add_post("/api/apply/batch/send", self.api_apply_batch_send)
         r.add_get("/api/resume/original", self.api_original)
         r.add_post("/api/resume/original/send", self.api_original_send)
         r.add_get("/api/watch", self.api_watch)
@@ -1883,73 +1881,6 @@ class WebApp:
                 "subject": apply.subject_for(item, name, lang), "channels": apply.contacts(item, text),
                 "resume": {"vid": meta["id"], "name": meta["name"], "lang": meta.get("lang", "ru")},
                 "smtp": bool(apply.smtp_settings(self.radar.cfg)), "dry": apply.dry_run(self.radar.cfg)}
-
-    async def api_apply_batch(self, request):
-        """✉️ «Откликнуться на все»: drafts for starred vacancies not responded to yet (or the chosen ones),
-        at most BATCH_MAX at a time. Nothing is sent here: the owner reviews the list and confirms once."""
-        m = self.owner_only(request)
-        data = await self.body(request)
-        inbox = m.load_inbox()
-        keys = [str(k) for k in data.get("keys") or []] or [k for k, v in sorted(inbox.items(), key=lambda kv: kv[1]["date"], reverse=True)
-                                                            if VIEWS["fav"](v)]
-        todo = [(k, inbox[k]) for k in keys if k in inbox and not (inbox[k].get("track") or {}).get("stage")][:apply.BATCH_MAX]
-        if not todo:
-            return self.bad("Все вакансии из избранного уже с откликом — откликаться дважды не буду.")
-        if self.running(m, "apply_batch"):
-            return self.bad("Отклики уже готовятся — подождите.", 409)
-        if resume_ai.uses_left(m) < len(todo):
-            return self.bad(f"ИИ на сегодня хватит только на {max(0, resume_ai.uses_left(m))} писем. Отметьте меньше или завтра.", 429)
-        jid = self.new_ai_job(m, "apply_batch", progress={"done": 0, "total": len(todo)})
-
-        async def work():
-            drafts, failed = [], []
-            for n, (key, item) in enumerate(todo):
-                try:
-                    drafts.append(await self.draft_one(m, key, item))
-                except (RuntimeError, ValueError) as e:
-                    if str(e) in ("login", "missing"):
-                        raise
-                    failed.append({"key": key, "title": item.get("title") or "", "error": resume_ai.human_error(e) if isinstance(e, RuntimeError) else str(e)})
-                self.ai_jobs[jid]["progress"] = {"done": n + 1, "total": len(todo)}
-            return {"drafts": drafts, "failed": failed}
-        asyncio.create_task(self.run_ai_job(jid, m, work))
-        return web.json_response({"job": jid, "total": len(todo), "queued": self.ai.lock.locked()})
-
-    async def api_apply_batch_send(self, request):
-        """The one confirmation for a reviewed batch: emails go one by one with a pause (only those with an
-        address, only when SMTP is set up or in dry mode); every vacancy in the list is marked «Откликнулся»."""
-        m = self.owner_only(request)
-        data = await self.body(request)
-        items = [i for i in (data.get("items") or []) if isinstance(i, dict)][:apply.BATCH_MAX]
-        if not items:
-            return self.bad("Ничего не выбрано")
-        smtp, dry = apply.smtp_settings(self.radar.cfg), apply.dry_run(self.radar.cfg)
-        inbox = m.load_inbox()
-        report = []
-        for n, it in enumerate(items):
-            key, to = str(it.get("key") or ""), str(it.get("to") or "").strip()
-            subject, text = str(it.get("subject") or "").strip()[:200], str(it.get("text") or "").strip()[:8000]
-            if key not in inbox:
-                report.append({"key": key, "result": "missing"})
-                continue
-            if (inbox[key].get("track") or {}).get("stage"):
-                report.append({"key": key, "result": "already"})  # never twice
-                continue
-            if to and (smtp or dry) and apply.EMAIL_RE.fullmatch(to) and len(text) >= 40:
-                try:
-                    if n:
-                        await asyncio.sleep(apply.BATCH_PAUSE)
-                    pdf = await apply.resume_pdf(m, it.get("vid"))
-                    result = await apply.dry_or_send(self.radar.cfg, smtp, to, subject, text, pdf, log)
-                    apply.mark_applied(m, key, f"Отклик по почте: {to}")
-                    report.append({"key": key, "result": result, "to": to})
-                except Exception as e:
-                    log.exception("batch apply to %s failed", to)
-                    report.append({"key": key, "result": "error", "error": str(e)[:160]})
-            else:
-                report.append({"key": key, "result": "manual"})  # the page queues «открыть и вставить письмо»
-        log.info("apply batch for %s: %s", m.name, [r["result"] for r in report])
-        return web.json_response({"report": report})
 
     async def api_apply_send(self, request):
         """«Отправить» by email: only after the owner's tap; the PDF of the chosen version goes along."""
