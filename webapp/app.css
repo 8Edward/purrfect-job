@@ -470,6 +470,7 @@ details.fold > summary { list-style: none; cursor: pointer; padding: 12px 14px; 
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::after { content: "▾"; margin-left: 6px; color: var(--muted); transition: transform .15s; }
 details.fold[open] > summary::after { transform: rotate(180deg); }
+details.fold > summary:not(:has(small))::after { margin-left: auto; }
 details.fold > summary .sn { flex: none; white-space: nowrap; }
 details.fold > summary small { flex: 1 1 0; min-width: 0; text-align: right; padding-left: 8px; color: var(--muted); font-weight: 400; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details.fold > summary::after { flex: none; }
@@ -521,7 +522,9 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 #watch .wco b { color: var(--accent); }
 #watch .wco button { border: none; background: transparent; padding: 5px 9px; color: var(--muted); }
 #watch .wadd { display: flex; gap: 6px; margin-top: 8px; }
-#watch .wadd input { flex: 1; min-width: 0; }
+#watch .wadd { align-items: stretch; }
+#watch .wadd input { flex: 1; min-width: 0; width: 0; }
+#watch .wadd .chip { padding: 0 12px; }
 #watch .lbl { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .srow { display: flex; align-items: center; gap: 8px; }
 .srow .row { flex: 1; min-width: 0; }
