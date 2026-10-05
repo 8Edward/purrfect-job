@@ -731,7 +731,7 @@ async function sheetAction(action) {
     st.feed = st.feed.map((i) => (i.key === item.key ? { ...i, ...d.item, text: i.text } : i)).filter((i) => i.status === "new");
     st.results = st.results.map((i) => (i.key === item.key ? { ...i, status: d.item.status, fav: d.item.fav } : i));
     if (action === "unsee") { closeSheet(); loadSaved(); loadMe().catch(() => {}); loadFeed().catch(() => {}); return; }
-    if (action === "archive" || action === "unarchive") { closeSheet(); loadSaved(); loadMe().catch(() => {}); return; }
+    if (action === "archive" || action === "unarchive") { closeSheet(); loadSaved(); loadArchive().catch(() => {}); loadMe().catch(() => {}); return; }
     renderSheet();
     renderStack();
     renderResults();
@@ -883,6 +883,19 @@ async function loadWatch() {
   };
 }
 
+/* 🗄 «Ещё → Архив»: put away by hand, office / hybrid / other-country ones and ghosts; 10 shown, the rest on a tap */
+async function loadArchive() {
+  const items = (await api("/api/jobs?view=archive")).items, box = $("#archive-list");
+  $("#sum-archive").textContent = items.length || "";
+  const shown = st.archiveAll ? items : items.slice(0, 10);
+  box.innerHTML = items.length ? '<p class="hint" style="margin:0 0 8px">Сюда сами уходят офисные и гибридные вакансии, вакансии для другой страны и «вечные». Откройте вакансию, чтобы вернуть её.</p>'
+    + shown.map((i, n) => `<button class="row" data-an="${n}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")
+    + (items.length > 10 ? `<button class="link block" id="archive-all">${st.archiveAll ? "Свернуть" : `Показать все (${items.length})`}</button>` : "")
+    : '<div class="hint" style="margin:0">Пусто. Вакансию можно убрать сюда кнопкой «🗄 В архив».</div>';
+  $$("#archive-list [data-an]").forEach((b) => (b.onclick = () => openSheet(shown[+b.dataset.an], false)));
+  if ($("#archive-all")) $("#archive-all").onclick = () => { st.archiveAll = !st.archiveAll; loadArchive().catch(fail); };
+}
+
 async function loadSaved() {
   loadWatch().catch(() => {});
   $$("#s-saved .seg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === st.saved));
@@ -891,7 +904,7 @@ async function loadSaved() {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
     const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет.",
       seen: "Здесь будут вакансии, которые вы уже видели в ленте, но не отметили: с датой и временем просмотра.",
-      archive: "Здесь будут вакансии, которые вы убрали в архив: откройте вакансию и нажмите «🗄 В архив»." };
+    };
     const unscored = st.saved === "fav" && st.me && st.me.ai ? items.filter((i) => !i.ai).length : 0;
     box.innerHTML = (unscored ? `<div class="batchbar"><button class="ai-btn" id="score-fav">✨ Оценить все ИИ (${unscored})</button></div>` : "")
       + (items.length ? items.map((i, n) => {
@@ -1315,7 +1328,7 @@ const FAQ = [
   ["Как откликнуться через приложение?", "Пока это есть только у владельца бота. Кнопка «✉️ Откликнуться» в вакансии (или свайп вниз) готовит письмо по вашему резюме и находит контакт: почту, @телеграм или ссылку. Вы читаете письмо и сами решаете, отправлять ли. Данные для писем (ФИО, город, зарплата, о себе) — во «Ещё» → «🧾 Профиль для откликов», поля на русском и английском (RUS / ENG)."],
   ["Как работает оценка?", "На каждой карточке сразу есть быстрая оценка 1–5 <b>без ИИ</b>: сколько ваших навыков из резюме названо в вакансии, совпадает ли название с тем, что вы ищете, и нет ли подвохов (офис, одна страна, старая). «✨ Оценить ИИ» — внимательная оценка по резюме с причинами; «✨ Оценить ИИ (N)» над лентой оценивает все новые. У ИИ дневной лимит."],
   ["Как сортировать и фильтровать?", "Над лентой: сначала новые, по зарплате, по совпадению слов, по оценке ИИ, избранное сначала, по алфавиту; грейд (Junior…Lead) и дата публикации. Чипы: #ru_company (русскоязычные компании), каналы, сайты, hh.ru, part-time. «Исключить источник…» убирает из ленты один канал или сайт."],
-  ["Куда деваются офисные вакансии?", "Если в тексте вакансии (или в оригинале по ссылке) сказано «офис» или «гибрид», либо берут только из другой страны, она сразу уходит в «Мои» → «🗄 Архив», без уведомления. Оттуда её можно вернуть. На остальных карточках бывают пометки «⚠️ в оригинале офис» или «🌍 только США»."],
+  ["Куда деваются офисные вакансии?", "Если в тексте вакансии (или в оригинале по ссылке) сказано «офис» или «гибрид», либо берут только из другой страны, она сразу уходит в «Ещё» → «🗄 Архив», без уведомления. Оттуда её можно вернуть. На остальных карточках бывают пометки «⚠️ в оригинале офис» или «🌍 только США»."],
   ["Что за пометки «перевыложена» и «висит больше 30 дней»?", "Так помечаются вакансии, которые, похоже, никого не ищут по-настоящему: висят на сайте месяц и больше, перевыкладываются снова и снова или пропали с сайта. Такие опускаются вниз ленты, а у владельца уходят в архив."],
   ["Что за строки 🛠 🏠 📌 на карточке?", "Короткое саммари из текста вакансии, без ИИ: стек, формат работы и первые задачи. 💰 — зарплата (примерно в долларах в месяц), 🕒 — часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну."],
   ["Что такое «Избранные компании»?", "Компания каждой вакансии, которую вы добавили в избранное, попадает в «Мои» → «⭐ Избранные компании». Туда можно добавить компанию и вручную. Когда у неё появляется новая вакансия, над лентой загорается полоска, а в чат приходит одно сообщение."],
@@ -1395,7 +1408,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); loadProfile(); }
+  if (name === "more") { loadArchive().catch(() => {}); loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); loadProfile(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

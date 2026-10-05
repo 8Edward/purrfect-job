@@ -78,7 +78,7 @@ HELP = """<b>❓ Как это работает</b>
 💬 Telegram-каналы, 🌐 hh.ru и больше 70 сайтов (удалёнка, крупные компании, LinkedIn). Проверяю сам по расписанию, частота — в приложении: «Ещё» → «📡 Поиск вакансий».
 
 <b>Лента</b>
-Свайп вправо — в избранное, влево — скрыть, вверх — оценка ИИ, вниз — подготовить отклик (без вашего нажатия ничего не уйдёт). Офисные и гибридные вакансии сразу уходят в «Мои» → «🗄 Архив».
+Свайп вправо — в избранное, влево — скрыть, вверх — оценка ИИ, вниз — подготовить отклик (без вашего нажатия ничего не уйдёт). Офисные и гибридные вакансии сразу уходят в «Ещё» → «🗄 Архив».
 
 <b>В чат</b> приходят короткие сообщения о новых вакансиях и о новых вакансиях избранных компаний. Выключить можно в «Ещё».
 
@@ -857,7 +857,7 @@ class JobRadar:
             if key not in inbox:
                 inbox[key] = to_inbox(job)
                 if workmode.not_remote(inbox[key], inbox[key].get("orig")) or extras.unfit_for(inbox[key], extras.country_settings(self.me)["key"]):
-                    inbox[key]["archived"] = True  # office / hybrid: straight into «Мои → Архив» (reversible), no alert for it
+                    inbox[key]["archived"] = True  # office / hybrid: straight into «Ещё → Архив» (reversible), no alert for it
                     continue
                 items.append(inbox[key])
         save_inbox(inbox)

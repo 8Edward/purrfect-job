@@ -69,7 +69,7 @@ VIEWS = {
     "fav": lambda i: i.get("fav") and not i.get("archived"),  # «Избранное»: swiping right stars a vacancy
     "taken": lambda i: i["status"] == "taken",
     "hidden": lambda i: i["status"] == "hidden" and not i.get("archived"),
-    "archive": lambda i: i.get("archived"),  # «Мои → Архив»: put away by hand, out of the other lists until returned
+    "archive": lambda i: i.get("archived"),  # «Ещё → Архив»: put away by hand, out of the other lists until returned
     "seen": lambda i: i.get("seen") and i["status"] == "new" and not i.get("archived"),  # «Мои → Просмотрено»: shown, not decided
     "all": lambda i: True,
 }

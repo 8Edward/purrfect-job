@@ -25,7 +25,7 @@ import tg_collect as tc
 PATH = tc.ROOT / "data" / "tg-job-history.json"
 OLD_DAYS = 90
 STALE_DAYS = 30          # a site vacancy open this long: «висит больше 30 дней» (archived for the owner)
-AUTO_ARCHIVE = ("closed", "evergreen", "stale")  # these go to «Мои → Архив» for the owner; «reposted» is only a label
+AUTO_ARCHIVE = ("closed", "evergreen", "stale")  # these go to «Ещё → Архив» for the owner; «reposted» is only a label
 REPOST_MIN = 3
 MASS_MIN = 5
 CONVERGENCE = 2
