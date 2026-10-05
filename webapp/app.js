@@ -1262,7 +1262,7 @@ async function loadUsers(body) {
   $("#users-list").innerHTML = `<p class="hint">Ботом может пользоваться любой, кто его открыл. «Отключить» — человек сразу видит вежливый отказ и в боте, и в приложении; его данные остаются. Запросы ИИ идут через вашу подписку Claude.</p>
     <div class="stats"><span>людей ${d.people.length}</span><span>ИИ сегодня: люди ${today}</span><span>вы ${d.owner.today.n}</span><span>бот ${d.system.today.n}</span></div>
     <div class="stats"><span>за 14 дней: люди ${tok(d.people.reduce((a, p) => a + p.usage.total.in + p.usage.total.out, 0))} ток.</span><span>вы ${tok(d.owner.total.in + d.owner.total.out)}</span><span>бот ${tok(d.system.total.in + d.system.total.out)}</span></div>
-    <form class="us-def" id="us-def"><span>Лимит ИИ по умолчанию, запросов в день на человека</span><input class="inp" type="number" min="0" max="${d.max_limit}" inputmode="numeric" value="${d.default_limit}"><button class="link">Сохранить</button></form>
+    <form class="us-def" id="us-def"><span>Лимит ИИ на человека, запросов в день</span><input class="inp" type="number" min="0" max="${d.max_limit}" inputmode="numeric" value="${d.default_limit}"><button class="link">Сохранить</button></form>
     ${rows || '<p class="hint">Пока никого.</p>'}
     ${d.people.length > usersShown ? `<button class="link block" id="users-more">Показать ещё (${d.people.length - usersShown})</button>` : ""}`;
   const box = $("#users-list");
