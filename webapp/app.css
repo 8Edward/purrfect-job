@@ -530,7 +530,7 @@ html[data-skin="office"] .stamp { opacity: 0; }  /* «REMOTE» stamp does not be
 #watch .wadd { align-items: stretch; }
 #watch .wadd input { flex: 1; min-width: 0; width: 0; }
 #watch .wadd .chip { padding: 0 12px; }
-#watch .lbl { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+#watch .lbl { font-size: 12px; color: var(--muted); margin: 8px 0 4px; text-transform: none; letter-spacing: normal; }
 
 /* 🤖 roles Claude guessed («Ещё») */
 #roles-list .hint, #roleai .hint { margin: 0 14px 10px; }
