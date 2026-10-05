@@ -127,6 +127,21 @@ function unflatten(raw) {
   }
   return hydrate(0);
 }
+
+// Social posts (Mastodon, Bluesky): a post counts as a vacancy only when it says so (hiring words) and names one of
+// the wanted roles (c.roles, regex words); the title is the post's first line, so the person's role words can match it.
+const JOB_SIGNAL = /\b(we'?re hiring|we are hiring|now hiring|is hiring|hiring[:!]|open (?:role|position)|job opening|vacancy|apply (?:now|here|at|via)|join (?:us|our team)|looking for (?:a|an) )|#hiring|#jobs?\b|ищем|вакансия/i;
+function socialLooksLikeJob(text, c) {
+  if (text.length < 40 || !/https?:\/\//.test(text) || !JOB_SIGNAL.test(text)) return false;
+  const roles = new RegExp(c.roles || 'analy|business intelligence|\bBI\b|аналитик', 'i');
+  return roles.test(text);
+}
+function socialTitle(text) {
+  const pos = text.match(/Position:\s*(.+?)\s*(?:🏢|Company:|$)/u)?.[1];  // job-alert bots: «💼 Position: Data Analyst 🏢 Company: …»
+  const t = (pos || text).replace(/https?:\/\/\S+/g, '').replace(/#\s*\w+/g, '').replace(/\s+/g, ' ').trim();
+  return t.length > 140 ? t.slice(0, 137).replace(/\s\S*$/, '') + '…' : t;
+}
+
 const FETCHERS = {
   async greenhouse(c) {
     const j = await getJson(`https://boards-api.greenhouse.io/v1/boards/${c.slug}/jobs`);
@@ -666,6 +681,94 @@ const FETCHERS = {
     }
     return out;
   },
+  // ---- 2026-10-05: more sources (all off until ticked): Remote.com, Jobgether, Mastodon, Bluesky, LinkedIn guest pages
+  async remotecom(c) {  // remote.com/jobs: server-rendered list, ?query=…&page=N; each card = title link + company + a few facts
+    const out = new Map();
+    for (const q of c.queries || ['data analyst']) {
+      for (let page = 1; page <= (c.pages || 2); page++) {
+        const html = await getText(`https://remote.com/jobs/all?query=${encodeURIComponent(q)}&page=${page}`);
+        const cards = [...html.matchAll(/href="(\/jobs\/[a-z0-9-]+-c[a-z0-9]+\/[^"]+)"[^>]*><span[^>]*>([^<]+)<\/span><\/a><span[^>]*>([^<]*)<\/span>/g)];
+        if (!cards.length) break;
+        cards.forEach((m, n) => {
+          const url = `https://remote.com${m[1]}`;
+          if (out.has(url)) return;
+          const tail = html.slice(m.index + m[0].length, cards[n + 1] ? cards[n + 1].index : m.index + m[0].length + 4000).slice(0, 3000);
+          const facts = [...tail.replace(/<svg[\s\S]*?<\/svg>/g, '').matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((x) => decode(x[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ')).filter(Boolean);
+          out.set(url, { title: decode(m[2]), url, company: decode(m[3]), location: facts.slice(0, 3).join(' · '), posted: '' });
+        });
+        await pause(500);
+      }
+    }
+    return [...out.values()];
+  },
+  async jobgether(c) {  // official open API: jobgether.com/api/v1/jobs (every job is remote-friendly), 25 per page
+    const out = new Map();
+    for (const q of c.queries || ['data analyst']) {
+      for (let page = 1; page <= (c.pages || 2); page++) {
+        const j = await getJson(`https://jobgether.com/api/v1/jobs?keyword=${encodeURIComponent(q)}&limit=25&page=${page}`);
+        for (const x of j.jobs || []) {
+          if (out.has(x.url)) continue;
+          const sal = x.salaryRange ? (() => { const m = String(x.salaryRange).match(/^(\d+)-(\d+)\s*(\w+)?/); return m ? `${m[1] === m[2] ? m[1] : m[1] + '–' + m[2]} ${m[3] || ''}/год`.trim() : ''; })() : '';
+          out.set(x.url, { title: x.title, url: x.url, company: x.company || '', location: [x.remote, x.location, x.contractType].filter(Boolean).join(' · '), comp: sal, posted: x.postedAt || '' });
+        }
+        if (!j.pagination?.hasMore) break;
+        await pause(400);
+      }
+    }
+    return [...out.values()];
+  },
+  async mastodon(c) {  // public tag timelines (no login): #hiring #dataanalyst …; only posts that look like a vacancy
+    const out = new Map();
+    for (const host of c.hosts || ['mastodon.social']) {
+      for (const tag of c.tags || ['hiring']) {
+        let list;
+        try { list = await getJson(`https://${host}/api/v1/timelines/tag/${encodeURIComponent(tag)}?limit=40`); } catch { continue; }
+        for (const p of list) {
+          const text = decode(String(p.content || '').replace(/<br\s*\/?>|<\/p>/g, ' \n').replace(/<[^>]+>/g, ' ')).replace(/[ \t]+/g, ' ').trim();
+          if (!p.url || p.reblog || p.in_reply_to_id || !socialLooksLikeJob(text, c)) continue;
+          out.set(p.url, { title: socialTitle(text), url: p.url, company: '@' + (p.account?.acct || ''), location: host, posted: p.created_at || '' });
+        }
+        await pause(500);
+      }
+    }
+    return [...out.values()];
+  },
+  async bluesky(c) {  // public search API of api.bsky.app (the bsky.social host wants a login)
+    const out = new Map();
+    for (const q of c.queries || ['hiring data analyst remote']) {
+      let j;
+      try { j = await getJson(`https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(q)}&sort=latest&limit=50`); } catch { continue; }
+      for (const p of j.posts || []) {
+        const text = String(p.record?.text || '').replace(/\s+/g, ' ').trim();
+        const rkey = String(p.uri || '').split('/').pop();
+        if (!rkey || p.record?.reply || !socialLooksLikeJob(text, c)) continue;
+        const url = `https://bsky.app/profile/${p.author?.handle}/post/${rkey}`;
+        out.set(url, { title: socialTitle(text), url, company: '@' + (p.author?.handle || ''), location: 'Bluesky', posted: p.record?.createdAt || p.indexedAt || '' });
+      }
+      await pause(500);
+    }
+    return [...out.values()];
+  },
+  async linkedin(c) {  // LinkedIn's public guest search (no login): remote filter, a few pages per query, slow and polite
+    const out = new Map();
+    for (const q of c.queries || ['data analyst']) {
+      for (let page = 0; page < (c.pages || 2); page++) {
+        const html = await getText(`https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(q)}&location=${encodeURIComponent(c.location || 'Worldwide')}&f_WT=2&f_TPR=r604800&start=${page * 25}`);
+        const cards = html.split('<li>').slice(1);
+        if (!cards.length) break;
+        for (const b of cards) {
+          const url = b.match(/href="(https:\/\/[a-z.]*linkedin\.com\/jobs\/view\/[^"?]+)/)?.[1];
+          const title = b.match(/base-search-card__title[^>]*>\s*([^<]+?)\s*</)?.[1];
+          if (!url || !title || out.has(url)) continue;
+          const company = b.match(/base-search-card__subtitle[^>]*>[\s\S]*?(?:<a[^>]*>\s*)?([^<>]+?)\s*(?:<\/a>|<\/h4>)/)?.[1] || '';
+          const loc = b.match(/job-search-card__location[^>]*>\s*([^<]+?)\s*</)?.[1] || '';
+          out.set(url, { title: decode(title), url, company: decode(company), location: 'Удалённо · ' + decode(loc), posted: b.match(/datetime="([^"]+)"/)?.[1] || '' });
+        }
+        await pause(1500);
+      }
+    }
+    return [...out.values()];
+  },
   // ---- end of the freehire port
   async hh(c) {
     const out = [];
@@ -748,6 +851,7 @@ async function fetchBoard(id) {
           url: clean(j.url, 500),
           company: clean(j.company, 120),
           location: clean(j.location, 120),
+          ...(j.comp ? { comp: clean(j.comp, 60) } : {}),
           posted: clean(j.postedAt || j.posted || j.date || '', 40),
           ...(j.ru ? { ru: true } : {}),
           ...(Array.isArray(j.countries) ? { countries: j.countries.map((c) => clean(c, 60)) } : {}),

@@ -59,6 +59,12 @@ companies:
   - {id: co-agoda, name: "Agoda (офис в Бангкоке)", kind: greenhouse, slug: agoda, only_loc: bangkok, tags: [офис_бангкок]}
   # 2026-10-04: «tier B» = remote companies from remoteintech/remote-jobs that hire worldwide / in APAC (telegram/tierb.yml)
   - {id: co-tierb, name: "Тир B: удалённые компании (remoteintech, весь мир)", kind: tierb}
+  # 2026-10-05: new sources, all off until ticked in «Поиск → Сайты» (their own free public feeds, no login)
+  - {id: co-remotecom, name: "Remote.com (вакансии)", kind: remotecom, pages: 2, queries: [data analyst, business analyst, bi analyst, sql, analytics]}
+  - {id: co-jobgether, name: "Jobgether (удалёнка, официальный API)", kind: jobgether, pages: 2, queries: [data analyst, business analyst, bi analyst, analytics, sql]}
+  - {id: co-mastodon, name: "Mastodon: посты #hiring (аналитика, удалёнка)", kind: mastodon, hosts: [mastodon.social, fosstodon.org, mastodon.world], tags: [hiring, dataanalyst, datajobs, remotejobs, remotework]}
+  - {id: co-bluesky, name: "Bluesky: посты о найме (аналитика, удалёнка)", kind: bluesky, queries: ["hiring data analyst remote", "hiring analyst remote", "#hiring #dataanalyst", "#hiring #remote analyst"]}
+  - {id: co-linkedin, name: "LinkedIn: открытые страницы (удалёнка, неделя)", kind: linkedin, pages: 2, location: Worldwide, queries: [data analyst, business analyst, bi analyst, analytics]}
 
 # NOT connected: no public vacancy list on their own site that a script may read. Not read by the bot;
 # hh employer ids kept for reference (hh.ru is the only place that lists their vacancies).
