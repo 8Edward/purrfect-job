@@ -215,7 +215,10 @@ _matchers = {}
 def role_matchers():
     """[(role id, name, pattern)] for every name and `also` title of every role, built once
     per version of rolegraph.yml."""
+    if "list" in _matchers and time.monotonic() - _matchers.get("checked", 0) < 2:
+        return _matchers["list"]  # a search asks thousands of times: the file is looked at once every 2 s
     mtime = GRAPH_PATH.stat().st_mtime if GRAPH_PATH.exists() else None
+    _matchers["checked"] = time.monotonic()
     if _matchers.get("mtime") != mtime or "list" not in _matchers:
         words, out = load_words(), []
         for rid, role in load_graph().items():
@@ -452,6 +455,7 @@ class WebApp:
         self.posts_dirty = None
         self.results = {}            # person id -> {key: job} from their last search
         self.last_search = {}
+        self.site_cache = {}         # person id -> (feed file + settings stamp, their site vacancies as stored jobs)
         self.last_feedback = {}
         self.jd_cache = {}
         self.warming = False
@@ -867,9 +871,11 @@ class WebApp:
         jobs, counts = await self.gather(m, query, terms, mode, part)
         hits, rank = [], {"exact": 0, "syn": 1, "role": 1, "ai": 1.5, "loose": 1.8, "adj": 2, "far": 3, "text": 4}
         inbox, labels = m.load_inbox(), roles.load()
+        anyterm = tc.AnyOf(rx for _, _, rx in terms)  # one pass rules out most titles; the ordered loop runs on the rest
         for job in jobs:
             title = norm(job.get("title"))
-            hit = next(((kind, label) for kind, label, rx in terms if rx.search(title)), None)  # closest kind wins
+            hit = (next(((kind, label) for kind, label, rx in terms if rx.search(title)), None)  # closest kind wins
+                   if anyterm.search(title) else None)
             if hit:
                 hit = refine(hit, title)
             if hit is None and by_role:  # Claude's label for a title the dictionary doesn't know
@@ -953,11 +959,9 @@ class WebApp:
         t1 = time.monotonic()
         tagger = guests.tagger_for(m)
         listed = guests.listed_sites()
-        feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
-        for provider in m.sites(listed) if part in ("all", "fast") else []:
-            for j in (feed.get(provider) or {}).get("jobs", []):
-                if j.get("url"):
-                    add(guests.web_job(j, listed.get(provider, provider), m, tagger), "sites")
+        if part in ("all", "fast"):
+            for job in self.site_jobs(m, listed, tagger):
+                add(job, "sites")
         t2 = time.monotonic()
         if hima_task:  # its cached feed is only the newest few hundred of ~100k
             for j in await self.within(hima_task, 30 if part == "hima" else None):
@@ -968,6 +972,24 @@ class WebApp:
         log.info("search timing: channels %.1fs, site feeds %.1fs, himalayas wait %.1fs, hh wait %.1fs, %d candidates",
                  t1 - t0, t2 - t1, t3 - t2, time.monotonic() - t3, len(jobs))
         return jobs, counts
+
+    def site_jobs(self, m, listed, tagger):
+        """The person's ticked site feeds as stored jobs. Built once per version of the feed file and of their
+        settings (a search used to rebuild ~19k of them every time); nothing downstream changes these dicts."""
+        try:
+            mtime = FEED_CACHE_PATH.stat().st_mtime
+        except OSError:
+            mtime = None
+        sites = m.sites(listed)
+        stamp = (mtime, json.dumps([sites, listed, m.cfg().get("keywords", {}).get("tags")], sort_keys=True, default=str))
+        hit = self.site_cache.get(m.id)
+        if hit and hit[0] == stamp:
+            return hit[1]
+        feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
+        jobs = [guests.web_job(j, listed.get(provider, provider), m, tagger)
+                for provider in sites for j in (feed.get(provider) or {}).get("jobs", []) if j.get("url")]
+        self.site_cache[m.id] = (stamp, jobs)
+        return jobs
 
     async def within(self, task, seconds=None):
         """A live source (hh.ru, Himalayas) gets a few seconds; if it is slower the search goes on without it

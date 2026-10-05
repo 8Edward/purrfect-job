@@ -76,6 +76,27 @@ def compile_role(patterns):
     return [_compiled(p, True) for p in patterns or []]
 
 
+class AnyOf:
+    """«Does any of these patterns match?» in one regex pass instead of one per pattern (a search checks
+    tens of thousands of vacancies against dozens of words). Falls back to the list when the patterns
+    cannot be joined (numbered back-references, repeated group names)."""
+
+    def __init__(self, compiled):
+        self.list = list(compiled)
+        self.one = None
+        flags = {p.flags for p in self.list}
+        if len(flags) == 1 and not any(re.search(r"\\\d|\(\?P=|\(\?\(", p.pattern) for p in self.list):
+            try:
+                self.one = re.compile("|".join(f"(?:{p.pattern})" for p in self.list), flags.pop())
+            except re.error:
+                self.one = None
+
+    def search(self, text):
+        if self.one is not None:
+            return self.one.search(text) is not None
+        return any(p.search(text) for p in self.list)
+
+
 # Card-style channels (e.g. @revacancy_global) post «Title | Senior | IC / Company / 150k - 180k USD /
 # Skills: … / Contacts and Full Description» and never say «вакансия» or «hiring».
 JOB_CARD = re.compile(
@@ -108,36 +129,47 @@ class JobFilter:
         self.negative = compile_patterns(keywords.get("negative"))
         self.tags = {name: compile_patterns(p) for name, p in (keywords.get("tags") or {}).items()}
         self.min_length = min_length
+        self._job, self._role, self._neg = AnyOf(self.job), AnyOf(self.role), AnyOf(self.negative)
+        self._tags = {name: AnyOf(pats) for name, pats in self.tags.items()}
+        self._like = {}  # text -> is_job_like: search re-checks the same cached channel posts every time
 
     def is_job(self, text):
         if not text or len(text) < self.min_length:
             return False
-        if any(p.search(text) for p in self.negative) or looks_like_article(text):
+        if self._neg.search(text) or looks_like_article(text):
             return False
-        if any(p.search(text) for p in self.job) or JOB_WORDS_INTL.search(text):
-            return any(p.search(text) for p in self.role)
+        if self._job.search(text) or JOB_WORDS_INTL.search(text):
+            return self._role.search(text)
         # a vacancy card: its first line is the job title, so the role must be there
         # (otherwise «Skills: sql, python» would let every engineer through)
         head = text.strip().splitlines()[0]
-        return bool(JOB_CARD.search(text)) and any(p.search(head) for p in self.role)
+        return bool(JOB_CARD.search(text)) and self._role.search(head)
 
     def has_job_word(self, text):
-        return any(p.search(text) for p in self.job) or bool(JOB_CARD.search(text) or JOB_WORDS_INTL.search(text))
+        return self._job.search(text) or bool(JOB_CARD.search(text) or JOB_WORDS_INTL.search(text))
 
     def is_job_like(self, text):
         """A job post by its own words (вакансия, hiring…), whatever the role: for search."""
-        if not text or len(text) < self.min_length or any(p.search(text) for p in self.negative):
+        hit = self._like.get(text)
+        if hit is None:
+            hit = self._like[text] = self._is_job_like(text)
+            if len(self._like) > 20000:
+                self._like.clear()
+        return hit
+
+    def _is_job_like(self, text):
+        if not text or len(text) < self.min_length or self._neg.search(text):
             return False
-        return self.has_job_word(text) and not looks_like_article(text)
+        return bool(self.has_job_word(text)) and not looks_like_article(text)
 
     def why_not(self, text):
         """Why is_job said no, for a post that does mention one of the person's roles (the control
         sample): None if it is a job or no role is mentioned at all (then it is simply not theirs)."""
-        if not text or not any(p.search(text) for p in self.role) or self.is_job(text):
+        if not text or not self._role.search(text) or self.is_job(text):
             return None
         if len(text) < self.min_length:
             return "короткий"
-        if any(p.search(text) for p in self.negative):
+        if self._neg.search(text):
             return "стоп-слово"
         if looks_like_article(text):
             return "похож на статью"
@@ -146,7 +178,7 @@ class JobFilter:
         return "нет слова «вакансия»"
 
     def tags_for(self, text):
-        return [name for name, pats in self.tags.items() if any(p.search(text) for p in pats)]
+        return [name for name, pats in self._tags.items() if pats.search(text)]
 
 
 # An article, a market review, a digest of vacancies or a career-advice post mentions «вакансии»,
@@ -406,8 +438,18 @@ def load_config():
     return {**cfg, **load_search()}
 
 
+_filters = {}  # same settings -> the same filter (and its memory of checked posts)
+
+
 def job_filter_from(cfg):
-    return JobFilter(cfg.get("keywords", {}), cfg.get("min_length", 120))
+    keywords, min_length = cfg.get("keywords", {}), cfg.get("min_length", 120)
+    sig = json.dumps([keywords, min_length], sort_keys=True, ensure_ascii=False, default=str)
+    flt = _filters.get(sig)
+    if flt is None:
+        if len(_filters) > 50:
+            _filters.clear()
+        flt = _filters[sig] = JobFilter(copy.deepcopy(keywords), min_length)
+    return flt
 
 
 def save_state(state):
