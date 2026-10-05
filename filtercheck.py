@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import tg_collect as tc
+import usage
 
 PATH = tc.ROOT / "data" / "tg-filter-check.json"
 PENDING_MAX = 300
@@ -103,7 +104,8 @@ async def run(ai, sample=SAMPLE):
     posts = random.sample(pool, min(sample, len(pool)))
     data["last_run"] = _today()  # one try a week, even if Claude fails: the subscription is shared
     save(data)
-    got = parse(await ai.ask(SYSTEM, prompt_for(posts), timeout=TIMEOUT), len(posts))
+    with usage.scope("filtercheck", system=True):
+        got = parse(await ai.ask(SYSTEM, prompt_for(posts), timeout=TIMEOUT), len(posts))
     data = load()  # re-read: the reader may have added posts meanwhile
     done = {posts[i]["fp"] for i in got}
     data["pending"] = [p for p in data["pending"] if p["fp"] not in done]

@@ -37,6 +37,7 @@ import boards
 import filtercheck
 import sourcestats
 import tg_collect as tc
+import usage
 
 USERS_DIR = tc.TG_DIR / "users"
 REGISTRY_PATH = USERS_DIR / "users.json"
@@ -49,7 +50,11 @@ FEED_SCRIPT = tc.TG_DIR / "board-feed.mjs"
 
 # Hard limits: keep your account's reading modest and the bot hard to break.
 MAX_POOL = 60             # channels in the shared pool, everyone together
-MAX_MEMBERS = 10          # invited people
+MAX_MEMBERS = 300         # people who can use the bot (open to anyone since 2026-10-05: a guard, not a gate)
+AI_DAILY = 10             # Claude requests a day per person (all kinds together), unless the owner set another
+AI_DAILY_MAX = 200
+BLOCKED_TEXT = ("Доступ к Purrfect Job для вашего аккаунта отключён администратором. "
+                "Если это ошибка, напишите ему.")
 POOL_ADDS_PER_DAY = 3     # new pool channels per guest per day (you: unlimited)
 PROPOSALS_PER_DAY = 3     # site proposals per guest per day
 MAX_WORDS = 40            # keywords per group
@@ -134,11 +139,61 @@ def load_registry():
     reg = read_json(REGISTRY_PATH, {})
     reg.setdefault("users", {})
     reg.setdefault("invites", {})
+    reg.setdefault("settings", {})
     return reg
 
 
 def save_registry(reg):
+    backup_once()
     write_json(REGISTRY_PATH, reg)
+
+
+def backup_once():
+    """Before the first write of the open-access version, keep a copy of the old list of people."""
+    copy = REGISTRY_PATH.with_name("users.before-open-access.json")
+    if REGISTRY_PATH.exists() and not copy.exists():
+        copy.write_bytes(REGISTRY_PATH.read_bytes())
+
+
+def is_blocked(reg, uid):
+    return bool((reg["users"].get(str(uid)) or {}).get("blocked"))
+
+
+def set_blocked(reg, uid, on):
+    """Switch a person off (or back on). Their folder and data stay untouched."""
+    info = reg["users"].get(str(uid))
+    if info is None:
+        return False
+    if on:
+        info["blocked"] = now().isoformat()
+    else:
+        info.pop("blocked", None)
+    return True
+
+
+def ai_default(reg):
+    try:
+        return max(0, min(AI_DAILY_MAX, int(reg["settings"].get("ai_daily", AI_DAILY))))
+    except (TypeError, ValueError):
+        return AI_DAILY
+
+
+def ai_limit(member, reg=None):
+    """Claude requests a day this person may make (None = the owner: only the per-feature caps)."""
+    if member.is_owner:
+        return None
+    info = getattr(member, "info", {}) or {}
+    if info.get("ai") is False:
+        return 0
+    if isinstance(info.get("ai_limit"), int):
+        return max(0, info["ai_limit"])
+    return ai_default(reg or load_registry())
+
+
+def ai_left(member):
+    """What is left of today's AI requests (None = no overall limit)."""
+    limit = ai_limit(member)
+    return None if limit is None else max(0, limit - usage.used_today(member.id))
 
 
 def new_invite(reg):
@@ -283,12 +338,30 @@ def trim_inbox(inbox):
 
 
 def get(reg, uid):
+    """The person, or None when unknown or switched off by the owner."""
     info = reg["users"].get(str(uid))
-    return Guest(uid, info) if info else None
+    return Guest(uid, info) if info and not info.get("blocked") else None
 
 
 def all_guests(reg):
+    """Everyone the bot works for (switched-off people are skipped: no channels read, no sites, no alerts)."""
+    return [Guest(uid, info) for uid, info in reg["users"].items() if not info.get("blocked")]
+
+
+def everyone(reg):
+    """Everyone who ever joined, switched off or not (the owner's list)."""
     return [Guest(uid, info) for uid, info in reg["users"].items()]
+
+
+def join(reg, user):
+    """Open access: a newcomer is registered on their first visit. -> (guest | None, why).
+    why: "blocked" (switched off: never re-registered), "full" (MAX_MEMBERS reached), None."""
+    key = str(user.id)
+    if key in reg["users"]:
+        return (None, "blocked") if reg["users"][key].get("blocked") else (get(reg, user.id), None)
+    if len(reg["users"]) >= MAX_MEMBERS:
+        return None, "full"
+    return register(reg, user), None
 
 
 def register(reg, user):
@@ -333,6 +406,7 @@ def preset_search():
         search["hh"] = preset["hh"]
     if START_EMPTY:
         search["keywords"].update(role=[], negative=[])
+        search["keywords"]["tags"].pop(RU_TAG, None)  # the preset's list of companies was made for the owner, not for everyone
         search.update(pool=[], sites=[])
         search.pop("hh", None)
     return search
@@ -345,7 +419,10 @@ def reset_member(member, wipe_jobs=False):
     fresh = preset_search()
     if member.is_owner:
         search = member.load_search()
+        own_ru = (search.get("keywords") or {}).get("tags", {}).get(RU_TAG)
         search["keywords"] = fresh["keywords"]
+        if own_ru:  # the owner's own list of Russian-speaking companies stays his
+            search["keywords"]["tags"][RU_TAG] = own_ru
         search["pool"] = fresh["pool"]
         search["sites"] = [s for s in fresh["sites"] if is_own_site(s)]  # job boards = portals.yml, untouched
         search["hh"] = fresh.get("hh", {})

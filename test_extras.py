@@ -28,6 +28,8 @@ import sourcestats  # noqa: E402
 
 _scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test sources
 sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
+import usage  # noqa: E402
+usage.PATH = _scratch / "usage.json"
 import tierb  # noqa: E402
 tierb.SEEN_PATH = _scratch / "tb.json"
 import hashlib  # noqa: E402
@@ -97,7 +99,7 @@ assert not flt.is_job(ARTICLE + " аналитик") and not flt.is_job_like(DIG
 # -- newcomers start with an empty feed setup
 empty = guests.preset_search()
 assert empty["keywords"]["role"] == [] and empty["keywords"]["negative"] == [] and empty["pool"] == [] and empty["sites"] == []
-assert "hh" not in empty and empty["keywords"]["job"] and "ru-company" in empty["keywords"]["tags"]
+assert "hh" not in empty and empty["keywords"]["job"] and "ru-company" not in empty["keywords"]["tags"]  # no owner's company list
 
 # -- hh.ru PDF export read right: wrapped lines, «Опыт работы — 4 года», «Обо мне …» on one line, phone kept
 HH = """Иванов Иван

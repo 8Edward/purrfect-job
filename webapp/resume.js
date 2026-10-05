@@ -178,7 +178,7 @@ async function uploadFile(file) {
 
 function aiNote() {
   const ai = rs.data.ai;
-  if (!ai.allowed) return `<p class="muted">✨ ИИ-помощь выключена. Её включает владелец бота в «👥 Близкие».</p>`;
+  if (!ai.allowed) return `<p class="muted">✨ ИИ-помощь для вашего аккаунта отключена администратором.</p>`;
   if (!ai.ready) return `<p class="muted">✨ ${esc(ai.why || "ИИ не подключён.")}${ai.owner && ai.status === "login" ? " На ноуте дважды кликните <code>telegram\\claude_login.bat</code> и войдите тем же аккаунтом, что в приложении Claude." : ""}</p>`;
   return `<p class="muted">✨ ИИ готов · осталось на сегодня: ${ai.left}. Всё, что он предлагает, вы принимаете сами.</p>`;
 }
@@ -664,7 +664,7 @@ async function renderMatch() {
 
 function askAI(op, extra = {}) {
   const ai = rs.data.ai;
-  if (!ai.allowed) return toast("ИИ для вас выключен. Его включает владелец бота в «👥 Близкие».");
+  if (!ai.allowed) return toast("ИИ для вашего аккаунта отключён администратором.");
   if (!ai.ready) return toast(ai.why || "ИИ не подключён");
   if (op === "translate") extra.lang = rs.data.active.lang === "en" ? "ru" : "en";
   if (op === "tailor" || op === "cover") {

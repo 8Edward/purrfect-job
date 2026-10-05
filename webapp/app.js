@@ -1219,6 +1219,80 @@ async function loadRoles(body) {
   };
 }
 
+/* ---------------------------------------------------------------- 👥 people and their AI use (owner, «Ещё») */
+
+let usersShown = 10;
+const tok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n || 0));
+const dmy = (iso) => (iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "—");
+function usageLine(u) {
+  return `${u.total.n} ${plural(u.total.n, "запрос", "запроса", "запросов")} · ${tok(u.total.in + u.total.out)} токенов`;
+}
+function bars(u) { // the last 14 days, oldest on the left
+  const by = Object.fromEntries((u.days || []).map((d) => [d.day, d.n]));
+  const days = [...Array(14)].map((_, i) => { const d = new Date(Date.now() - (13 - i) * 864e5); return by[d.toISOString().slice(0, 10)] || 0; });
+  const top = Math.max(1, ...days);
+  return `<div class="bars" aria-hidden="true">${days.map((n) => `<i class="${n ? "" : "z"}" style="height:${n ? Math.max(12, Math.round((n / top) * 100)) : 8}%"></i>`).join("")}</div>`;
+}
+async function loadUsers(body) {
+  const g = $("#g-users");
+  if (!st.me || !st.me.owner) { g.hidden = true; return; }
+  let d;
+  try { d = await api("/api/admin/users", body); } catch (e) { fail(e); return; }
+  g.hidden = false;
+  const on = d.people.filter((p) => !p.blocked).length;
+  $("#sum-users").textContent = `${d.people.length}` + (on < d.people.length ? `, откл. ${d.people.length - on}` : "");
+  const today = d.people.reduce((a, p) => a + p.usage.today.n, 0);
+  const rows = d.people.slice(0, usersShown).map((p) => {
+    const lim = p.limit_now, used = p.usage.today.n;
+    const who = p.name || (p.username ? "@" + p.username : "id " + p.id);
+    return `<div class="us${p.blocked ? " off" : ""}">
+      <div class="t"><b>${esc(who)}</b>${p.username && p.name ? `<small>@${esc(p.username)}</small>` : ""}</div>
+      <div class="m">${p.blocked ? "⛔ отключён · " : ""}с ${dmy(p.joined)} · заходил ${p.seen ? dmy(p.seen) : "—"} · вакансий ${p.jobs}</div>
+      <div class="m">🤖 сегодня ${used} из ${lim}${p.limit !== null && p.limit !== undefined ? " (свой лимит)" : ""} · за 14 дней ${usageLine(p.usage)}</div>
+      ${p.usage.total.n ? bars(p.usage) : ""}
+      <div class="acts">
+        <button data-ub="${p.id}" class="${p.blocked ? "on" : "warn"}">${p.blocked ? "Включить доступ" : "Отключить"}</button>
+        <button data-ua="${p.id}" class="${p.ai ? "on" : ""}">ИИ ${p.ai ? "вкл" : "выкл"}</button>
+        <button data-ul="${p.id}">Лимит ИИ: ${lim}</button>
+      </div>
+      <form class="us-lim" data-ulf="${p.id}" hidden><span>Запросов в день:</span><input class="inp" type="number" min="0" max="${d.max_limit}" inputmode="numeric" value="${lim}">
+        <button>OK</button>${p.limit !== null && p.limit !== undefined ? `<button type="button" class="link" data-ulr="${p.id}">как у всех</button>` : ""}</form>
+    </div>`;
+  }).join("");
+  $("#users-list").innerHTML = `<p class="hint">Ботом может пользоваться любой, кто его открыл. «Отключить» — человек сразу видит вежливый отказ и в боте, и в приложении; его данные остаются. Запросы ИИ идут через вашу подписку Claude.</p>
+    <div class="stats"><span>людей ${d.people.length}</span><span>ИИ сегодня: люди ${today}</span><span>вы ${d.owner.today.n}</span><span>бот ${d.system.today.n}</span></div>
+    <div class="stats"><span>за 14 дней: люди ${tok(d.people.reduce((a, p) => a + p.usage.total.in + p.usage.total.out, 0))} ток.</span><span>вы ${tok(d.owner.total.in + d.owner.total.out)}</span><span>бот ${tok(d.system.total.in + d.system.total.out)}</span></div>
+    <form class="us-def" id="us-def"><span>Лимит ИИ по умолчанию, запросов в день на человека</span><input class="inp" type="number" min="0" max="${d.max_limit}" inputmode="numeric" value="${d.default_limit}"><button class="link">Сохранить</button></form>
+    ${rows || '<p class="hint">Пока никого.</p>'}
+    ${d.people.length > usersShown ? `<button class="link block" id="users-more">Показать ещё (${d.people.length - usersShown})</button>` : ""}`;
+  const box = $("#users-list");
+  box.querySelectorAll("[data-ub]").forEach((b) => (b.onclick = () => {
+    const p = d.people.find((x) => String(x.id) === b.dataset.ub);
+    if (!p.blocked && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Точно отключить?"; return; }
+    haptic(); loadUsers({ uid: p.id, blocked: !p.blocked }).then(() => toast(p.blocked ? "Доступ включён" : "Отключён"));
+  }));
+  box.querySelectorAll("[data-ua]").forEach((b) => (b.onclick = () => {
+    const p = d.people.find((x) => String(x.id) === b.dataset.ua);
+    haptic(); loadUsers({ uid: p.id, ai: !p.ai });
+  }));
+  box.querySelectorAll("[data-ul]").forEach((b) => (b.onclick = () => {
+    const f = box.querySelector(`[data-ulf="${b.dataset.ul}"]`);
+    f.hidden = !f.hidden;
+    if (!f.hidden) f.querySelector("input").focus();
+  }));
+  box.querySelectorAll("[data-ulf]").forEach((f) => (f.onsubmit = (e) => {
+    e.preventDefault();
+    haptic(); loadUsers({ uid: +f.dataset.ulf, limit: +f.querySelector("input").value || 0 }).then(() => toast("Лимит сохранён"));
+  }));
+  box.querySelectorAll("[data-ulr]").forEach((b) => (b.onclick = () => { haptic(); loadUsers({ uid: +b.dataset.ulr, limit: null }); }));
+  $("#us-def").onsubmit = (e) => {
+    e.preventDefault();
+    haptic(); loadUsers({ default_limit: +$("#us-def input").value || 0 }).then(() => toast("Лимит по умолчанию сохранён"));
+  };
+  const m = $("#users-more");
+  if (m) m.onclick = () => { usersShown += 20; loadUsers(); };
+}
+
 /* ---------------------------------------------------------------- after a résumé upload: fill the feed? */
 
 async function offerPreset(cv) {
@@ -1400,7 +1474,7 @@ function show(name) {
   $("#screens").scrollTop = 0;
   if (name === "saved") loadSaved();
   if (name === "more" || name === "search") loadSources().catch(fail);
-  if (name === "more") { loadArchive().catch(() => {}); loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); loadProfile(); }
+  if (name === "more") { loadArchive().catch(() => {}); loadTrack(); $("#digest").setAttribute("aria-pressed", !!(st.me && st.me.digest)); renderRadar(); loadSourceHealth(); loadRoles(); loadProfile(); loadUsers(); }
   if (name === "resume") loadOriginal();
   if (name === "resume" && typeof loadPlan === "function") loadPlan();
   if (name === "resume") loadResume(true);

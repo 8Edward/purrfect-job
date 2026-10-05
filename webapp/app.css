@@ -777,3 +777,28 @@ details.group > .pad { padding: 0 14px 14px; }  /* folded blocks: their content 
 #watch .wadd .chip { flex: none; }
 #watch .row { margin-bottom: 6px; }
 .card .more { align-self: flex-start; border: none; background: none; padding: 10px 14px 4px 0; margin-bottom: -4px; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); touch-action: manipulation; }
+
+/* 👥 people and their AI use («Ещё», owner only) */
+#users-list .hint { margin: 0 14px 10px; }
+#users-list .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 10px; }
+#users-list .stats span { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--tag); }
+.us-def { display: flex; align-items: center; gap: 8px; margin: 0 14px 12px; font-size: 14px; }
+.us-def span { flex: 1; min-width: 0; }
+.us-def input, .us-lim input { width: 64px; flex: none; padding: 7px 8px; text-align: center; }
+.us { border-top: 1px solid var(--line); padding: 10px 14px; }
+.us.off { opacity: .6; }
+.us .t { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.us .t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.us .t small, .us .m { color: var(--muted); font-size: 12px; }
+.us .t small { flex: none; }
+.us .m { margin-top: 2px; overflow-wrap: anywhere; }
+.us .bars { display: flex; align-items: flex-end; gap: 2px; height: 22px; margin: 6px 0 2px; }
+.us .bars i { flex: 1; min-width: 0; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .75; }
+.us .bars i.z { background: var(--line); opacity: 1; }
+.us .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.us .acts button { border: 1px solid var(--line); background: var(--surface2); color: var(--fg); border-radius: 99px; padding: 6px 11px; font-size: 13px; }
+.us .acts button.warn { border-color: #d9534f; color: #d9534f; }
+.us .acts button.on { border-color: var(--accent); color: var(--accent); }
+.us-lim { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
+.us-lim button { border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-fg); padding: 7px 12px; font-weight: 600; }
+.us-lim .link { padding: 4px; }

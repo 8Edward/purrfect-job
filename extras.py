@@ -12,6 +12,7 @@ import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
+import guests
 import resume
 import resume_ai
 import tg_collect as tc
@@ -538,7 +539,9 @@ SCORE_DAILY = {"owner": 40, "guest": 10}
 def scores_left(member):
     cap = SCORE_DAILY["owner" if member.is_owner else "guest"]
     used = member.load_state().get("ai_scores") or {}
-    return cap - (used.get("n", 0) if used.get("date") == date.today().isoformat() else 0)
+    left = cap - (used.get("n", 0) if used.get("date") == date.today().isoformat() else 0)
+    overall = guests.ai_left(member)  # a guest's daily AI limit covers scores too
+    return left if overall is None else min(left, overall)
 
 
 def count_score(member):

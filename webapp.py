@@ -21,6 +21,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from urllib.parse import parse_qsl
 
 from aiohttp import web
@@ -38,6 +39,7 @@ import resume_ai
 import roles
 import sourcestats
 import tg_collect as tc
+import usage
 import watch
 
 log = logging.getLogger("job-radar.app")
@@ -472,6 +474,7 @@ class WebApp:
         self.shown = {}              # person id -> {"keys", "twins"}: what the current search has shown so far
         self.posts_dirty = None
         self.results = {}            # person id -> {key: job} from their last search
+        self.seen_at = {}            # person id -> monotonic time «seen_at» was last written
         self.last_search = {}
         self.site_cache = {}         # person id -> (feed file + settings stamp, their site vacancies as stored jobs)
         self.last_feedback = {}
@@ -493,10 +496,95 @@ class WebApp:
             raise web.HTTPUnauthorized(text=json.dumps({"error": "Откройте приложение через бота в Telegram."}),
                                        content_type="application/json")
         member = self.radar.member_for(user["id"])
-        if member is None:
-            raise web.HTTPForbidden(text=json.dumps({"error": "Это личное приложение. Попросите у владельца приглашение."}),
-                                    content_type="application/json")
+        if member is None:  # open access: a newcomer joins on their first visit; a switched-off person is told so
+            reg = guests.load_registry()
+            member, why = guests.join(reg, SimpleNamespace(id=user["id"], username=user.get("username"),
+                                                           first_name=user.get("first_name"), last_name=user.get("last_name")))
+            if member is None:
+                text = guests.BLOCKED_TEXT if why == "blocked" else "Сейчас нет свободных мест. Загляните позже."
+                raise web.HTTPForbidden(text=json.dumps({"error": text, "blocked": why == "blocked"}),
+                                        content_type="application/json")
+            guests.save_registry(reg)
+            log.info("app: new person %s (%s) -> %s", member.name, member.id, member.dir.name)
+            joined = getattr(self.radar, "on_joined", None)
+            if joined:
+                asyncio.create_task(joined(member))
+        usage.WHO.set(member.id)  # Claude calls started by this request (and its background jobs) count for this person
+        self.touch(member)
         return member
+
+    def touch(self, m):
+        """«Был в приложении» for the owner's list of people: written at most every 10 minutes."""
+        if m.is_owner:
+            return
+        t = time.monotonic()
+        if t - self.seen_at.get(m.id, -1e9) < 600:
+            return
+        self.seen_at[m.id] = t
+        m.update_state(seen_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+    def admin(self, request):
+        """The owner only — checked here, on the server, for every admin call (the page just hides the block)."""
+        m = self.member(request)
+        if not m.is_owner:
+            raise web.HTTPForbidden(text='{"error": "Только для администратора"}', content_type="application/json")
+        return m
+
+    async def api_admin_users(self, request):
+        """«Ещё → 👥 Пользователи»: everyone who joined, their AI use by day; switch off / AI / daily limit.
+        POST {uid, blocked} | {uid, ai} | {uid, limit: int|null} | {default_limit: int}."""
+        self.admin(request)
+        reg = guests.load_registry()
+        if request.method == "POST":
+            data = await self.body(request)
+            info = reg["users"].get(str(data.get("uid")))
+            if "default_limit" in data:
+                try:
+                    reg["settings"]["ai_daily"] = max(0, min(guests.AI_DAILY_MAX, int(data["default_limit"])))
+                except (TypeError, ValueError):
+                    return self.bad("Нужно число")
+            elif info is None:
+                return self.bad("Нет такого пользователя", 404)
+            elif "blocked" in data:
+                guests.set_blocked(reg, data["uid"], bool(data["blocked"]))
+                self.results.pop(int(data["uid"]), None)
+                log.info("admin: %s %s", "switched off" if data["blocked"] else "switched on", data["uid"])
+            elif "ai" in data:
+                if data["ai"]:
+                    info.pop("ai", None)  # on = the default
+                else:
+                    info["ai"] = False
+            elif "limit" in data:
+                if data["limit"] is None:
+                    info.pop("ai_limit", None)
+                else:
+                    try:
+                        info["ai_limit"] = max(0, min(guests.AI_DAILY_MAX, int(data["limit"])))
+                    except (TypeError, ValueError):
+                        return self.bad("Нужно число")
+            else:
+                return self.bad("Не понял, что поменять")
+            guests.save_registry(reg)
+        days = request.query.get("days", "")
+        spent = usage.report(min(90, int(days)) if days.isdigit() else 14)
+        empty = {"days": [], "total": {"n": 0, "in": 0, "out": 0}, "today": {"n": 0, "in": 0, "out": 0}, "ops": {}}
+        people = []
+        for g in guests.everyone(reg):
+            people.append({
+                "id": g.id, "name": g.info.get("name") or "", "username": g.info.get("username") or "",
+                "joined": g.info.get("joined"), "seen": g.load_state().get("seen_at"), "blocked": bool(g.info.get("blocked")),
+                "ai": g.info.get("ai") is not False, "limit": g.info.get("ai_limit"),
+                "limit_now": guests.ai_limit(g, reg), "usage": spent.get(str(g.id), empty),
+                "jobs": len(g.load_inbox()),
+            })
+        people.sort(key=lambda p: (p["blocked"], -p["usage"]["total"]["n"], p["name"].lower()))
+        owner = getattr(self.radar, "owner", None)
+        return web.json_response({
+            "people": people, "default_limit": guests.ai_default(reg), "max_limit": guests.AI_DAILY_MAX,
+            "cap": guests.MAX_MEMBERS,
+            "owner": spent.get(str(owner), empty) if owner else empty,
+            "system": spent.get(usage.SYSTEM, empty),
+        })
 
     @staticmethod
     async def body(request):
@@ -565,6 +653,8 @@ class WebApp:
         r.add_post("/api/resume/design", self.api_resume_design)
         r.add_post("/api/resume/photo", self.api_resume_photo)
         r.add_post("/api/resume/import", self.api_resume_import)
+        r.add_get("/api/admin/users", self.api_admin_users)
+        r.add_post("/api/admin/users", self.api_admin_users)
         r.add_static("/static/", WEB_DIR, show_index=False)
         return app
 
@@ -1501,7 +1591,7 @@ class WebApp:
         if op not in resume_ai.OPS:
             return self.bad("Не знаю такой помощи")
         if not resume_ai.allowed(m):
-            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+            return self.bad("ИИ для вашего аккаунта отключён администратором.", 403)
         if resume_ai.uses_left(m) <= 0:
             return self.bad("ИИ на сегодня всё: дневной лимит исчерпан. Завтра снова можно.", 429)
         if any(j["member"] == m.id and j["status"] == "running" for j in self.ai_jobs.values()):
@@ -1694,7 +1784,7 @@ class WebApp:
         m = self.member(request)
         key = str((await self.body(request)).get("key") or "")
         if not resume_ai.allowed(m):
-            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+            return self.bad("ИИ для вашего аккаунта отключён администратором.", 403)
         item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
         if not item:
             return self.bad("Вакансия не найдена", 404)
@@ -1719,7 +1809,8 @@ class WebApp:
             text, thin = item.get("text") or "", True
         head = "\n".join(f"{k}: {v}" for k, v in (("Title", item.get("title")), ("Company", item.get("company")),
                                                    ("Location", item.get("location")), ("Pay", extras.salary_of(item))) if v)
-        answer = await self.ai.ask(extras.SCORE_RULES, extras.score_prompt(m, item, head + "\n\n" + text, thin))
+        with usage.scope("score"):
+            answer = await self.ai.ask(extras.SCORE_RULES, extras.score_prompt(m, item, head + "\n\n" + text, thin))
         result = dict(extras.parse_score(answer), thin=thin)
         inbox = m.load_inbox()
         if key in inbox:
@@ -1734,7 +1825,7 @@ class WebApp:
         against the daily cap). Already scored ones are never sent again."""
         m = self.member(request)
         if not resume_ai.allowed(m):
-            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+            return self.bad("ИИ для вашего аккаунта отключён администратором.", 403)
         if self.running(m, "score_new"):
             return self.bad("ИИ уже оценивает ленту — подождите.", 409)
         left = extras.scores_left(m)
@@ -2118,7 +2209,7 @@ class WebApp:
         if goal != "grade" and len(target) < 3:
             return self.bad("Напишите, куда хотите перейти: роль или направление.")
         if not resume_ai.allowed(m):
-            return self.bad("ИИ для вас пока не включён. Попросите владельца бота включить его в «👥 Близкие».", 403)
+            return self.bad("ИИ для вашего аккаунта отключён администратором.", 403)
         if resume_ai.uses_left(m) <= 0:
             return self.bad("ИИ на сегодня всё: дневной лимит исчерпан. Завтра снова можно.", 429)
         if self.running(m, "plan"):
@@ -2132,7 +2223,8 @@ class WebApp:
         jid = self.new_ai_job(m, "plan")
 
         async def work():
-            plan = extras.parse_plan(await self.ai.ask(extras.PLAN_RULES, extras.plan_prompt(md, goal, target)), md)
+            with usage.scope("plan"):
+                plan = extras.parse_plan(await self.ai.ask(extras.PLAN_RULES, extras.plan_prompt(md, goal, target)), md)
             plan.update(goal=goal, goal_text=target, version=meta["name"], at=extras.now().isoformat(timespec="seconds"))
             m.update_state(career_plan=plan)
             resume_ai.count_use(m)

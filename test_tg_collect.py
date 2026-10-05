@@ -13,6 +13,8 @@ import sourcestats  # noqa: E402
 
 _scratch = Path(tempfile.mkdtemp())  # the bot's counters must not get the test channels
 sourcestats.PATH, filtercheck.PATH, reality.PATH = _scratch / "ss.json", _scratch / "fc.json", _scratch / "rl.json"
+import usage  # noqa: E402
+usage.PATH = _scratch / "usage.json"
 
 cfg = yaml.safe_load((Path(__file__).parent / "search.default.yml").read_text(encoding="utf-8"))
 f = tc.JobFilter(cfg["keywords"], cfg["min_length"])
@@ -422,10 +424,30 @@ with tempfile.TemporaryDirectory() as d:
     caption, rows = bot.catalog_screen(mama)
     assert "Предложить" in caption and all(data(r[0]).startswith("w:p:") for r in rows[:-1])
     check_buttons(rows)
-    caption, rows = bot.family_screen(guests.load_registry(), guests.load_pool(), "radar_bot", invite="abc")
-    assert "@mama" in caption and "Папа Петров" in caption and "t.me/radar_bot?start=abc" in caption
-    assert data(rows[0][0]) == "u:ai:101" and data(rows[0][1]) == "u:del:101" and data(rows[-1][0]) == "u:inv"
-    assert bot.visible_len(caption) <= 1024 and "ИИ" in rows[0][0].text
+    caption, rows = bot.family_screen(guests.load_registry(), "https://x.trycloudflare.com")
+    assert "Пользователи" in caption and "любой" in caption and bot.visible_len(caption) <= 1024
+    check_buttons(rows[1:])
+    # open access (2026-10-05): anyone joins on the first visit; a switched-off person is never re-registered
+    reg = guests.load_registry()
+
+    class Stranger:
+        id, username, first_name, last_name = 777, "stranger", "Незнакомец", None
+    newcomer, why = guests.join(reg, Stranger())
+    assert newcomer and why is None and guests.get(reg, 777) and newcomer.load_inbox() == {}
+    assert guests.join(reg, Stranger())[0].id == 777  # a second visit is the same person
+    assert guests.set_blocked(reg, 777, True) and guests.is_blocked(reg, 777)
+    assert guests.get(reg, 777) is None and 777 not in [g.id for g in guests.all_guests(reg)]
+    assert 777 in [g.id for g in guests.everyone(reg)] and guests.join(reg, Stranger()) == (None, "blocked")
+    assert newcomer.dir.exists()  # switched off: the data stays
+    guests.set_blocked(reg, 777, False)
+    assert guests.get(reg, 777) and guests.ai_limit(guests.get(reg, 777), reg) == guests.AI_DAILY
+    reg["settings"]["ai_daily"] = 3
+    reg["users"]["777"]["ai_limit"] = 5
+    assert guests.ai_limit(guests.get(reg, 777), reg) == 5
+    reg["users"]["777"]["ai"] = False
+    assert guests.ai_limit(guests.get(reg, 777), reg) == 0
+    full = {"users": {str(i): {} for i in range(guests.MAX_MEMBERS)}, "invites": {}, "settings": {}}
+    assert guests.join(full, Stranger()) == (None, "full")
     caption, rows = bot.guest_settings_screen(mama)
     assert "бухгалт, 1С" in caption and data(rows[0][0]) == "k:role"
 

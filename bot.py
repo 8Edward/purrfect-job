@@ -10,7 +10,7 @@ Sources:
 
 A job card: 👍 В работу -> data/pipeline.md for /career-ops pipeline,
 👎 Скрыть, ⭐ favourite. Answers you (the account logged in via login.bat) and
-the people you invite in 👥 Близкие (see guests.py).
+everyone else who starts it (open access; the owner sees them all in 👥 Пользователи, see guests.py).
 
 Run: pyw -3 telegram/bot.py   (no console; log in data/tg-bot.log)
 """
@@ -35,6 +35,7 @@ import sourcestats
 import tierb
 import tg_collect as tc
 import tunnel
+import usage
 import watch
 import webapp
 import workmode
@@ -230,7 +231,7 @@ def app_button(url, text="📱 Открыть приложение"):
 
 def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None):
     """The chat's only screen: the radar animation, a line about new vacancies and the app button.
-    Everything else (feed, search, settings, résumé) lives in the app; the owner keeps 👥 Близкие here."""
+    Everything else (feed, search, settings, résumé) lives in the app; the owner keeps 👥 Пользователи here."""
     s = stats_of(inbox)
     if new is not None:  # the app's own count (fits the current settings), not every stored vacancy
         s["new"] = new
@@ -247,7 +248,7 @@ def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None):
     if not app_url:
         lines.append("<i>Приложение сейчас подключается — кнопка появится через минуту.</i>")
     if owner:
-        rows.append([btn("👥 Близкие", "u")])
+        rows.append([btn("👥 Пользователи", "u")])
     return "\n".join(lines), rows
 
 
@@ -501,7 +502,7 @@ def sites_screen(member):
     lines = [f"<b>🌐 Сайты вакансий</b>: {len(listed)} · у тебя отмечено {len(mine)}", ""]
     if member.is_owner:
         lines.append("✓ — сайт включён в твой поиск career-ops (фильтры из portals.yml). "
-                     "Близкие отмечают сайты из этого же списка для себя.")
+                     "Остальные пользователи отмечают сайты из этого же списка для себя.")
     else:
         lines += ["✓ — присылаю тебе вакансии оттуда, если в названии вакансии есть слово из «🎯 Что ищу». "
                   "Проверяю раз в 2 часа.",
@@ -558,29 +559,20 @@ def guest_settings_screen(guest):
     return caption, rows
 
 
-def family_screen(reg, pool, bot_username, invite=None, full=False):
-    people = guests.all_guests(reg)
-    lines = [f"<b>👥 Близкие</b>: {len(people)} из {guests.MAX_MEMBERS}", ""]
-    if people:
-        for g in people:
-            n = len(g.selected(pool))
-            joined = datetime.fromisoformat(g.info["joined"])
-            lines.append(f"• <b>{esc(g.name)}</b> — {n} {plural(n, 'канал', 'канала', 'каналов')}, с {joined:%d.%m}")
-    else:
-        lines.append("Пока никого. Нажми «➕ Пригласить» и отправь ссылку человеку.")
-    lines += ["", f"📡 Каналов в общем пуле: {len(pool['channels'])} из {guests.MAX_POOL}. "
-                  "Читаю их через твой аккаунт каждые 15 минут.",
-              "🤖 ИИ для резюме работает через твою подписку Claude, и текст резюме уходит в Claude. "
-              "Включай его тем, кому доверяешь (до 12 запросов в день на человека)."]
-    if invite:
-        lines += ["", "🔗 <b>Приглашение</b> — на одного человека, действует 7 дней:",
-                  f"<code>https://t.me/{bot_username}?start={invite}</code>",
-                  "<i>Нажми на ссылку, чтобы скопировать, и перешли её человеку.</i>"]
-    if full:
-        lines += ["", f"⚠️ Мест нет: не больше {guests.MAX_MEMBERS} человек (считая неиспользованные приглашения)."]
-    rows = [[btn(f"🤖 ИИ {'✓' if g.info.get('ai') else '—'}", f"u:ai:{g.id}"), btn(f"✖ {g.name}"[:40], f"u:del:{g.id}")]
-            for g in people]
-    rows.append([btn("➕ Пригласить", "u:inv"), HOME_BTN])
+def family_screen(reg, app_url=None):
+    """«👥 Пользователи» in the chat: a short summary; the list, switching people off and the AI
+    statistics live in the app («Ещё → 👥 Пользователи»)."""
+    people = guests.everyone(reg)
+    off = sum(1 for g in people if g.info.get("blocked"))
+    today = usage.report(1)
+    asked = sum(v["today"]["n"] for k, v in today.items() if k != usage.SYSTEM)
+    lines = [f"<b>👥 Пользователи</b>: {len(people)}" + (f", отключено {off}" if off else ""), "",
+             "Ботом может пользоваться любой: человек нажимает /start или открывает приложение — и всё.",
+             f"🤖 ИИ сегодня: {asked} {plural(asked, 'запрос', 'запроса', 'запросов')} от людей. "
+             f"Лимит на человека — {guests.ai_default(reg)} в день (меняется в приложении).", "",
+             "Список, отключение и статистика ИИ — в приложении: «Ещё» → «👥 Пользователи»."]
+    rows = [[app_button(app_url, "📱 Открыть список")]] if app_url else []
+    rows.append([HOME_BTN])
     return "\n".join(lines), rows
 
 
@@ -1513,32 +1505,16 @@ class JobRadar:
     # ------------------------------------------------------------ 👥 family: the owner's side
 
     async def b_family(self, event, sub=None, uid=None):
-        reg = guests.load_registry()
-        invite, note, full = None, None, False
-        g = guests.get(reg, uid) if uid else None
-        if sub == "inv":
-            invite = guests.new_invite(reg)
-            guests.save_registry(reg)
-            full = invite is None
-        elif sub == "del" and g:
-            await event.answer()
-            return await self.edit_screen(event, (
-                f"<b>Отключить {esc(g.name)}?</b>\n\n"
-                "Бот перестанет отвечать этому человеку и читать для него каналы. "
-                "Его настройки останутся в папке — новое приглашение вернёт всё как было. "
-                "Каналы, которые он добавил в пул, останутся."),
-                [[btn("✖ Да, отключить", f"u:delok:{uid}")], [btn("⬅️ Назад", "u")]])
-        elif sub == "ai" and g:
-            reg["users"][str(g.id)]["ai"] = not g.info.get("ai")
-            guests.save_registry(reg)
-            note = f"ИИ для {g.name}: {'включён' if reg['users'][str(g.id)]['ai'] else 'выключен'}"
-            log.info("guest %s ai=%s", g.id, reg["users"][str(g.id)]["ai"])
-        elif sub == "delok" and g and guests.remove(reg, uid):
-            guests.save_registry(reg)
-            log.info("guest removed: %s (%s)", g.name, uid)
-            note = f"Отключил {g.name}"
-        await event.answer(note)
-        await self.edit_screen(event, *family_screen(reg, guests.load_pool(), self.bot_username, invite, full))
+        await event.answer()
+        await self.edit_screen(event, *family_screen(guests.load_registry(), self.app_url))
+
+    async def on_joined(self, guest):
+        """A newcomer (from /start or straight from the app): a quiet line to the owner."""
+        try:
+            await self.send_screen(f"👥 Новый пользователь: <b>{esc(guest.name)}</b>.", [[btn("👥 Пользователи", "u")], [HOME_BTN]],
+                                   silent=True)
+        except Exception as e:
+            log.warning("new person note: %s", e)
 
     # ------------------------------------------------------------ 👥 family: the guest's side
 
@@ -1615,18 +1591,13 @@ class JobRadar:
         if guest is None:
             if self.too_fast(event.sender_id):
                 return
-            code = text.split()[1] if command == "/start" and len(text.split()) > 1 else None
-            if code and guests.use_invite(reg, code):
-                guest = guests.register(reg, await event.get_sender())
-                guests.save_registry(reg)
-                log.info("guest joined: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
-                await self.send_screen(f"👥 <b>{esc(guest.name)}</b> подключился по приглашению.",
-                                       [[btn("👥 Близкие", "u")], [HOME_BTN]], silent=True)
-                return await self.guest_show_home(guest)  # setup happens in the app (its own onboarding)
-            guests.save_registry(reg)  # expired invites were dropped
-            if code:
-                return await event.respond("Ссылка-приглашение недействительна: она одноразовая и работает 7 дней. Попроси новую.")
-            return await event.respond("Это личный бот. Чтобы им пользоваться, попроси у владельца ссылку-приглашение.")
+            guest, why = guests.join(reg, await event.get_sender())  # open access (Эдуард, 2026-10-05): anyone may use the bot
+            if guest is None:
+                return await event.respond(guests.BLOCKED_TEXT if why == "blocked" else "Сейчас нет свободных мест. Загляните позже.")
+            guests.save_registry(reg)
+            log.info("new person: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
+            await self.on_joined(guest)
+            return await self.guest_show_home(guest)  # setup happens in the app (its own onboarding)
 
         try:
             await event.delete()
@@ -1679,7 +1650,9 @@ class JobRadar:
     async def guest_button(self, event):
         guest = guests.get(guests.load_registry(), event.sender_id)
         if guest is None:
-            return await event.answer("Нет доступа. Попроси у владельца ссылку-приглашение.", alert=True)
+            reg = guests.load_registry()
+            return await event.answer(guests.BLOCKED_TEXT if guests.is_blocked(reg, event.sender_id) else "Нажмите /start",
+                                      alert=True)
         if self.too_fast(guest.id):
             return await event.answer("Не так быстро 🙂")
         parts = event.data.decode("utf-8", "replace")[:64].split(":")

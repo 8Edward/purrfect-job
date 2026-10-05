@@ -28,7 +28,9 @@ import time
 from datetime import date
 from pathlib import Path
 
+import guests
 import resume
+import usage
 
 log = logging.getLogger("job-radar.ai")
 
@@ -91,6 +93,22 @@ def find_exe(configured=None):
     return shutil.which("claude")
 
 
+def read_answer(raw):
+    """`claude -p --output-format json` -> (the answer's text, {in, out, error}). Plain text (an older
+    claude, or a crash before the JSON) passes through with no token counts."""
+    raw = raw.strip()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return raw, {}
+    if not isinstance(data, dict) or "result" not in data:
+        return raw, {}
+    u = data.get("usage") or {}
+    tokens_in = sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return str(data.get("result") or "").strip(), {"in": tokens_in, "out": int(u.get("output_tokens") or 0),
+                                                  "error": bool(data.get("is_error"))}
+
+
 class Claude:
     """Runs `claude -p` with no tools, no project files and no saved session."""
 
@@ -108,7 +126,7 @@ class Claude:
         env = dict(os.environ, TEMP=str(WORK_DIR.parent), TMP=str(WORK_DIR.parent))
         async with self.lock:
             proc = await asyncio.create_subprocess_exec(
-                self.exe, "-p", "--output-format", "text", "--tools", "", "--no-session-persistence",
+                self.exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
                 "--setting-sources", "local", "--system-prompt", system,
                 cwd=str(WORK_DIR), env=env, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -116,12 +134,14 @@ class Claude:
                 out, err = await asyncio.wait_for(proc.communicate(prompt.encode("utf-8")), timeout)
             except asyncio.TimeoutError:
                 proc.kill()
+                usage.record(ok=False)
                 raise RuntimeError("timeout")
-        text = out.decode("utf-8", "replace").strip()
+        text, used = read_answer(out.decode("utf-8", "replace"))
+        usage.record(used.get("in", 0), used.get("out", 0), ok=proc.returncode == 0 and not used.get("error"))
         if "not logged in" in (text + err.decode("utf-8", "replace")).lower() or "/login" in text[:80]:
             self.checked = (time.monotonic(), "login")
             raise RuntimeError("login")
-        if proc.returncode != 0:
+        if proc.returncode != 0 or used.get("error"):
             raise RuntimeError("error: " + (err.decode("utf-8", "replace") or text)[-300:])
         return text
 
@@ -134,7 +154,8 @@ class Claude:
             value = "missing"
         else:
             try:
-                await self.ask("Reply with the single word OK.", "ping", timeout=60)
+                with usage.scope("ping", system=True):
+                    await self.ask("Reply with the single word OK.", "ping", timeout=60)
                 value = None
             except RuntimeError as e:
                 value = str(e) if str(e) in ("login", "missing") else "error"
@@ -145,13 +166,18 @@ class Claude:
 # ---------------------------------------------------------------- limits and permission
 
 def allowed(member):
-    return member.is_owner or bool(getattr(member, "info", {}).get("ai"))
+    """AI is on for everyone since open access (2026-10-05); the owner can switch it off per person
+    («👥 Пользователи»: ai false or a limit of 0)."""
+    return member.is_owner or guests.ai_limit(member) != 0
 
 
 def uses_left(member):
+    """Résumé AI left today: the feature's own cap, and for a guest also their overall daily limit."""
     cap = DAILY["owner" if member.is_owner else "guest"]
     used = member.load_state().get("ai_uses") or {}
-    return cap - (used.get("n", 0) if used.get("date") == date.today().isoformat() else 0)
+    left = cap - (used.get("n", 0) if used.get("date") == date.today().isoformat() else 0)
+    overall = guests.ai_left(member)
+    return left if overall is None else min(left, overall)
 
 
 def count_use(member):
@@ -241,6 +267,11 @@ Résumé language: {'Russian' if lang == 'ru' else 'English'}."""
 
 async def run(ai, op, md, vacancy="", lang=None, focus=""):
     """One AI operation on a résumé. Returns a dict for the app (see each op)."""
+    with usage.scope(op):  # the usage ledger says what the call was for
+        return await _run(ai, op, md, vacancy, lang, focus)
+
+
+async def _run(ai, op, md, vacancy="", lang=None, focus=""):
     src_lang = resume.detect_lang(md)
     if op == "improve":
         prompt = (f"Improve this résumé line by line.{(' Focus on: ' + focus) if focus else ''}\n"

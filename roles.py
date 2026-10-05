@@ -25,6 +25,7 @@ from datetime import date
 
 import guests
 import tg_collect as tc
+import usage
 
 CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
@@ -152,7 +153,8 @@ async def classify(ai, jobs, graph):
     data = load()
     if calls_left(data) <= 0 or len(jobs) < MIN_BATCH:
         return 0
-    text = await ai.ask(SYSTEM, prompt_for(jobs[:BATCH], graph), timeout=TIMEOUT)
+    with usage.scope("roles", system=True):  # the shared dictionary: the bot's own spending, not the searcher's
+        text = await ai.ask(SYSTEM, prompt_for(jobs[:BATCH], graph), timeout=TIMEOUT)
     got = parse(text, jobs[:BATCH], graph)
     data = load()  # re-read: the owner may have reviewed something meanwhile
     today = date.today().isoformat()
@@ -211,7 +213,8 @@ async def deep(ai, jobs, graph):
     got_text = [(j, t) for j, t in zip(jobs, texts) if t]
     out = {}
     if got_text:
-        text = await ai.ask(DEEP_SYSTEM, deep_prompt(got_text, graph), timeout=TIMEOUT)
+        with usage.scope("roles-jd", system=True):
+            text = await ai.ask(DEEP_SYSTEM, deep_prompt(got_text, graph), timeout=TIMEOUT)
         out = parse(text, [j for j, _ in got_text], graph)
     data = load()
     today = date.today().isoformat()

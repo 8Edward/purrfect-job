@@ -22,6 +22,11 @@ from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 import guests  # noqa: E402
 guests.START_EMPTY = False  # the preset machinery is what is tested here
 import webapp  # noqa: E402
+import extras  # noqa: E402
+import resume_ai  # noqa: E402
+import usage  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+usage.PATH = Path(tempfile.mkdtemp()) / "usage.json"  # the real AI ledger stays untouched
 
 TOKEN = "123:TEST"
 
@@ -243,6 +248,8 @@ class FakeRadar:
         self.reg = reg
 
     def member_for(self, uid):
+        if uid == getattr(self, "owner", None):
+            return SimpleNamespace(is_owner=True, id=uid, name="ты")  # the owner, without touching the real owner files
         return guests.get(guests.load_registry(), uid)
 
     def minutes_to_next_check(self):
@@ -300,7 +307,20 @@ async def main():
             async with TestClient(TestServer(app_)) as c:
                 auth = {"Authorization": "tma " + sign({"id": 5, "first_name": "Мама"})}
                 assert (await c.get("/api/me")).status == 401
-                assert (await c.get("/api/me", headers={"Authorization": "tma " + sign({"id": 6})})).status == 403
+                # open access: a stranger joins on the first visit (empty setup, nothing of anyone else's)
+                stranger = {"Authorization": "tma " + sign({"id": 6, "first_name": "Гость", "username": "guest6"})}
+                guests.START_EMPTY = True  # what real newcomers get
+                sme = await (await c.get("/api/me", headers=stranger)).json()
+                guests.START_EMPTY = False
+                assert sme["name"] == "Гость" and not sme["owner"] and sme["stats"]["new"] == 0 and sme["ai"]
+                s6 = guests.get(guests.load_registry(), 6)
+                assert s6.load_search()["keywords"]["role"] == [] and s6.load_inbox() == {} and "seen_at" in s6.load_state()
+                assert (await (await c.get("/api/jobs?view=new", headers=stranger)).json())["items"] == []  # Мама's vacancy is hers
+                assert (await c.get("/api/admin/users", headers=stranger)).status == 403  # admin: checked on the server
+                assert (await c.post("/api/admin/users", headers=stranger, json={"uid": 5, "blocked": True})).status == 403
+                assert (await c.get("/api/roles", headers=stranger)).status == 403
+                assert (await c.get("/api/apply/profile", headers=stranger)).status == 403
+                assert not guests.is_blocked(guests.load_registry(), 5)
                 me = await (await c.get("/api/me", headers=auth)).json()
                 assert me["name"] == "Мама" and me["stats"]["new"] == 1 and me["stats"]["channels"] == 1 and not me["onboarded"]
 
@@ -459,7 +479,7 @@ async def main():
                 # the three uploads above (docx, txt, pdf) each became a version
                 assert [v["name"] for v in rs["versions"]] == ["Основное", "Загруженное", "Загруженное 2"], rs["versions"]
                 assert rs["active"]["name"] == "Загруженное 2"
-                assert rs["ai"]["allowed"] is False  # a guest without the owner's switch
+                assert rs["ai"]["allowed"] is True and rs["ai"]["left"] <= guests.AI_DAILY  # open access: AI on, within the daily limit
                 vid = rs["active"]["id"]
                 blocks = rs["blocks"]
                 blocks[0]["x"] = "Анна П. Петрова"
@@ -489,10 +509,13 @@ async def main():
                 mt = await (await c.post("/api/resume/match", headers=auth, json={"vid": built_vid, "vacancy": "Ищем бизнес-аналитика: BPMN, SQL, Jira, Confluence. " * 3})).json()
                 assert "bpmn" in {x["term"].lower() for x in mt["present"]} and "sql" in {x["term"].lower() for x in mt["missing"]}
                 assert (await c.post("/api/resume/match", headers=auth, json={"vid": built_vid, "vacancy": "мало"})).status == 400
-                # AI: refused until the owner switches it on for this guest
+                # AI: on by default since open access; the owner can switch it off for a person
+                reg = guests.load_registry()
+                reg["users"]["5"]["ai"] = False
+                guests.save_registry(reg)
                 assert (await c.post("/api/resume/ai", headers=auth, json={"op": "improve", "vid": built_vid})).status == 403
                 reg = guests.load_registry()
-                reg["users"]["5"]["ai"] = True
+                reg["users"]["5"].pop("ai")
                 guests.save_registry(reg)
                 app.ai = FakeClaude([json.dumps({"changes": [{"before": "Описала 40 процессов в BPMN", "after": "Описала в BPMN 40 бизнес-процессов банка",
                                                               "why": "конкретнее"}], "questions": ["Какой результат?"]}, ensure_ascii=False)])
@@ -568,6 +591,38 @@ async def main():
                 assert not me["onboarded"] and me["skin"] is None
                 await c.post("/api/reset", headers=auth, json={"confirm": "reset", "wipe_jobs": True})
                 assert g.load_inbox() == {}
+
+                # 👥 the owner's list: everyone, switch off / AI / limits, AI use by person
+                app.radar.owner = 1
+                owner = {"Authorization": "tma " + sign({"id": 1, "first_name": "Эдуард"})}
+                usage.record(100, 20, who=6, op="score")
+                usage.record(50, 5, who=6, op="improve")
+                usage.record(10, 1, who=None, op="roles")
+                d = await (await c.get("/api/admin/users", headers=owner)).json()
+                p6 = next(p for p in d["people"] if p["id"] == 6)
+                assert p6["usage"]["today"]["n"] == 2 and p6["usage"]["total"]["in"] == 150 and p6["usage"]["ops"] == {"score": 1, "improve": 1}
+                assert d["system"]["today"]["n"] == 1 and d["default_limit"] == guests.AI_DAILY and p6["limit_now"] == guests.AI_DAILY
+                assert guests.ai_left(s6) == guests.AI_DAILY - 2
+                d = await (await c.post("/api/admin/users", headers=owner, json={"uid": 6, "limit": 2})).json()
+                assert next(p for p in d["people"] if p["id"] == 6)["limit_now"] == 2
+                s6 = guests.get(guests.load_registry(), 6)
+                assert guests.ai_left(s6) == 0 and extras.scores_left(s6) == 0 and resume_ai.uses_left(s6) == 0  # spent today
+                d = await (await c.post("/api/admin/users", headers=owner, json={"uid": 6, "limit": None})).json()
+                d = await (await c.post("/api/admin/users", headers=owner, json={"default_limit": 4})).json()
+                assert d["default_limit"] == 4 and next(p for p in d["people"] if p["id"] == 6)["limit_now"] == 4
+                d = await (await c.post("/api/admin/users", headers=owner, json={"uid": 6, "ai": False})).json()
+                assert not next(p for p in d["people"] if p["id"] == 6)["ai"]
+                assert not resume_ai.allowed(guests.get(guests.load_registry(), 6))
+                await c.post("/api/admin/users", headers=owner, json={"uid": 6, "ai": True})
+                d = await (await c.post("/api/admin/users", headers=owner, json={"uid": 6, "blocked": True})).json()
+                assert next(p for p in d["people"] if p["id"] == 6)["blocked"]
+                r = await c.get("/api/me", headers=stranger)
+                assert r.status == 403 and (await r.json())["error"] == guests.BLOCKED_TEXT  # a polite no, data kept
+                assert s6.dir.exists() and 6 not in [g.id for g in guests.all_guests(guests.load_registry())]
+                await c.post("/api/admin/users", headers=owner, json={"uid": 6, "blocked": False})
+                assert (await c.get("/api/me", headers=stranger)).status == 200
+                assert (await c.post("/api/admin/users", headers=owner, json={"uid": 999, "blocked": True})).status == 404
+                assert (guests.REGISTRY_PATH.with_name("users.before-open-access.json")).exists()  # a copy before the first change
 
                 page = await c.get("/")
                 assert page.status == 200 and "{{v}}" not in await page.text()
