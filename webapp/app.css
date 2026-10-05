@@ -772,3 +772,4 @@ html.skinning, html.skinning body, html.skinning :is(.hero, .card, .group, .row,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.seg.four { grid-template-columns: 1fr 1fr; gap: 3px; }  /* «Мои»: four lists as a 2×2 block */

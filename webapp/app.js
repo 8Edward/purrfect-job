@@ -61,6 +61,10 @@ function when(iso) {
   if (diff < 7) return diff + " " + plural(diff, "день", "дня", "дней") + " назад";
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
+function seenAt(iso) {  // «сегодня 14:32», «вчера 09:10», «3 окт. 18:05»: always with the time
+  const d = new Date(iso), w = when(iso);
+  return /^(сегодня|вчера)/.test(w) ? w : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
 function ago(iso) {
   const min = Math.max(0, Math.round((Date.now() - new Date(iso)) / 6e4));
   if (min < 1) return "только что";
@@ -116,7 +120,7 @@ function bindSkins(root) { $$(".skin", root).forEach((b) => (b.onclick = () => {
 /* ---------------------------------------------------------------- feed */
 
 async function loadMe() {
-  st.me = await api("/api/me");
+  st.me = await api("/api/me?since=" + encodeURIComponent(VISIT));
   const m = st.me, s = m.stats;
   $("#hello").innerHTML = s.new
     ? `${esc(m.name)}, <em>${s.new}</em> ${plural(s.new, "новая", "новые", "новых")}`
@@ -133,7 +137,25 @@ async function loadMe() {
 }
 /* the feed comes in pages (PAGE at a time) so thousands of vacancies never load at once */
 const PAGE = 40;
-const feedUrl = (offset) => `/api/jobs?view=new&sort=${st.sort}&f=${st.filter}&age=${st.age}&grade=${st.grade}&offset=${offset}&limit=${PAGE}`;
+/* 👁 «Просмотрено»: a card that stayed on top a moment (or was opened) is marked seen. This visit it stays,
+   next visit the feed has only what is new; the seen ones wait in «Мои → Просмотрено» with the time. */
+const VISIT = new Date().toISOString();
+const seenQueue = new Set();
+let seenTimer = null, topTimer = null;
+function markSeen(key) {
+  if (!key) return;
+  seenQueue.add(key);
+  clearTimeout(seenTimer);
+  seenTimer = setTimeout(flushSeen, 1500);
+}
+function flushSeen() {
+  if (!seenQueue.size) return;
+  const keys = [...seenQueue];
+  seenQueue.clear();
+  api("/api/seen", { keys }).catch(() => keys.forEach((k) => seenQueue.add(k)));
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushSeen(); });
+const feedUrl = (offset) => `/api/jobs?view=new&since=${encodeURIComponent(VISIT)}&sort=${st.sort}&f=${st.filter}&age=${st.age}&grade=${st.grade}&offset=${offset}&limit=${PAGE}`;
 async function loadFeed() {
   const d = await api(feedUrl(0));
   st.feed = d.items;
@@ -229,6 +251,8 @@ function renderStack() {
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
+  clearTimeout(topTimer);
+  if (top) topTimer = setTimeout(() => { if (topCard() === top && !$("#s-feed").hidden) markSeen(top.dataset.key); }, 1500);
 }
 const byKey = (key) => st.feed.find((i) => i.key === key);
 const summaryHtml = (i) => (i.summary && i.summary.length ? `<div class="sum">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : "");
@@ -249,6 +273,15 @@ function renderList(items) {
     new IntersectionObserver((es, ob) => { if (es.some((x) => x.isIntersecting)) { ob.disconnect(); moreFeed(); } }).observe(sentinel);
   }
   $$("[data-open]", box).forEach((b) => (b.onclick = () => openSheet(items[+b.dataset.open], false)));
+  if ("IntersectionObserver" in window) {  // a row that stayed on screen a moment counts as seen
+    const shown = new Map();
+    const ob = new IntersectionObserver((es) => es.forEach((x) => {
+      const key = items[+x.target.dataset.n] && items[+x.target.dataset.n].key;
+      if (x.isIntersecting) shown.set(key, setTimeout(() => markSeen(key), 1500));
+      else clearTimeout(shown.get(key));
+    }), { threshold: 0.8 });
+    $$(".lrow", box).forEach((r) => ob.observe(r));
+  }
   $$("[data-yes]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.yes], true, b.closest(".lrow"))));
   $$("[data-no]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.no], false, b.closest(".lrow"))));
 }
@@ -413,6 +446,7 @@ async function followRefresh(before) {
 async function openSheet(item, viaSearch) {
   if (!item) return;
   st.sheet = { item, viaSearch };
+  if (!viaSearch && item.status === "new" && !item.seen) markSeen(item.key);
   renderSheet();
   $("#sheet").hidden = $("#sheet-bg").hidden = false;
   try { tg.BackButton.show(); } catch (e) { /* not in Telegram */ }
@@ -441,6 +475,7 @@ function renderSheet() {
     <div class="btns">
       ${fresh ? `<button class="yes" data-a="take">★ В избранное</button><button data-a="hide">✕ Скрыть</button>` : ""}
       ${i.status === "hidden" ? `<button data-a="restore" class="wide">↩ Вернуть в новые</button>` : ""}
+      ${i.seen && i.status === "new" && !i.archived && st.saved === "seen" && !$("#s-saved").hidden ? `<button data-a="unsee" class="wide">↩ Вернуть в ленту</button>` : ""}
       ${fresh ? "" : `<button data-a="fav" class="wide">${i.fav ? "★ Убрать из избранного" : "☆ В избранное"}</button>`}
       ${st.me && st.me.owner ? '<button data-a="apply" class="yes wide">✉️ Откликнуться</button>' : ""}
       ${i.link ? `<button data-a="open" class="wide">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
@@ -695,6 +730,7 @@ async function sheetAction(action) {
     st.sheet.item = { ...item, ...d.item, text: item.text, match: item.match };
     st.feed = st.feed.map((i) => (i.key === item.key ? { ...i, ...d.item, text: i.text } : i)).filter((i) => i.status === "new");
     st.results = st.results.map((i) => (i.key === item.key ? { ...i, status: d.item.status, fav: d.item.fav } : i));
+    if (action === "unsee") { closeSheet(); loadSaved(); loadMe().catch(() => {}); loadFeed().catch(() => {}); return; }
     if (action === "archive" || action === "unarchive") { closeSheet(); loadSaved(); loadMe().catch(() => {}); return; }
     renderSheet();
     renderStack();
@@ -848,12 +884,13 @@ async function loadSaved() {
   try {
     const items = (await api("/api/jobs?view=" + st.saved)).items;
     const empty = { fav: "Свайпните карточку вправо или нажмите ★, и вакансия окажется здесь.", hidden: "Скрытых нет.",
+      seen: "Здесь будут вакансии, которые вы уже видели в ленте, но не отметили: с датой и временем просмотра.",
       archive: "Здесь будут вакансии, которые вы убрали в архив: откройте вакансию и нажмите «🗄 В архив»." };
     const unscored = st.saved === "fav" && st.me && st.me.ai ? items.filter((i) => !i.ai).length : 0;
     box.innerHTML = (unscored ? `<div class="batchbar"><button class="ai-btn" id="score-fav">✨ Оценить все ИИ (${unscored})</button></div>` : "")
       + (items.length ? items.map((i, n) => {
         const done = i.track && i.track.stage;
-        return `<button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "✓ " + esc(STAGES[i.track.stage].toLowerCase()) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`;
+        return `<button class="row" data-n="${n}"><b>${esc(i.title)}</b><span class="m">${done ? "✓ " + esc(STAGES[i.track.stage].toLowerCase()) : st.saved === "seen" && i.seen ? "👁 " + esc(seenAt(i.seen)) : esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`;
       }).join("") : `<div class="empty"><b>Пока пусто</b>${empty[st.saved]}</div>`);
     $$("#saved .row").forEach((r) => (r.onclick = () => openSheet(items[+r.dataset.n], false)));
     if ($("#score-fav")) $("#score-fav").onclick = scoreFav;

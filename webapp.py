@@ -63,13 +63,14 @@ QUERY_MAX = 80
 RESULTS_MAX = 80
 NEAR_SLOTS = 30                   # «similar»: places kept for neighbour roles when the role itself has plenty
 SEARCH_COOLDOWN = 0.5             # seconds between one person's searches (graph taps come fast)
-ACTIONS = ("take", "hide", "restore", "fav", "archive", "unarchive")
+ACTIONS = ("take", "hide", "restore", "fav", "archive", "unarchive", "unsee")
 VIEWS = {
     "new": lambda i: i["status"] == "new",
     "fav": lambda i: i.get("fav") and not i.get("archived"),  # «Избранное»: swiping right stars a vacancy
     "taken": lambda i: i["status"] == "taken",
     "hidden": lambda i: i["status"] == "hidden" and not i.get("archived"),
     "archive": lambda i: i.get("archived"),  # «Мои → Архив»: put away by hand, out of the other lists until returned
+    "seen": lambda i: i.get("seen") and i["status"] == "new" and not i.get("archived"),  # «Мои → Просмотрено»: shown, not decided
     "all": lambda i: True,
 }
 
@@ -313,6 +314,7 @@ def item_json(key, item, full=False):
         "status": item.get("status", "new"),
         "fav": bool(item.get("fav")),
         "archived": bool(item.get("archived")),
+        "seen": item.get("seen"),
         "tags": item.get("tags", []),
         "text": excerpt(item.get("text", ""), 4000 if full else 600),
         "salary": extras.salary_of(item),
@@ -422,11 +424,27 @@ def excluded_origins(m):
     return set(m.load_state().get("feed_exclude") or [])
 
 
-def feed_pairs(m, inbox):
-    """The «new» feed: newest first, the person's time zone and country filters applied. -> (pairs, filtered out)"""
+def unseen(item, since=None):
+    """Not looked at yet. `since` (the start of the person's app visit): what they saw during this visit stays
+    in the feed until they come back, so cards don't vanish under their finger."""
+    seen = item.get("seen")
+    return not seen or (since is not None and seen >= since)
+
+
+def parse_since(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc).isoformat() if value else None
+    except ValueError:
+        return None
+
+
+def feed_pairs(m, inbox, since=None):
+    """The «new» feed: newest first, nothing seen before this visit, the person's time zone and country filters
+    applied. -> (pairs, filtered out)"""
     tz, cs = extras.tz_settings(m), extras.country_settings(m)
     fits = fits_now(m)
-    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and fits(v)), key=lambda kv: kv[1]["date"], reverse=True)
+    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and unseen(v, since) and fits(v)),
+                 key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
     keep = [(k, v) for k, v in new if extras.tz_fits(v, tz) and extras.country_fits(v, cs)]
     gone = excluded_origins(m)  # «Исключить источник»: whole channels / sites the person does not want in the feed
@@ -519,6 +537,7 @@ class WebApp:
         r.add_post("/api/track/add", self.api_track_add)
         r.add_post("/api/feedback", self.api_feedback)
         r.add_post("/api/feed/exclude", self.api_feed_exclude)
+        r.add_post("/api/seen", self.api_seen)
         r.add_post("/api/apply/compose", self.api_apply_compose)
         r.add_post("/api/apply/presets", self.api_apply_presets)
         r.add_get("/api/apply/profile", self.api_apply_profile)
@@ -675,7 +694,7 @@ class WebApp:
                     item["fav"] = True
             m.save_inbox(inbox)
             m.update_state(fav_migrated=True)
-        new_count = len(extras.groups(feed_pairs(m, inbox)[0]))  # once: it is the slow part
+        new_count = len(extras.groups(feed_pairs(m, inbox, parse_since(request.query.get("since")))[0]))  # once: it is the slow part
         return web.json_response({
             "name": "Эдуард" if m.is_owner else (m.info.get("name") or m.name).split(" ")[0],
             "owner": m.is_owner,
@@ -694,6 +713,7 @@ class WebApp:
                 "taken": sum(1 for i in inbox.values() if i["status"] == "taken"),
                 "fav": sum(1 for i in inbox.values() if VIEWS["fav"](i)),
                 "archived": sum(1 for i in inbox.values() if i.get("archived")),
+                "seen": sum(1 for i in inbox.values() if VIEWS["seen"](i)),
                 "hidden": sum(1 for i in inbox.values() if i["status"] == "hidden"),
                 "channels": len(m.selected(pool)) + (len(tc.load_channels(tc.CHANNELS_PATH)) if m.is_owner else 0),
                 "sites": len(m.sites(listed)),
@@ -709,7 +729,9 @@ class WebApp:
         keep = VIEWS.get(view, VIEWS["new"])
         inbox = m.load_inbox()
         if view == "new" or view not in VIEWS:
-            items, tz_hidden = feed_pairs(m, inbox)
+            items, tz_hidden = feed_pairs(m, inbox, parse_since(request.query.get("since")))
+        elif view == "seen":  # the latest looked at first
+            items, tz_hidden = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["seen"], reverse=True), 0
         else:
             items, tz_hidden = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True), 0
         try:
@@ -760,6 +782,23 @@ class WebApp:
         m.update_state(feed_exclude=sorted(gone))
         return web.json_response({"ok": True, "excluded": sorted(gone)})
 
+    async def api_seen(self, request):
+        """{keys}: vacancies the person looked at (a card on top for a while, or opened). Marked once, with the time;
+        the same vacancy from other sources goes along. Next visit the feed shows only what is new."""
+        m = self.member(request)
+        data = await self.body(request)
+        keys = [str(k) for k in (data.get("keys") or [])][:200]
+        inbox, stamp, n = m.load_inbox(), guests.now().isoformat(), 0
+        for key in keys:
+            for k in [key] + (extras.twins_of(inbox, key) if key in inbox else []):
+                item = inbox.get(k)
+                if item and item["status"] == "new" and not item.get("seen"):
+                    item["seen"] = stamp
+                    n += 1
+        if n:
+            m.save_inbox(inbox)
+        return web.json_response({"ok": True, "marked": n})
+
     async def api_job(self, request):
         m = self.member(request)
         item = m.load_inbox().get(request.match_info["key"])
@@ -776,7 +815,12 @@ class WebApp:
         item = inbox.get(key)
         if not item:
             raise web.HTTPNotFound(text='{"error": "Вакансия не найдена"}', content_type="application/json")
-        changed, note = guests.job_action(m, key, item, action)
+        if action == "unsee":  # «Вернуть в ленту» from «Просмотрено»
+            changed, note = bool(item.pop("seen", None)), "Вернул в ленту"
+            for twin in extras.twins_of(inbox, key):
+                inbox[twin].pop("seen", None)
+        else:
+            changed, note = guests.job_action(m, key, item, action)
         if changed and action in ("take", "hide", "restore"):  # the same vacancy from other sources goes along
             for twin in extras.twins_of(inbox, key):
                 if inbox[twin]["status"] != item["status"] and (action == "restore" or inbox[twin]["status"] == "new"):

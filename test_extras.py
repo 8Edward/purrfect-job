@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -384,6 +385,20 @@ async def main():
                 after = await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json()
                 assert after["total"] < before["total"] and gone not in [o["name"] for o in after["origins"]] and after["excluded"] == [gone]
                 await c.post("/api/feed/exclude", headers=auth, json={"origin": gone, "on": False})
+                assert (await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json())["total"] == before["total"]
+
+                # 👁 «Просмотрено»: a seen card stays for this visit, leaves the feed on the next, waits in «Мои», comes back on «unsee»
+                visit = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+                first = before["items"][0]["key"]
+                assert (await (await c.post("/api/seen", headers=auth, json={"keys": [first]})).json())["marked"] >= 1
+                assert (await (await c.post("/api/seen", headers=auth, json={"keys": [first]})).json())["marked"] == 0  # once
+                same = await (await c.get("/api/jobs?view=new&limit=100&since=" + quote(visit), headers=auth)).json()
+                assert first in [i["key"] for i in same["items"]]
+                later = await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json()
+                assert first not in [i["key"] for i in later["items"]] and later["total"] == before["total"] - 1
+                seen = (await (await c.get("/api/jobs?view=seen", headers=auth)).json())["items"]
+                assert [i["key"] for i in seen][:1] == [first] and seen[0]["seen"]
+                assert (await (await c.post(f"/api/jobs/{first}/unsee", headers=auth, json={})).json())["ok"]
                 assert (await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json())["total"] == before["total"]
 
                 p1 = await (await c.get("/api/jobs?view=new&limit=3&offset=0", headers=auth)).json()
