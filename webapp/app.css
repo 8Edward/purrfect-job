@@ -716,3 +716,59 @@ html[data-skin="office"] .feed-set { font-family: var(--f-body); }
 /* office: calm breathing */
 .mascot .m-office { animation: cat-breathe 3.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mascot svg, .mascot svg * { animation: none !important; } }
+
+/* ✨ motion: every tap answers with a soft, quick move. One easing for everything («out-expo»-like),
+   only transform / opacity animate (smooth on cheap phones), all of it off for «reduce motion». */
+:root { --ease: cubic-bezier(.22, 1, .36, 1); --spring: cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes screen-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+@keyframes card-rise { from { opacity: .4; transform: translateY(10px) scale(.96); } }
+@keyframes fold-in { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+@keyframes bg-in { from { opacity: 0; } }
+@keyframes bg-out { to { opacity: 0; } }
+@keyframes pop { 0% { transform: scale(.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* tabs slide in */
+.screen:not([hidden]) { animation: screen-in .38s var(--ease); }
+/* lists come up one after another (the first dozen; the rest at once) */
+:is(#saved, #results, #feed-list, #track-list, #watch) > :is(.row, .lrow, .srow, div) { animation: rise .42s var(--ease) both; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(2) { animation-delay: .03s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(3) { animation-delay: .06s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(4) { animation-delay: .09s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(5) { animation-delay: .12s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(6) { animation-delay: .15s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(7) { animation-delay: .18s; }
+:is(#saved, #results, #feed-list, #track-list) > :nth-child(n+8) { animation-delay: .21s; }
+/* a folded block opens softly, its arrow turns */
+details[open] > :not(summary) { animation: fold-in .32s var(--ease); }
+details.fold > summary::after { transition: transform .3s var(--ease); }
+/* the next card comes up from behind; swiped cards fly off and snap back smoothly */
+.card { transition: transform .42s var(--ease), opacity .3s var(--ease), box-shadow .2s ease; }
+.card.drag { transition: none; }
+.card.rise { animation: card-rise .38s var(--ease); }
+.verdict { transition: opacity .12s linear; }
+/* sheets slide up and away, the backdrop fades */
+.sheet { animation: sheet-in .42s var(--ease); }
+.sheet.closing { animation: sheet-out .2s cubic-bezier(.4, 0, 1, 1) forwards; }
+.sheet-bg { animation: bg-in .3s ease; }
+.sheet-bg.closing { animation: bg-out .2s ease forwards; }
+/* every button gives a little under the finger and springs back */
+button:not(.node), .chip, .row, .skin, a.yes { transition: transform .18s var(--spring), background-color .25s ease, color .25s ease,
+  border-color .25s ease, box-shadow .25s ease, opacity .2s ease; }
+button:not(.node):active, .chip:active, .skin:active { transform: scale(.96); }
+.row:active { transform: scale(.985); }
+.act:active { transform: scale(.9); }
+/* switches glide, the badge pops in */
+.sw { transition: background-color .3s var(--ease); }
+.sw::after { transition: left .32s var(--spring); box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+.badge:not([hidden]) { animation: pop .4s var(--spring); }
+/* toasts rise with a little spring */
+.toast { transition: opacity .25s ease, transform .4s var(--spring); }
+/* a picked theme flows in */
+html.skinning, html.skinning body, html.skinning :is(.hero, .card, .group, .row, .stat, .chip, .nav, .seg, button, .field) {
+  transition: background .5s ease, background-color .5s ease, color .5s ease, border-color .5s ease, box-shadow .5s ease !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

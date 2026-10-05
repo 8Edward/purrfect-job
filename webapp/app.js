@@ -94,7 +94,12 @@ function openLink(url) {
 function setSkin(skin, save) {
   skin = OLD_SKINS[skin] || skin;
   if (!SKINS[skin]) skin = "hybrid";
-  document.documentElement.dataset.skin = skin;
+  const html = document.documentElement;
+  if (save && html.dataset.skin !== skin) {  // a picked theme flows in instead of snapping
+    html.classList.add("skinning");
+    setTimeout(() => html.classList.remove("skinning"), 600);
+  }
+  html.dataset.skin = skin;
   try { tg.setHeaderColor(SKINS[skin].bg); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { tg.setBottomBarColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { localStorage.setItem("jr-skin", skin); } catch (e) { /* blocked */ }
@@ -266,7 +271,7 @@ async function decide(card, yes) {
   card.style.opacity = 0;
   haptic(yes ? "ok" : "medium");
   st.feed = st.feed.filter((i) => i !== item);
-  setTimeout(renderStack, 200);
+  setTimeout(() => { renderStack(); const next = topCard(); if (next) next.classList.add("rise"); }, 260);
   try {
     const d = await api(`/api/jobs/${encodeURIComponent(item.key)}/${yes ? "take" : "hide"}`, {});
     toast(d.note);
@@ -698,9 +703,22 @@ async function sheetAction(action) {
     loadMe().catch(() => {});
   } catch (e) { fail(e); }
 }
+new MutationObserver(() => { $("#sheet").classList.remove("closing"); $("#sheet-bg").classList.remove("closing"); })
+  .observe(document.getElementById("sheet"), { childList: true });  // a new sheet while the old one slides away: show it at once
 function closeSheet() {
   st.sheet = null;
-  $("#sheet").hidden = $("#sheet-bg").hidden = true;
+  const sheet = $("#sheet"), bg = $("#sheet-bg");
+  if (!sheet.hidden && !matchMedia("(prefers-reduced-motion: reduce)").matches) {  // slide away, then hide
+    const was = sheet.firstChild;  // another sheet opened meanwhile replaces the content: then it stays
+    sheet.classList.add("closing"); bg.classList.add("closing");
+    setTimeout(() => {
+      if (!sheet.classList.contains("closing")) return;
+      sheet.classList.remove("closing"); bg.classList.remove("closing");
+      if (sheet.firstChild === was) sheet.hidden = bg.hidden = true;
+    }, 200);
+  } else {
+    sheet.hidden = bg.hidden = true;
+  }
   try { tg.BackButton.hide(); } catch (e) { /* not in Telegram */ }
 }
 
