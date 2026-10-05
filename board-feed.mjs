@@ -769,6 +769,27 @@ const FETCHERS = {
     }
     return [...out.values()];
   },
+  async successfactors(c) {  // SAP SuccessFactors career site (e.g. jobs.rbinternational.com): /search/?startrow=N, 25 rows a page
+    const out = new Map();
+    for (let start = 0; start < 2000; start += 25) {
+      const html = await getText(`https://${c.host}/search/?q=&startrow=${start}`);
+      let added = 0;
+      for (const row of html.split('class="data-row').slice(1)) {
+        const a = row.match(/<a[^>]*jobTitle-link[^>]*>([^<]+)</);
+        const href = a?.[0].match(/href="((?:\/[a-z0-9]+)?\/job\/[^"]+)"/)?.[1];  // also /<brand site>/job/… (e.g. Raiffeisen Group IT)
+        if (!href) continue;
+        const url = `https://${c.host}${decode(href)}`;
+        if (out.has(url)) continue;
+        const city = decodeURIComponent(href.split('/job/')[1].split('-')[0]);  // /job/<City>-<title>-<zip>/<id>/
+        const company = c.facility ? decode(row.match(/class="jobFacility">([^<]*)<\/span>\s*<\/td>/)?.[1] || '') : '';
+        out.set(url, { title: decode(a[1]), url, ...(company ? { company } : {}), location: decode(row.match(/class="jobLocation"[^>]*>([^<]*)/)?.[1] || '') || city, posted: '' });
+        added++;
+      }
+      if (!added) break;
+      await pause(400);
+    }
+    return [...out.values()];
+  },
   // ---- end of the freehire port
   async hh(c) {
     const out = [];
