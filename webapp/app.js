@@ -247,7 +247,7 @@ function renderStack() {
       <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
       <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>${aiLine(i)}
       ${i.also ? `<div class="also">${esc(alsoText(i))}</div>` : ""}
-      ${summaryHtml(i)}<p>${esc(i.text || (i.summary && i.summary.length ? "" : "Полное описание на сайте."))}</p><span class="more">Подробнее →</span></article>`;
+      ${summaryHtml(i)}<p>${esc(i.text || (i.summary && i.summary.length ? "" : "Полное описание на сайте."))}</p><button type="button" class="more">Подробнее →</button></article>`;
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
@@ -313,7 +313,9 @@ async function decide(card, yes) {
 }
 function drag(card) {
   let x0 = null, y0 = 0, dx = 0, dy = 0, down = null, axis = "";
-  card.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; dx = dy = 0; axis = ""; down = e.target; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
+  const more = $(".more", card);  // «Подробнее» is a plain button: a finger that moves a little still opens the vacancy
+  if (more) more.onclick = (e) => { e.stopPropagation(); openSheet(byKey(card.dataset.key), false); };
+  card.addEventListener("pointerdown", (e) => { if (e.target.closest(".more")) return; x0 = e.clientX; y0 = e.clientY; dx = dy = 0; axis = ""; down = e.target; card.classList.add("drag"); card.setPointerCapture(e.pointerId); });
   card.addEventListener("pointermove", (e) => {
     if (x0 === null) return;
     dx = e.clientX - x0; dy = e.clientY - y0;
@@ -330,7 +332,7 @@ function drag(card) {
   });
   const end = (e) => {
     if (x0 === null) return;
-    const tap = Math.abs(dx) < 6 && Math.abs((e.clientY || y0) - y0) < 6;
+    const tap = Math.abs(dx) < 12 && Math.abs((e.clientY || y0) - y0) < 12;  // a finger tap wobbles a few pixels
     x0 = null;
     card.classList.remove("drag");
     if (axis === "h" && Math.abs(dx) > 90) return decide(card, dx > 0);

@@ -776,3 +776,4 @@ html.skinning, html.skinning body, html.skinning :is(.hero, .card, .group, .row,
 details.group > .pad { padding: 0 14px 14px; }  /* folded blocks: their content never touches the frame */
 #watch .wadd .chip { flex: none; }
 #watch .row { margin-bottom: 6px; }
+.card .more { align-self: flex-start; border: none; background: none; padding: 10px 14px 4px 0; margin-bottom: -4px; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); touch-action: manipulation; }
