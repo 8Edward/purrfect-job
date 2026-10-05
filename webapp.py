@@ -941,10 +941,11 @@ class WebApp:
             for key, item in m.load_inbox().items():
                 add(dict(item, key=key, date=datetime.fromisoformat(item["date"])), "inbox")
         gate = asyncio.Semaphore(4)  # channels are read side by side, a few at a time
+        flt = tc.job_filter_from(m.cfg())
 
         async def read(key):
             async with gate:
-                return await self.channel_posts(key, m, wait=part != "fast")
+                return await self.channel_posts(key, m, wait=part != "fast", flt=flt)
         t0 = time.monotonic()
         hh_task = asyncio.create_task(self.hh_search(m, query, terms)) if part in ("all", "hh") else None  # hh.ru and Himalayas go meanwhile
         hima_task = (asyncio.create_task(self.himalayas_search(m, query))
@@ -1071,7 +1072,7 @@ class WebApp:
             task.add_done_callback(lambda _: self.posts_refreshing.pop(key, None))
         await asyncio.shield(task)
 
-    async def channel_posts(self, key, member, wait=True):
+    async def channel_posts(self, key, member, wait=True, flt=None):
         """Job posts of one public channel for the last SEARCH_DAYS days. A copy kept on disk is
         shown at once; if it is older than POSTS_TTL it is refreshed in the background."""
         hit = self.posts.get(key)
@@ -1084,7 +1085,7 @@ class WebApp:
             else:  # the quick part of a search does not wait for Telegram: the channel is read for the next part
                 asyncio.create_task(self.refresh_channel(key))
         posts = hit[1] if hit else []
-        flt = tc.job_filter_from(member.cfg())
+        flt = flt or tc.job_filter_from(member.cfg())  # a search passes it in: reading search.yml per channel cost seconds
         out = []
         for p in posts:  # a job post by its own words (вакансия, hiring…), no stop words
             if flt.is_job_like(p["text"]):
