@@ -137,11 +137,11 @@ async function loadMe() {
 }
 /* the feed comes in pages (PAGE at a time) so thousands of vacancies never load at once */
 const PAGE = 40;
-/* 👁 «Просмотрено»: a card that stayed on top a moment (or was opened) is marked seen. This visit it stays,
+/* 👁 «Просмотрено»: a vacancy opened in full (a tap or «Подробнее») is marked seen. This visit it stays,
    next visit the feed has only what is new; the seen ones wait in «Мои → Просмотрено» with the time. */
 const VISIT = new Date().toISOString();
 const seenQueue = new Set();
-let seenTimer = null, topTimer = null;
+let seenTimer = null;
 function markSeen(key) {
   if (!key) return;
   seenQueue.add(key);
@@ -251,8 +251,6 @@ function renderStack() {
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
-  clearTimeout(topTimer);
-  if (top) topTimer = setTimeout(() => { if (topCard() === top && !$("#s-feed").hidden) markSeen(top.dataset.key); }, 1500);
 }
 const byKey = (key) => st.feed.find((i) => i.key === key);
 const summaryHtml = (i) => (i.summary && i.summary.length ? `<div class="sum">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : "");
@@ -273,15 +271,6 @@ function renderList(items) {
     new IntersectionObserver((es, ob) => { if (es.some((x) => x.isIntersecting)) { ob.disconnect(); moreFeed(); } }).observe(sentinel);
   }
   $$("[data-open]", box).forEach((b) => (b.onclick = () => openSheet(items[+b.dataset.open], false)));
-  if ("IntersectionObserver" in window) {  // a row that stayed on screen a moment counts as seen
-    const shown = new Map();
-    const ob = new IntersectionObserver((es) => es.forEach((x) => {
-      const key = items[+x.target.dataset.n] && items[+x.target.dataset.n].key;
-      if (x.isIntersecting) shown.set(key, setTimeout(() => markSeen(key), 1500));
-      else clearTimeout(shown.get(key));
-    }), { threshold: 0.8 });
-    $$(".lrow", box).forEach((r) => ob.observe(r));
-  }
   $$("[data-yes]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.yes], true, b.closest(".lrow"))));
   $$("[data-no]", box).forEach((b) => (b.onclick = () => quick(items[+b.dataset.no], false, b.closest(".lrow"))));
 }
@@ -1333,6 +1322,7 @@ const FAQ = [
   ["Куда деваются офисные вакансии?", "Если в тексте вакансии (или в оригинале по ссылке) сказано «офис» или «гибрид», либо берут только из другой страны, она сразу уходит в «Ещё» → «🗄 Архив», без уведомления. Оттуда её можно вернуть. На остальных карточках бывают пометки «⚠️ в оригинале офис» или «🌍 только США»."],
   ["Что за пометки «перевыложена» и «висит больше 30 дней»?", "Так помечаются вакансии, которые, похоже, никого не ищут по-настоящему: висят на сайте месяц и больше, перевыкладываются снова и снова или пропали с сайта. Такие опускаются вниз ленты, а у владельца уходят в архив."],
   ["Что за строки 🛠 🏠 📌 на карточке?", "Короткое саммари из текста вакансии, без ИИ: стек, формат работы и первые задачи. 💰 — зарплата (примерно в долларах в месяц), 🕒 — часовой пояс, если они есть в тексте. «＋ ещё в…» — та же вакансия из других источников, склеена в одну."],
+  ["Что такое «Просмотрено»?", "Вакансия, которую вы открыли (тап по карточке или «Подробнее»), но не добавили в избранное и не скрыли. Пока приложение открыто, она остаётся в ленте, а при следующем входе лента начинается только с новых. Все открытые лежат в «Мои» → «👁 Просмотрено» с датой и временем, оттуда любую можно вернуть в ленту."],
   ["Что такое «Избранные компании»?", "Компания каждой вакансии, которую вы добавили в избранное, попадает в «Мои» → «⭐ Избранные компании». Туда можно добавить компанию и вручную. Когда у неё появляется новая вакансия, над лентой загорается полоска, а в чат приходит одно сообщение."],
   ["Можно скрыть вакансии не под мой пояс или страну?", "Да: «Поиск» → «🕒 Часовой пояс» (свой пояс и допустимая разница) и «🌏 Откуда берут» (ваша страна: скроются вакансии «только США», «только Европа» и т. п.). Где пояс или страна не указаны, вакансия остаётся."],
   ["Чем отличаются «Точно» и «Похожие роли» в поиске?", "«Точно» ищет фразу в названиях вакансий, слова в любом порядке. «Похожие роли» добавляет синонимы и смежные профессии по графу; лишнюю роль можно выключить нажатием на неё. Если название незнакомое, ИИ может определить роль по описанию — такие отмечены 🤖."],
