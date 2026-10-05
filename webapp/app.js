@@ -75,7 +75,7 @@ const tagsHtml = (tags) => (tags || []).map((t) =>
 /* the pay in one currency: «≈ $2 700/мес» next to what the vacancy says, unless it is dollars already */
 const salaryUsd = (i) => (i.salary_usd && !/\$|usd|доллар/i.test(i.salary || "") ? ` ≈ $${i.salary_usd.toLocaleString("ru-RU")}/мес` : "");
 const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary + salaryUsd(i), i.tz && "🕒 " + i.tz, i.old && "🕰 старше 2 недель"].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
-const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin).join(", ")}` : "");
+const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin + (a.location ? " · " + a.location : "")).join(", ")}` : "");
 function aiLine(i) {
   if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
   const algo = i.algo && i.algo.score ? `<div class="algo" title="${esc(i.algo.why.join("; "))}">⚖️ ${i.algo.score}/5 по совпадению слов${i.algo.why.length ? " · " + esc(i.algo.why[0]) : ""}</div>` : "";
@@ -417,7 +417,7 @@ function renderSheet() {
     ${i.summary && i.summary.length ? `<div class="sum" style="margin-top:8px">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : ""}
     ${status ? `<div class="status">${status}</div>` : ""}
     ${aiBox(i)}
-    ${i.also ? `<div class="also">Эта же вакансия ещё в: ${i.also.map((a, n) => a.link ? `<button class="link" data-also="${n}">${esc(a.origin)}</button>` : esc(a.origin)).join(", ")}</div>` : ""}
+    ${i.also ? `<div class="also">Эта же вакансия ещё в: ${i.also.map((a, n) => a.link ? `<button class="link" data-also="${n}">${esc(a.origin + (a.location ? " · " + a.location : ""))}</button>` : esc(a.origin)).join(", ")}</div>` : ""}
     <div class="track"><div class="lbl">📋 Мой отклик${i.silent >= 7 ? ` · <span class="warn">⏰ тишина ${i.silent} дн.</span>` : ""}</div><div class="chiprow">${[["", "—"], ...Object.entries(STAGES)].map(([k, v]) =>
       `<button class="stage" data-stage="${k}" aria-pressed="${((i.track && i.track.stage) || "") === k}">${v}</button>`).join("")}</div></div>
     <div class="body">${esc(i.text || "Полное описание на сайте: кнопка ниже.")}</div>

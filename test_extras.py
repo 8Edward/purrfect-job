@@ -533,3 +533,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert sourcestats.status(sourcestats.load()["site:c"])["state"] == "quiet"
     assert [r["id"] for r in sourcestats.report({"site:a"})] == ["site:a"]
 print("ok")
+# hh.ru: one role per city, no text, same publish second -> one card; a different second stays apart
+_h = lambda c, d: {"source": "web", "site": "hh.ru", "title": "Senior BI Analyst", "company": "Nitka", "location": c, "date": d, "text": ""}
+assert [len(g) for g in extras.groups([("a", _h("Сербия", "t1")), ("b", _h("Литва", "t1")), ("c", _h("Баку", "t2"))])] == [2, 1]

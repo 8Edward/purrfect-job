@@ -373,7 +373,7 @@ def grouped_json(pairs, grouped=False):
         data = item_json(key, item)
         if rest:
             data["also"] = [{"key": k, "origin": extras.origin(v), "source": "web" if v.get("source") == "web" else "tg",
-                             "link": v.get("link", "")} for k, v in rest]
+                             "link": v.get("link", ""), "location": (v.get("location") or "")[:40]} for k, v in rest]
             if not data["ai"]:
                 data["ai"] = next((v["ai"] for _, v in rest if v.get("ai")), None)
         out.append(data)

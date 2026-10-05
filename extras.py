@@ -348,6 +348,8 @@ def same_role(a, b):
     three «Data Analyst» roles in different teams) unless their texts match ≥95% (per-city copies)."""
     if origin(a) != origin(b) or a.get("source") != b.get("source"):
         return True
+    if not (a.get("text") or b.get("text")) and a.get("date") and str(a.get("date")) == str(b.get("date")):
+        return True  # hh.ru lists one role once per city with no text, all published at the same second
     return desc_similarity(desc_words(a.get("text")), desc_words(b.get("text"))) >= DESC_SAME
 
 
