@@ -864,11 +864,17 @@ async function loadWatch() {
   const d = await api("/api/watch");
   const box = $("#watch");
   $("#sum-watch").textContent = d.new ? `${d.new} ${plural(d.new, "новая", "новые", "новых")}` : d.companies.length ? `${d.companies.length}` : "";
-  box.innerHTML = (d.new ? `<div class="lbl">Новые вакансии</div>${d.items.map((i, n) => `<button class="row" data-wn="${n}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")}` : "")
+  // long lists fold: 4 vacancies and 8 companies (those with news first), the rest behind «Показать все»
+  const cos = [...d.companies].sort((a, b) => (b.new ? 1 : 0) - (a.new ? 1 : 0));
+  const jobs = st.watchAll ? d.items : d.items.slice(0, 4), shownCos = st.watchAll ? cos : cos.slice(0, 8);
+  const hiddenN = d.items.length - jobs.length + cos.length - shownCos.length;
+  box.innerHTML = (d.new ? `<div class="lbl">Новые вакансии</div>${jobs.map((i) => `<button class="row" data-wn="${d.items.indexOf(i)}"><b>${esc(i.title)}</b><span class="m">${esc(when(i.date))}</span><span class="s">${esc([i.company, originOf(i)].filter(Boolean).join(" · "))}</span></button>`).join("")}` : "")
     + `<div class="lbl">${d.companies.length ? "Следим за компаниями (из избранного и добавленные)" : "Пока никого: добавьте вакансию в избранное или впишите компанию"}</div>`
-    + `<div class="wcos">${d.companies.map((c) => `<span class="wco"><span>${esc(c.name)}${c.new ? ` <b>+${c.new}</b>` : ""}</span><button data-wx="${esc(c.key)}" aria-label="Убрать ${esc(c.name)}">✕</button></span>`).join("")}</div>`
+    + `<div class="wcos">${shownCos.map((c) => `<span class="wco"><span>${esc(c.name)}${c.new ? ` <b>+${c.new}</b>` : ""}</span><button data-wx="${esc(c.key)}" aria-label="Убрать ${esc(c.name)}">✕</button></span>`).join("")}</div>`
+    + (hiddenN || st.watchAll ? `<button class="link block" id="watch-all">${st.watchAll ? "Свернуть" : `Показать всё: ещё ${hiddenN}`}</button>` : "")
     + `<div class="wadd"><input class="inp" id="watch-name" maxlength="80" placeholder="Название компании"><button class="chip" id="watch-add">Добавить</button></div>`;
   $$("#watch [data-wn]").forEach((b) => (b.onclick = () => openSheet(d.items[+b.dataset.wn], false)));
+  if ($("#watch-all")) $("#watch-all").onclick = () => { st.watchAll = !st.watchAll; loadWatch().catch(fail); };
   $$("#watch [data-wx]").forEach((b) => (b.onclick = async () => { try { await api("/api/watch", { op: "remove", key: b.dataset.wx }); loadWatch(); loadMe().catch(() => {}); } catch (e) { fail(e); } }));
   $("#watch-add").onclick = async () => {
     const name = $("#watch-name").value.trim();

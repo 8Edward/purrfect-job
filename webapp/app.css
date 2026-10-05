@@ -773,3 +773,6 @@ html.skinning, html.skinning body, html.skinning :is(.hero, .card, .group, .row,
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 .seg.four { grid-template-columns: 1fr 1fr; gap: 3px; }  /* «Мои»: four lists as a 2×2 block */
+details.group > .pad { padding: 0 14px 14px; }  /* folded blocks: their content never touches the frame */
+#watch .wadd .chip { flex: none; }
+#watch .row { margin-bottom: 6px; }
