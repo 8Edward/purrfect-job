@@ -1052,7 +1052,7 @@ function renderCv() {
         : '<span class="muted">Роли не распознал. Добавьте слова вручную ниже.</span>'}</div>
       ${cv.skills.length ? `<div class="lbl">Нашёл навыки</div><div class="chiprow">${cv.skills.map((s) => `<span class="skill">${esc(s.label)}</span>`).join("")}</div>` : ""}
       <label class="check"><input type="checkbox" id="cv-skills" ${cvState.skills ? "checked" : ""}> Искать и по инструментам (${esc(cv.skill_words.join(", ") || "нет")})</label>
-      <div class="preview"><b>Слова для поиска</b>${esc(words.join(", ") || "—")}</div>
+      <div class="preview"><b>Слова для поиска</b>${chosen.length ? esc(words.join(", ") || "—") : "пока никаких: отметьте роль выше, тогда слова и запрос hh.ru попадут в ленту"}</div>
       <div class="preview"><b>Запрос на hh.ru</b>${esc(hh || "—")}</div>
       <p class="muted" id="cv-sync">${cvState.synced || "Отметки сразу меняют ленту: слова поиска и запрос hh.ru. Слова, которые вы вписали сами, остаются. Каналы — во вкладке «Поиск»."}</p>
       ${uploadHtml(true)}

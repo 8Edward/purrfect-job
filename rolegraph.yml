@@ -154,6 +154,35 @@ roles:
   support:
     names: [специалист поддержки, customer support, support specialist, оператор поддержки]
     links: {}
+  # Engineering roles (2026-10-06): before them, an engineer's résumé matched only through tools
+  # (Python, SQL…) and came out as «аналитик данных / data scientist».
+  software-engineer:
+    names: [software engineer, software developer, программист, инженер-программист]
+    also: [c++ developer, c++ engineer, c++ разработчик, разработчик c++, python developer, python engineer, python разработчик,
+           разработчик python, backend developer, backend engineer, backend разработчик, бэкенд разработчик, go developer,
+           golang developer, java developer, java разработчик, software development engineer]
+    not: [manager, менеджер, руководитель, head of, director, директор, qa, тестировщик, test, sales, recruiter, designer]
+    links: {embedded-engineer: adj, robotics-engineer: adj, ml-engineer: far, engineering-manager: far, qa-engineer: far}
+  robotics-engineer:
+    names: [robotics engineer, инженер-робототехник, робототехник, robotics software engineer, ros developer]
+    also: [ros engineer, ros разработчик, ros2 developer, motion planning engineer, perception engineer, autonomy engineer,
+           autonomous systems engineer, drone engineer, uav engineer, uas engineer, инженер бпла, разработчик бпла,
+           разработчик беспилотников, controls engineer, control systems engineer, инженер систем управления,
+           manipulation engineer, robot software engineer, mechatronics engineer, инженер-мехатроник, мехатроник]
+    not: [sales, recruiter, менеджер по продажам]
+    links: {embedded-engineer: adj, software-engineer: adj, ml-engineer: adj, engineering-manager: far}
+  embedded-engineer:
+    names: [embedded engineer, embedded developer, embedded разработчик, разработчик встраиваемых систем, инженер встраиваемых систем]
+    also: [embedded software engineer, embedded c developer, firmware engineer, firmware developer, разработчик прошивок,
+           программист микроконтроллеров, разработчик микроконтроллеров, инженер-электронщик, hardware engineer]
+    not: [sales, recruiter, менеджер по продажам]
+    links: {software-engineer: adj, robotics-engineer: adj}
+  engineering-manager:
+    names: [engineering manager, head of engineering, head of software engineering, руководитель разработки, head of development]
+    also: [software engineering manager, руководитель отдела разработки, tech lead, техлид, технический лидер, cto,
+           technical director, технический директор, vp of engineering, vp engineering, head of r&d, руководитель r&d,
+           r&d manager, director of engineering, head of robotics]
+    links: {software-engineer: far, robotics-engineer: far, project-manager: far, solution-architect: far}
 
 words:
   - [антифрод, анти-фрод, antifraud, anti-fraud, фрод, fraud, мошенничество, мошенничеству, мошенничества]

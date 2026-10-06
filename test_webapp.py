@@ -362,7 +362,7 @@ async def main():
                                                 "text": "Вакансия: Full Stack разработчик. Будете работать с бизнес-аналитиком и дизайнером, удалённо. "
                                                         "React, Node.js, PostgreSQL, зарплата по итогам собеседования."})
                 s = await (await c.get("/api/search?q=бизнес аналитик&mode=exact", headers=auth)).json()
-                assert s["items"][-1]["match"] == {"kind": "text", "label": "в тексте поста"}
+                assert s["items"][-1]["match"] == {"kind": "text", "label": "в тексте поста"}, [(i["title"], i["match"]) for i in s["items"]]
                 assert [i["match"]["kind"] for i in s["items"]].count("text") == 1
                 # similar: synonyms (Business Analyst), adjacent (системный), far (Product Owner) — ranked
                 s = await (await c.get("/api/search?q=бизнес аналитик&mode=similar", headers=auth)).json()

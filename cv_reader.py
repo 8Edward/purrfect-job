@@ -57,20 +57,46 @@ SKILLS = [
     ("Маркетинг-аналитика", r"google analytics|яндекс[. ]?метрик\w*|\bga4\b|\bseo\b|utm|атрибуци\w*|attribution",
      ["marketing-analyst"], True),
     ("Поддержка клиентов", r"поддержк\w* клиент\w*|customer support|zendesk|helpdesk|service desk", ["support"], False),
+    ("C / C++", r"c\+\+|\bembedded c\b", ["software-engineer", "embedded-engineer", "robotics-engineer"], True),
+    ("Робототехника", r"робототехн\w*|robotics|\bros ?2\b|\bros\b|moveit|motion planning|path planning|px4|ardupilot|mavros|"
+     r"\bslam\b|gazebo|манипулятор\w*|беспилотн\w*|\buav\b|\bбпла\b", ["robotics-engineer"], True),
+    ("Встраиваемые системы", r"embedded|встраиваем\w*|микроконтроллер\w*|stm32|firmware|прошивк\w*|\bmqtt\b|modbus|\buart\b|rs-?485|\brtos\b",
+     ["embedded-engineer", "robotics-engineer"], True),
+    ("Управление командой", r"head of|team ?lead|тимлид|engineering manager|руководител\w* (?:отдел|разработ|команд|групп)\w*|"
+     r"управлени\w* команд\w*|led a team|managed a team", ["engineering-manager"], False),
 ]
 SKILL_RE = [(label, re.compile(p, re.IGNORECASE), roles, word) for label, p, roles, word in SKILLS]
-GENERIC_WORDS = {"api", "rest", "soap", "ui", "ux", "qa", "seo", "utm", "1с", "1c"}
+GENERIC_WORDS = {"api", "rest", "soap", "ui", "ux", "qa", "seo", "utm", "1с", "1c",
+                 "ros", "ros2", "ros 2", "uav", "бпла", "uart", "mqtt", "slam", "rtos", "head of", "rs-485", "rs485"}
 
-# Words in a pool channel's name or title that make it fit a role family.
+# Words in a pool channel's name or title that make it fit a role family. A channel of a family
+# (analysts, designers…) is proposed only to that family; a general one («Remote IT») to everyone.
 CHANNEL_HINTS = {
-    "analytics": (["analyst", "analytic", "аналит", "data", "дата", "bi"],
+    "analytics": (["analyst", "analytic", "аналит", "data", "дата"],
                   {"data-analyst", "bi-analyst", "reporting-analyst", "product-analyst", "business-analyst",
                    "system-analyst", "requirements-analyst", "analytics-engineer", "data-engineer", "data-quality",
-                   "data-scientist", "ml-engineer", "marketing-analyst", "financial-analyst"}),
-    "it": (["it", "remote", "career", "geek", "habr", "relocat", "job"], None),  # general: fits everyone
-    "design": (["design", "дизайн", "ux", "ui"], {"designer", "graphic-designer"}),
+                   "data-scientist", "ml-engineer", "marketing-analyst", "financial-analyst", "dwh-analyst",
+                   "fraud-analyst", "risk-analyst", "aml-analyst"}),
+    "dev": (["python", "c++", "golang", "backend", "разработ", "программ", "embedded", "robot", "робот"],
+            {"software-engineer", "embedded-engineer", "robotics-engineer", "ml-engineer", "engineering-manager",
+             "data-engineer", "analytics-engineer"}),
+    "web": (["frontend", "javascript", "php", "java", "devops"], {"software-engineer"}),
+    "design": (["design", "дизайн"], {"designer", "graphic-designer"}),
     "qa": (["qa", "тест", "test"], {"qa-engineer"}),
+    "product": (["product", "продакт", "проджект"], {"product-manager", "project-manager", "product-analyst"}),
+    "junior": (["junior", "джун", "стажир"], set()),  # for beginners: never proposed from a résumé
+    "it": (["it", "remote", "career", "geek", "habr", "relocat", "удален", "удалён", "vakansii", "вакансии"], None),  # general
 }
+TITLE_WORD_RE = re.compile(r"\b(engineer|developer|programmer|analyst|scientist|manager|designer|architect|consultant|"
+                           r"specialist|head of|director|researcher|lead|инженер|разработчик|программист|аналитик|менеджер|"
+                           r"руководитель|дизайнер|архитектор|консультант|специалист|директор|бухгалтер|тестировщик|рекрутер|"
+                           r"робототехник|surveyor|technician|technologist|operator|administrator|coordinator|assistant|"
+                           r"officer|teacher|tutor|translator|interpreter|writer|editor|copywriter|marketer|lawyer|"
+                           r"accountant|recruiter|nurse|doctor|геодезист|техник|технолог|оператор|администратор|"
+                           r"координатор|ассистент|учитель|преподаватель|переводчик|редактор|копирайтер|маркетолог|"
+                           r"юрист|врач)\w*", re.IGNORECASE)
+ANALYSIS_VERSION = 2  # stored analyses older than this are re-read from the kept résumé text
+OWN = "own:"  # a role the dictionary does not know, named by the résumé itself: "own:robotics engineer"
 LEVEL_RE = re.compile(r"\b(junior|middle|senior|lead|джуниор|мидл|сеньор|ведущий|старший|младший)\b", re.IGNORECASE)
 LEVEL_NAME = {"джуниор": "Junior", "младший": "Junior", "мидл": "Middle", "сеньор": "Senior", "старший": "Senior",
               "ведущий": "Lead"}
@@ -214,7 +240,7 @@ def analyze(text, graph, pool):
             if hits:
                 add(rid, 5 * min(hits, 3), f"в резюме есть «{name}»")
 
-    skills, words = [], []
+    skills, groups = [], []  # groups: (roles of the skill, its words)
     for label, rx, roles, word in SKILL_RE:
         found = [m.group(0) for m in rx.finditer(low)]
         if not found:
@@ -228,7 +254,16 @@ def analyze(text, graph, pool):
                 w = f.strip().lower()
                 if len(w) >= 2 and w not in GENERIC_WORDS:
                     counts[w] = counts.get(w, 0) + 1
-            words += [w for w, _ in sorted(counts.items(), key=lambda kv: -kv[1]) if w not in words][:2]
+            groups.append((set(roles), [w for w, _ in sorted(counts.items(), key=lambda kv: -kv[1])][:2]))
+
+    # the title the résumé gives itself weighs most; one the dictionary doesn't know becomes the person's own role
+    own = []
+    for title in headline_titles(text):
+        rid = webapp.find_role(graph, title)
+        if rid:
+            add(rid, 10, f"в резюме есть «{title}»")
+        elif not any(webapp.norm(title) in webapp.norm(n) for r in graph.values() for n in r["names"]):
+            own.append(title)
 
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     # a role is proposed only when the résumé names it; tools alone (SQL, Python…) fit many jobs and used to
@@ -244,35 +279,67 @@ def analyze(text, graph, pool):
     shown = primary + [rid for rid, _ in ranked if rid not in primary][:3]
     shown += [rid for rid in nearby if rid not in shown][:3]
 
+    words = []
+    for roles, ws in sorted(groups, key=lambda g: not (g[0] & set(primary))):
+        words += [w for w in ws if w not in words]
     levels = [LEVEL_NAME.get(m.group(1).lower(), m.group(1).capitalize()) for m in LEVEL_RE.finditer(text[:4000])]
     english = ENGLISH_RE.search(text)
+    own_roles = [{"id": OWN + t, "label": t, "score": 10, "primary": len(primary) + i < 3, "why": ["заголовок резюме"]}
+                 for i, t in enumerate(own)]
     return {
+        "v": ANALYSIS_VERSION,
         "roles": [{"id": rid, "label": graph[rid]["names"][0], "score": scores.get(rid, 0),
-                   "primary": rid in primary, "why": why.get(rid, ["смежная роль"])[:4]} for rid in shown],
+                   "primary": rid in primary, "why": why.get(rid, ["смежная роль"])[:4]} for rid in primary]
+        + own_roles
+        + [{"id": rid, "label": graph[rid]["names"][0], "score": scores.get(rid, 0),
+            "primary": False, "why": why.get(rid, ["смежная роль"])[:4]} for rid in shown if rid not in primary],
         "skills": skills,
-        "skill_words": words[:8],
+        "skill_words": words[:8],  # the tools of the person's own roles first: a robotics engineer's C++ before SQL
         "level": max(set(levels), key=levels.count) if levels else None,
         "english": english.group(2).upper() if english and len(english.group(2)) == 2 else (english.group(2).capitalize() if english else None),
-        "channels": suggest_channels(pool, primary),
+        "channels": suggest_channels(pool, primary + [OWN + t for t in own]),
         "chars": len(text),
     }
 
 
 def suggest_channels(pool, roles):
-    out = []
+    """Channels for these roles: their family's ones, plus general ones. Without a role, nothing:
+    proposing every channel made everyone's setup the owner's (the pool is mostly analysts' channels)."""
+    out, mine = [], set(roles)
+    if not mine:
+        return out
     for key, ch in pool["channels"].items():
         hay = webapp.norm(key + " " + (ch.get("title") or ""))
-        for hints, family in CHANNEL_HINTS.values():
-            if (family is None or family & set(roles)) and any(h in hay for h in hints):
-                out.append(key)
-                break
+        families = [family for hints, family in CHANNEL_HINTS.values() if family is not None and any(h in hay for h in hints)]
+        general = any(h in hay for h in CHANNEL_HINTS["it"][0])
+        if any(f & mine for f in families) or (not families and general):
+            out.append(key)
     return out
+
+
+def headline_titles(text):
+    """The job titles a résumé gives itself near the top («Senior Robotics Engineer / Head of Software
+    Engineering» -> ["robotics engineer", "head of software engineering"]), level words dropped."""
+    lines = [ln.strip(" \t•·|-—#*") for ln in str(text or "").splitlines() if ln.strip()][:8]
+    for line in lines:
+        if len(line) > 100 or "@" in line or not TITLE_WORD_RE.search(line):
+            continue
+        out = []
+        for part in re.split(r"\s*[/|,;]\s*|\s+[-–—]\s+", line):
+            part = re.sub(r"\s+", " ", LEVEL_RE.sub(" ", part)).strip(" .:-–—()").lower()
+            if 4 <= len(part) <= 40 and len(part.split()) <= 5 and TITLE_WORD_RE.search(part) and part not in out:
+                out.append(part)
+        if out:
+            return out[:3]
+    return []
 
 
 def role_words(graph, rids):
     """«Что ищу» words for the chosen roles: their names (both languages), no 1-3 letter ones."""
     words = []
     for rid in rids:
+        if rid.startswith(OWN) and len(rid) > len(OWN) + 3 and rid[len(OWN):] not in words:
+            words.append(rid[len(OWN):])
         for name in graph.get(rid, {}).get("names", [])[:4]:
             if len(name) > 3 and name.lower() not in words:
                 words.append(name.lower())
@@ -283,6 +350,8 @@ def hh_query(graph, rids):
     names = []
     for rid in rids:
         role = graph.get(rid)
+        if rid.startswith(OWN):
+            names.append(rid[len(OWN):])
         if not role:
             continue
         ru = next((n for n in role["names"] if re.search(r"[а-яё]", n, re.I)), None)
@@ -305,6 +374,18 @@ def save(member, filename, text, analysis):
                             "analysis": analysis})
 
 
+def refresh(member, graph, pool):
+    """Re-read a résumé analysed by an older version of this file (the kept text, same file name and
+    date): new roles in the dictionary reach people who uploaded before. The feed is not touched."""
+    info = member.load_state().get("cv")
+    path = cv_path(member)
+    if not info or (info.get("analysis") or {}).get("v", 1) >= ANALYSIS_VERSION or not path.exists():
+        return info
+    info = dict(info, analysis=analyze(path.read_text(encoding="utf-8"), graph, pool))
+    member.update_state(cv=info)
+    return info
+
+
 def forget(member):
     path = cv_path(member)
     if path.exists():
@@ -318,7 +399,7 @@ def apply(member, graph, rids, channels, mode, skill_words=True):
     """Write the chosen preset: «Что ищу» words (replace or add), hh.ru query + tick, channel ticks."""
     info = member.load_state().get("cv") or {}
     analysis = info.get("analysis") or {}
-    rids = [r for r in rids if r in graph][:6]
+    rids = [r for r in rids if r in graph or (r.startswith(OWN) and 4 <= len(r) - len(OWN) <= 40)][:6]
     if not rids:
         raise ValueError("Отметьте хотя бы одну роль.")
     words = role_words(graph, rids) + (analysis.get("skill_words", []) if skill_words else [])

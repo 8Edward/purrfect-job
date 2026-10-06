@@ -1360,13 +1360,13 @@ class WebApp:
     # -- résumé -> preset (cv_reader.py)
 
     def cv_payload(self, m):
-        info = m.load_state().get("cv")
+        graph, pool = load_graph(), guests.load_pool()
+        info = cv_reader.refresh(m, graph, pool)
         if not info:
             return {"cv": None}
-        graph, pool = load_graph(), guests.load_pool()
         analysis = dict(info.get("analysis") or {})
         analysis["roles"] = [dict(r, words=cv_reader.role_words(graph, [r["id"]]), hh=cv_reader.hh_query(graph, [r["id"]]))
-                             for r in analysis.get("roles", []) if r["id"] in graph]
+                             for r in analysis.get("roles", []) if r["id"] in graph or r["id"].startswith(cv_reader.OWN)]
         ticked, suggested = set(m.selected(pool)), set(analysis.get("channels", []))
         analysis["channels"] = [{"key": k, "title": c.get("title") or k, "on": k in ticked, "suggested": k in suggested}
                                 for k, c in pool["channels"].items() if k in suggested or k in ticked]
