@@ -31,6 +31,7 @@ import apply
 import cv_reader
 import extras
 import filtercheck
+import gigs
 import guests
 import resume
 import letters
@@ -486,8 +487,18 @@ class WebApp:
         self.ai_jobs = {}            # job id -> {"member", "op", "status", "result"|"error"}
         self.ai_checking = False
         self.roles_task = None       # Claude labelling unknown job titles (roles.py)
+        self.gig_found = {}          # key -> job: the gigs last shown in «🧩 Подработки» (owner), for their card's buttons
+        self.gig_cache = None        # (stamp, [(job, assessment)])
+        self.gig_task = None         # reading the free gig feeds (gigs.refresh) in the background
 
     # -- plumbing
+
+    def found(self, m, key):
+        """A vacancy shown outside the inbox: the person's last search, or (owner) «🧩 Подработки»."""
+        job = self.results.get(m.id, {}).get(key)
+        if job is None and m.is_owner:
+            job = self.gig_found.get(key)
+        return job
 
     def member(self, request):
         auth = request.headers.get("Authorization", "")
@@ -603,6 +614,8 @@ class WebApp:
         r.add_get("/api/jobs/{key}", self.api_job)
         r.add_post("/api/jobs/{key}/{action}", self.api_job_action)
         r.add_get("/api/search", self.api_search)
+        r.add_get("/api/gigs", self.api_gigs)
+        r.add_post("/api/gigs/refresh", self.api_gigs_refresh)
         r.add_post("/api/search/{key}/{action}", self.api_search_action)
         r.add_get("/api/roles", self.api_roles)
         r.add_get("/api/source-health", self.api_source_health)
@@ -1229,7 +1242,7 @@ class WebApp:
     async def api_search_action(self, request):
         m = self.member(request)
         key, action = request.match_info["key"], request.match_info["action"]
-        job = self.results.get(m.id, {}).get(key)
+        job = self.found(m, key)
         if action not in ACTIONS or job is None:
             raise web.HTTPNotFound(text='{"error": "Результат устарел, повторите поиск"}', content_type="application/json")
         inbox = m.load_inbox()
@@ -1239,6 +1252,78 @@ class WebApp:
         changed, note = guests.job_action(m, key, inbox[key], action)
         m.save_inbox(inbox)
         return web.json_response({"ok": changed, "note": note, "item": item_json(key, inbox[key])})
+
+    # -- 🧩 «Подработки» (owner): gigs with a low barrier, gigs.py
+
+    GIG_TTL = 300  # seconds the gig list is reused before it is built again
+
+    def start_gig_refresh(self):
+        """Read the free gig feeds (hh.ru part-time, FL.ru, Freelancer.com, Remotive) in the background."""
+        if self.gig_task and not self.gig_task.done():
+            return False
+
+        async def run():
+            try:
+                await asyncio.get_running_loop().run_in_executor(None, gigs.refresh)
+            except Exception as e:
+                log.warning("gigs refresh: %s", e)
+            self.gig_cache = None
+
+        self.gig_task = asyncio.create_task(run())
+        return True
+
+    async def gig_rows(self, m, data):
+        pool = guests.load_pool()
+        for key in pool.get("channels", {}):  # channels nobody searched lately are read again in the background
+            hit = self.posts.get(key)
+            if not hit or datetime.now(timezone.utc) - hit[0] >= POSTS_TTL:
+                asyncio.create_task(self.refresh_channel(key))
+        stamp = (data.get("at"), len(self.posts), sum(len(p) for _, p in self.posts.values()))
+        hit = self.gig_cache
+        if hit and hit[0] == stamp and time.monotonic() - hit[1] < self.GIG_TTL:
+            return hit[2]
+        posts = [p for _, ps in self.posts.values() for p in ps]
+        inbox = m.load_inbox()
+
+        def build():
+            listed = guests.listed_sites()
+            feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
+            jobs = [guests.web_job(j, listed.get(pid, pid)) for pid, v in feed.items() for j in (v or {}).get("jobs", []) if j.get("url")]
+            return gigs.collect(posts, inbox, jobs, gigs.market_jobs(data))
+
+        rows = await asyncio.get_running_loop().run_in_executor(None, build)
+        self.gig_cache = (stamp, time.monotonic(), rows)
+        return rows
+
+    async def api_gigs(self, request):
+        """Gigs best first. ?all=1: every gig, not only the ones that name the owner's skills."""
+        m = self.owner_only(request)
+        data = gigs.load()
+        if gigs.due(data):
+            self.start_gig_refresh()
+        inbox = m.load_inbox()
+        rows = [(j, a) for j, a in await self.gig_rows(m, data)
+                if not (inbox.get(j["key"], {}).get("status") == "hidden" or inbox.get(j["key"], {}).get("archived"))]
+        mine = [r for r in rows if r[1]["skills"]]
+        shown = rows if request.query.get("all") == "1" else mine
+        items = []
+        for job, a in shown[:150]:
+            have = inbox.get(job["key"])
+            self.gig_found[job["key"]] = job
+            d = item_json(job["key"], dict(job, status=have["status"] if have else "found", fav=bool(have and have.get("fav"))))
+            d["gig"] = a
+            items.append(d)
+        if len(self.gig_found) > 2000:
+            self.gig_found = {d["key"]: self.gig_found[d["key"]] for d in items}
+        return web.json_response({"items": items, "total": len(shown), "all": len(rows), "mine": len(mine),
+                                  "easy": sum(1 for r in shown if r[1]["level"] == "easy"),
+                                  "checked_at": data.get("at"), "sources": data.get("src") or {},
+                                  "refreshing": bool(self.gig_task and not self.gig_task.done())})
+
+    async def api_gigs_refresh(self, request):
+        self.owner_only(request)
+        self.gig_cache = None
+        return web.json_response({"ok": True, "started": self.start_gig_refresh()})
 
     # -- sources and settings
 
@@ -1555,7 +1640,7 @@ class WebApp:
         if len(text) >= 80:
             return text[:12000]
         key = str(data.get("job_key") or "")
-        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        item = m.load_inbox().get(key) or self.found(m, key)
         if not item:
             raise ValueError("Вставьте текст вакансии (хотя бы пару абзацев) или выберите вакансию из своих.")
         if item.get("source") == "tg" and len(item.get("text") or "") >= 80:
@@ -1785,7 +1870,7 @@ class WebApp:
         key = str((await self.body(request)).get("key") or "")
         if not resume_ai.allowed(m):
             return self.bad("ИИ для вашего аккаунта отключён администратором.", 403)
-        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        item = m.load_inbox().get(key) or self.found(m, key)
         if not item:
             return self.bad("Вакансия не найдена", 404)
         same = next((j for j, v in self.ai_jobs.items() if v["member"] == m.id and v.get("key") == key and v["status"] == "running"), None)
@@ -1878,7 +1963,7 @@ class WebApp:
         m = self.owner_only(request)
         body = await self.body(request)
         key = str(body.get("key") or "")
-        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        item = m.load_inbox().get(key) or self.found(m, key)
         if not item:
             return self.bad("Вакансия не найдена", 404)
         if body.get("mode") == "ai" and self.running(m, "apply"):
@@ -1951,7 +2036,7 @@ class WebApp:
         m = self.owner_only(request)
         body = await self.body(request)
         key = str(body.get("key") or "")
-        item = m.load_inbox().get(key) or self.results.get(m.id, {}).get(key)
+        item = m.load_inbox().get(key) or self.found(m, key)
         if not item:
             return self.bad("Вакансия не найдена", 404)
         try:
@@ -2142,8 +2227,8 @@ class WebApp:
         data = await self.body(request)
         key = str(data.get("key") or "")
         inbox = m.load_inbox()
-        if key not in inbox and key in self.results.get(m.id, {}):
-            inbox[key] = guests.to_item(self.results[m.id][key])
+        if key not in inbox and self.found(m, key):
+            inbox[key] = guests.to_item(self.found(m, key))
             inbox[key]["via"] = "search"
         item = inbox.get(key)
         if not item:

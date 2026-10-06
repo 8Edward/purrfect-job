@@ -727,6 +727,7 @@ async function sheetAction(action) {
     renderStack();
     renderResults();
     if (!$("#s-saved").hidden) loadSaved();
+    if (gigs.d && gigs.d.items.some((i) => i.key === item.key)) loadGigs();
     loadMe().catch(() => {});
   } catch (e) { fail(e); }
 }
@@ -1559,6 +1560,43 @@ $("#interval").onchange = async () => {
 $("#memo").onclick = showMemo;
 $("#reset").onclick = showReset;
 
+/* 🧩 «Подработки» (owner, in the feed): gigs with a low barrier from every source, picked by words (gigs.py, no AI).
+   Folded by default; 10 shown, the rest on a tap; a tap opens the usual card (★, ✕, ✉️ Откликнуться). */
+const gigs = { all: false, more: false, d: null, poll: null };
+async function loadGigs() {
+  const g = $("#g-gigs");
+  if (!st.me || !st.me.owner) { g.hidden = true; return; }
+  g.hidden = false;
+  try { gigs.d = await api("/api/gigs" + (gigs.all ? "?all=1" : "")); } catch (e) { $("#sum-gigs").textContent = "не загрузилось"; return; }
+  renderGigs();
+  clearTimeout(gigs.poll);
+  if (gigs.d.refreshing) gigs.poll = setTimeout(loadGigs, 20000);  // the exchanges are being read: look again soon
+}
+function renderGigs() {
+  const d = gigs.d, box = $("#gigs");
+  $("#sum-gigs").textContent = d.total ? `🟢 ${d.easy} · всего ${d.total}` : d.refreshing ? "читаю биржи…" : "пока нет";
+  const shown = gigs.more ? d.items : d.items.slice(0, 10);
+  const src = Object.entries(d.sources || {}).map(([n, v]) => `${n} ${v.err && !v.n ? "—" : v.n ?? 0}`).join(" · ");
+  const gl = (i) => i.gig || {};
+  box.innerHTML = '<p class="hint" style="margin:0 0 8px">Задачи, фриланс и неполная занятость с низким порогом входа. Отбор по словам в тексте, без ИИ: '
+    + "🟢 легко зайти, 🟡 можно попробовать. Видите только вы.</p>"
+    + `<div class="chips" role="group" aria-label="Какие подработки"><button class="chip" data-ga="0" aria-pressed="${!gigs.all}">Под мои навыки${d.mine ? " · " + d.mine : ""}</button>`
+    + `<button class="chip" data-ga="1" aria-pressed="${gigs.all}">Все${d.all ? " · " + d.all : ""}</button></div>`
+    + (shown.length ? shown.map((i, n) => `<button class="row" data-gn="${n}"><b>${gl(i).level === "easy" ? "🟢" : "🟡"} ${esc(i.title)}</b>`
+      + `<span class="m${gl(i).level === "easy" ? " easy" : ""}">${esc(when(i.date))}</span>`
+      + `<span class="s">${esc([originOf(i), i.salary || i.comp, ...(gl(i).why || []).slice(0, 2), ...(gl(i).skills || []).slice(0, 3)].filter(Boolean).join(" · "))}</span></button>`).join("")
+      : `<div class="hint" style="margin:0">${d.refreshing ? "Читаю биржи и hh.ru, это минута-другая…" : "Сейчас ничего подходящего."}</div>`)
+    + (d.items.length > 10 ? `<button class="link block" id="gigs-more">${gigs.more ? "Свернуть" : `Показать все (${d.items.length})`}</button>` : "")
+    + `<p class="gig-src">${d.checked_at ? "Биржи проверены " + esc(ago(d.checked_at)) : "Биржи ещё не проверялись"}${src ? ": " + esc(src) : ""}. `
+    + 'На FL.ru и Freelancer.com откликаются на самом сайте: кнопка «🔗 Вакансия» в карточке. '
+    + `<button class="link" id="gigs-refresh">${d.refreshing ? "Обновляю…" : "↻ Обновить"}</button></p>`;
+  $$("#gigs [data-gn]").forEach((b) => (b.onclick = () => openSheet(shown[+b.dataset.gn], true)));
+  $$("#gigs [data-ga]").forEach((b) => (b.onclick = () => { haptic(); gigs.all = b.dataset.ga === "1"; gigs.more = false; loadGigs(); }));
+  if ($("#gigs-more")) $("#gigs-more").onclick = () => { gigs.more = !gigs.more; renderGigs(); };
+  $("#gigs-refresh").onclick = async () => {
+    try { haptic(); await api("/api/gigs/refresh", {}); toast("Проверяю биржи и hh.ru"); setTimeout(loadGigs, 1500); } catch (e) { fail(e); }
+  };
+}
 async function start() {
   try { setSkin(localStorage.getItem("jr-skin") || "hybrid"); } catch (e) { setSkin("hybrid"); }
   if (!INIT) { $("#gate").hidden = false; return; }
@@ -1577,6 +1615,7 @@ async function start() {
   if (st.me.skin) setSkin(st.me.skin);
   if (!st.me.onboarded) showOnboarding();
   await loadFeed().catch(fail);
+  loadGigs();
   setInterval(() => { // keep the counters fresh while the app is open
     if (document.hidden) return;
     const before = st.me && st.me.stats.new;
