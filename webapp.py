@@ -1312,6 +1312,8 @@ class WebApp:
             self.gig_found[job["key"]] = job
             d = item_json(job["key"], dict(job, status=have["status"] if have else "found", fav=bool(have and have.get("fav"))))
             d["gig"] = a
+            if job.get("market") or job.get("gig_kind"):  # a task budget is for the whole job, not «/мес»
+                d["salary_usd"] = 0
             items.append(d)
         if len(self.gig_found) > 2000:
             self.gig_found = {d["key"]: self.gig_found[d["key"]] for d in items}

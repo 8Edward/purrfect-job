@@ -193,7 +193,7 @@ FREELANCER_SKILLS = ["Excel", "Data-Entry", "SQL", "Python", "Data-Processing", 
 
 
 def fetch_freelancer():
-    jobs, seen = [], set()
+    jobs, seen, errors = [], set(), []
     for i, skill in enumerate(FREELANCER_SKILLS):
         if i:
             time.sleep(0.5)
@@ -201,11 +201,14 @@ def fetch_freelancer():
             got = _rss(f"https://www.freelancer.com/rss/job_{skill}.xml", "Freelancer.com")
         except Exception as e:
             log.info("freelancer %s: %s", skill, e)
+            errors.append(f"{skill}: {e}")
             continue
         for j in got:
             if j["url"] not in seen:
                 seen.add(j["url"])
                 jobs.append(j)
+    if not jobs and errors:
+        raise ValueError("; ".join(errors[:3]))
     return jobs
 
 
@@ -235,8 +238,10 @@ def fetch_hh():
                   "employment_form": ["PART", "PROJECT"], "work_format": "REMOTE"}
         raw = _get(guests.HH_SEARCH + "?" + urlencode(params, doseq=True), timeout=30, size=8_000_000, headers=guests.HH_BROWSER)
         got = guests.parse_hh_search(raw.decode("utf-8", "replace"))
-        if got is None:
-            break
+        if got is None:  # captcha or a new page layout: say so instead of a quiet zero
+            if jobs:
+                break
+            raise ValueError("hh.ru page has no HH-Lux-InitialState (captcha / layout change)")
         jobs += [dict(j, site="hh.ru", kind="частичная / проектная") for j in got]
         if len(got) < 100:
             break
