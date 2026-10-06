@@ -23,4 +23,9 @@ old = dict(post, key="1_3", title="Другое", date=now - timedelta(days=30))
 inbox = {"2_1": {"title": "Part-time analyst", "text": "part-time, 20 hours/week, SQL", "date": now.isoformat(), "status": "hidden"}}
 rows = gigs.collect([post, twin, old], inbox, [], [])
 assert [j["key"] for j, _ in rows] == ["1_1"], rows
+assert gigs.pay_usd("₹12500 - ₹37500 INR", market=True)["label"] == "$150–450 за проект"
+assert gigs.pay_usd("$15 - $25 USD / hour", market=True)["per"] == "/час"
+assert gigs.pay_usd("60 000 руб/мес", cyrillic=True)["label"] == "$670/мес"
+assert gigs.pay_usd("25К", cyrillic=True)["hi"] == 278
+assert gigs.pay_usd("без оплаты") is None
 print("ok")

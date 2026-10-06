@@ -1306,14 +1306,27 @@ class WebApp:
                 if not (inbox.get(j["key"], {}).get("status") == "hidden" or inbox.get(j["key"], {}).get("archived"))]
         mine = [r for r in rows if r[1]["skills"]]
         shown = rows if request.query.get("all") == "1" else mine
+        pays = {}
+        for job, _ in shown:  # 💵 every amount in dollars: «$150–450 за проект», «$670/мес», «$15–25/час»
+            pay = gigs.pay_usd(extras.salary_of(job), cyrillic=bool(re.search(r"[а-яё]", f"{job.get('title')} {job.get('text') or ''}", re.I)),
+                               market=bool(job.get("market")))
+            if pay and not pay["per"] and job.get("site") == "hh.ru":
+                pay = dict(pay, per="/мес", label=pay["label"] + "/мес")
+            pays[job["key"]] = pay
+        if request.query.get("sort") == "pay":  # the best paid first (an hourly rate counted as ~160 h); no pay named: last
+            def by_pay(r):
+                p = pays.get(r[0]["key"])
+                return -(p["hi"] * (160 if p["per"] == "/час" else 1)) if p else 1
+            shown = sorted(shown, key=by_pay)
         items = []
         for job, a in shown[:150]:
             have = inbox.get(job["key"])
             self.gig_found[job["key"]] = job
             d = item_json(job["key"], dict(job, status=have["status"] if have else "found", fav=bool(have and have.get("fav"))))
             d["gig"] = a
-            if job.get("market") or job.get("gig_kind"):  # a task budget is for the whole job, not «/мес»
-                d["salary_usd"] = 0
+            pay = pays.get(job["key"])
+            d["salary"], d["salary_usd"] = (pay["label"] if pay else ""), 0  # already in dollars: no second «≈ $/мес»
+            d["pay"] = pay
             items.append(d)
         if len(self.gig_found) > 2000:
             self.gig_found = {d["key"]: self.gig_found[d["key"]] for d in items}

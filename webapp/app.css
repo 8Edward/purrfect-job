@@ -810,3 +810,4 @@ details.group > .pad { padding: 0 14px 14px; }  /* folded blocks: their content 
 #gigs .row .m.easy { background: #2f8f5b; color: #fff; }
 #gigs .chips { padding-bottom: 8px; }
 #gigs .gig-src { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
+#gigs .row .s b.pay { font-size: 12px; color: var(--text, inherit); font-weight: 700; }

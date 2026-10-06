@@ -352,3 +352,67 @@ def collect(posts, inbox, feed, market, skip=()):
         add(job, assess(job.get("title"), "", date=job["date"]))
     out.sort(key=lambda ja: (ja[1]["level"] != "easy", -ja[1]["ease"], -ja[0]["date"].timestamp()))
     return out
+
+
+# ---------------------------------------------------------------- 💵 pay in dollars
+
+USD_RATES = [  # rough rates, only to show «≈ $» and sort; longer codes first so «A$» is not read as «$»
+    (r"a\$|aud", 0.65), (r"c\$|cad", 0.73), (r"nz\$|nzd", 0.6), (r"s\$|sgd", 0.75), (r"hk\$|hkd", 0.13),
+    (r"₹|inr|rs\.?\s?\d|рупи", 1 / 84), (r"₽|руб|rub|\bр\.|\d\s?р\b|&#8381;", 1 / 90), (r"€|eur|евро", 1.1), (r"£|gbp", 1.27),
+    (r"₸|kzt|тенге", 1 / 480), (r"₴|uah|грн", 1 / 41), (r"byn|бел\w* руб", 0.3), (r"zł|pln", 0.25),
+    (r"so'?m|сум|uzs", 1 / 12700), (r"₫|\bvnd\b", 1 / 25000), (r"₱|\bphp\b", 1 / 57), (r"idr|\brp\.?\s?\d", 1 / 16000), (r"₺|\btry\b", 1 / 34),
+    (r"r\$|\bbrl\b", 0.18), (r"\bmxn\b", 0.055), (r"\bzar\b", 0.055), (r"¥|\bjpy\b", 1 / 150), (r"cny|rmb|юан", 0.14), (r"\bpkr\b", 1 / 280),
+    (r"₦|\bngn\b", 1 / 1500), (r"\bbdt\b", 1 / 120), (r"\bchf\b", 1.15), (r"\baed\b", 0.27), (r"\$|usd|долл", 1.0),
+]
+USD_RATES = [(re.compile(p, re.IGNORECASE), r) for p, r in USD_RATES]
+NUM = re.compile(r"(\d[\d\s  ,.]*\d|\d)\s*(k|к|тыс\w*\.?|млн)?(?![\w])", re.IGNORECASE)
+
+
+def _num(raw, mult):
+    s = re.sub(r"[\s  ]", "", raw)
+    if re.search(r"[.,]\d{3}(?!\d)", s):  # 1,250 / 12.500: thousands
+        s = re.sub(r"[.,](?=\d{3}(?!\d))", "", s)
+    s = s.replace(",", ".")
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    m = (mult or "").lower()
+    return v * (1e6 if m.startswith("млн") else 1000 if m else 1)
+
+
+def pay_usd(pay, cyrillic=False, market=False):
+    """«₹12500 - ₹37500 INR» / «от 60К» / «$15/hour» -> {lo, hi, per, label} in dollars, or None.
+    No currency named: rubles in a Russian text, else dollars. per: «/час», «/мес» or «за проект» (a task budget)."""
+    pay = str(pay or "")
+    if not re.search(r"\d", pay):
+        return None
+    rate = next((r for p, r in USD_RATES if p.search(pay)), None)
+    if rate is None:
+        if re.search(r"\b[A-Z]{3}\b", pay):  # a currency we have no rate for: better no number than a wrong one
+            return None
+        rate = 1 / 90 if cyrillic else 1.0
+    nums = [v for v in (_num(m.group(1), m.group(2)) for m in NUM.finditer(pay)) if v and v >= 5]
+    if not nums:
+        return None
+    low = pay.lower()
+    if re.search(r"hour|/\s?hr|\bhr\b|час|/\s?h\b", low):
+        per, k = "/час", 1
+    elif re.search(r"year|год|annum|/\s?yr", low):
+        per, k = "/мес", 1 / 12
+    elif re.search(r"month|мес", low):
+        per, k = "/мес", 1
+    elif market:
+        per, k = " за проект", 1
+    else:
+        per, k = "", 1
+    lo, hi = min(nums[:2]) * rate * k, max(nums[:2]) * rate * k
+    if hi < 1:
+        return None
+
+    def fmt(v):
+        v = round(v, -1) if v >= 100 else round(v)
+        return f"{int(v):,}".replace(",", " ")
+
+    return {"lo": round(lo), "hi": round(hi), "per": per.strip(),
+            "label": ("$" + fmt(lo) + ("–" + fmt(hi) if fmt(hi) != fmt(lo) else "") + per) if rate != 1.0 or len(nums) > 1 or per else "$" + fmt(hi)}
