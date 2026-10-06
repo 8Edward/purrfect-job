@@ -159,10 +159,9 @@ roles:
   software-engineer:
     names: [software engineer, software developer, программист, инженер-программист]
     also: [c++ developer, c++ engineer, c++ разработчик, разработчик c++, python developer, python engineer, python разработчик,
-           разработчик python, backend developer, backend engineer, backend разработчик, бэкенд разработчик, go developer,
-           golang developer, java developer, java разработчик, software development engineer]
+           разработчик python, java developer, java разработчик, software development engineer]
     not: [manager, менеджер, руководитель, head of, director, директор, qa, тестировщик, test, sales, recruiter, designer]
-    links: {embedded-engineer: adj, robotics-engineer: adj, ml-engineer: far, engineering-manager: far, qa-engineer: far}
+    links: {embedded-engineer: adj, robotics-engineer: adj, backend-developer: adj, fullstack-developer: adj, mobile-developer: adj, ml-engineer: far, engineering-manager: far, qa-engineer: far}
   robotics-engineer:
     names: [robotics engineer, инженер-робототехник, робототехник, robotics software engineer, ros developer]
     also: [ros engineer, ros разработчик, ros2 developer, motion planning engineer, perception engineer, autonomy engineer,
@@ -184,6 +183,78 @@ roles:
            r&d manager, director of engineering, head of robotics]
     links: {software-engineer: far, robotics-engineer: far, project-manager: far, solution-architect: far}
 
+  # IT roles (2026-10-06): the app is for every IT profession, not only analysts.
+  backend-developer:
+    names: [backend developer, backend engineer, бэкенд разработчик, backend разработчик]
+    also: [back-end developer, server-side developer, golang developer, go developer, go разработчик, разработчик go,
+           node.js developer, nodejs developer, php developer, php разработчик, разработчик php, ruby developer,
+           ruby on rails developer, c# developer, .net developer, .net разработчик, kotlin backend developer,
+           rust developer, scala developer, elixir developer, django developer, java backend developer]
+    not: [manager, менеджер, head of, director, директор, qa, тестировщик, sales, recruiter, designer]
+    links: {fullstack-developer: adj, software-engineer: adj, devops-engineer: adj, data-engineer: far, dba: far}
+  frontend-developer:
+    names: [frontend developer, frontend engineer, фронтенд разработчик, frontend разработчик]
+    also: [front-end developer, front end developer, react developer, vue developer, angular developer, javascript developer,
+           js developer, typescript developer, web developer, веб разработчик, веб-разработчик, ui developer,
+           react разработчик, vue разработчик, верстальщик, html developer, next.js developer]
+    not: [manager, менеджер, head of, director, директор, qa, тестировщик, sales, recruiter]
+    links: {fullstack-developer: adj, designer: far, mobile-developer: far}
+  fullstack-developer:
+    names: [fullstack developer, full stack developer, full-stack developer, фулстек разработчик, fullstack разработчик]
+    also: [fullstack engineer, full stack engineer, full-stack engineer, фуллстек разработчик, mern developer]
+    links: {frontend-developer: adj, backend-developer: adj, software-engineer: adj}
+  mobile-developer:
+    names: [mobile developer, mobile engineer, мобильный разработчик, ios developer, android developer]
+    also: [ios engineer, android engineer, ios разработчик, android разработчик, swift developer, kotlin developer,
+           flutter developer, react native developer, mobile app developer, разработчик мобильных приложений, kotlin разработчик]
+    not: [manager, менеджер, head of, director, директор, sales, recruiter]
+    links: {software-engineer: adj, frontend-developer: far}
+  devops-engineer:
+    names: [devops engineer, devops инженер, sre, site reliability engineer, platform engineer]
+    also: [devops, devsecops engineer, cloud engineer, cloud инженер, infrastructure engineer, инженер инфраструктуры,
+           kubernetes engineer, ci/cd engineer, release engineer, build engineer, инженер по сборке, облачный инженер,
+           aws engineer, azure engineer, mlops engineer]
+    not: [sales, recruiter, менеджер по продажам]
+    links: {sysadmin: adj, backend-developer: far, security-engineer: far}
+  sysadmin:
+    names: [системный администратор, system administrator, sysadmin, сисадмин, network engineer]
+    also: [linux administrator, windows administrator, linux админ, администратор linux, сетевой инженер, network administrator,
+           it administrator, it администратор, infrastructure administrator, администратор баз данных windows, инженер по сетям]
+    links: {devops-engineer: adj, it-support: adj, security-engineer: far}
+  dba:
+    names: [database administrator, dba, администратор баз данных, database engineer]
+    also: [sql dba, postgresql dba, oracle dba, postgres dba, инженер баз данных, database developer, разработчик баз данных]
+    links: {data-engineer: adj, backend-developer: far, sysadmin: far}
+  qa-automation:
+    names: [qa automation engineer, automation qa, sdet, автотестировщик, qa automation]
+    also: [test automation engineer, автоматизатор тестирования, qa engineer automation, инженер по автоматизации тестирования,
+           qa автоматизатор, quality assurance automation engineer, software development engineer in test, aqa engineer]
+    links: {qa-engineer: adj, software-engineer: far}
+  security-engineer:
+    names: [security engineer, information security engineer, инженер информационной безопасности, cybersecurity engineer, пентестер]
+    also: [infosec engineer, application security engineer, appsec engineer, security analyst, soc analyst, penetration tester,
+           pentester, специалист по информационной безопасности, аналитик информационной безопасности, иб специалист,
+           cyber security specialist, devsecops, аналитик soc, malware analyst]
+    links: {devops-engineer: far, sysadmin: far}
+  game-developer:
+    names: [game developer, gameplay developer, разработчик игр, unity developer, unreal developer]
+    also: [unity разработчик, unreal engine developer, game programmer, gameplay programmer, game engineer, игровой разработчик,
+           c# unity developer, godot developer, graphics programmer, технический художник, technical artist]
+    links: {software-engineer: adj, designer: far}
+  tech-writer:
+    names: [technical writer, технический писатель, tech writer]
+    also: [documentation engineer, documentation specialist, api technical writer, технический райтер, специалист по документации]
+    links: {system-analyst: far}
+  scrum-master:
+    names: [scrum master, скрам мастер, agile coach, delivery manager]
+    also: [agile project manager, agile delivery manager, scrum-мастер, agile менеджер, product owner, продакт оунер]
+    links: {project-manager: adj, product-manager: adj}
+  it-support:
+    names: [it support engineer, техническая поддержка, helpdesk engineer, support engineer, инженер технической поддержки]
+    also: [it support specialist, it support, service desk engineer, desktop support, help desk specialist, specialist 1c support,
+           специалист технической поддержки, инженер поддержки, l1 support, l2 support, технический специалист поддержки,
+           technical support engineer, customer support engineer]
+    links: {sysadmin: adj, support: adj}
 words:
   - [антифрод, анти-фрод, antifraud, anti-fraud, фрод, fraud, мошенничество, мошенничеству, мошенничества]
   - [аналитик, analyst, analytics]

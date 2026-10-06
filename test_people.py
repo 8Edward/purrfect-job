@@ -82,6 +82,20 @@ try:
     assert a_igor["skill_words"][:2] == ["c++", "robotics"], a_igor["skill_words"]  # his own tools first, not SQL
     assert a_igor["level"] == "Senior" and a_igor["english"] == "B2"
 
+    # every IT profession is read as itself, not as an analyst
+    for text, want in (("Ivan\nSenior Frontend Developer\nReact, TypeScript, Redux, HTML, CSS.", "frontend-developer"),
+                       ("Олег\nBackend разработчик\nGo, PostgreSQL, Kafka, Docker, микросервисы.", "backend-developer"),
+                       ("Leo\nFullstack Developer\nReact, Node.js, PostgreSQL.", "fullstack-developer"),
+                       ("Max\nDevOps Engineer\nKubernetes, Terraform, Ansible, AWS, Linux.", "devops-engineer"),
+                       ("Мария\nQA Automation Engineer\nPython, pytest, Selenium, Playwright.", "qa-automation"),
+                       ("Dan\niOS Developer\nSwift, SwiftUI, Xcode.", "mobile-developer"),
+                       ("Ann\nИнженер информационной безопасности\nSIEM, пентест, OWASP.", "security-engineer"),
+                       ("Света\nИнженер технической поддержки\nL2 support, ITIL, Zabbix.", "it-support"),
+                       ("Tim\nUnity Developer\nC#, Unity, shaders, gameplay.", "game-developer")):
+        got = cv_reader.analyze(text, graph, pool)
+        assert [r["id"] for r in got["roles"] if r["primary"]] == [want], (want, got["roles"])
+        assert not set(got["channels"]) & {"foranalysts", "analytics_jobs"}, (want, got["channels"])
+
     # channels: each family gets its own, a general channel goes to everyone, no role -> nothing proposed
     assert set(a_igor["channels"]) == {"forpython", "remoteit"}, a_igor["channels"]
     assert set(a_anna["channels"]) == {"foranalysts", "analytics_jobs", "remoteit"}, a_anna["channels"]

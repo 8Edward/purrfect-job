@@ -62,12 +62,35 @@ SKILLS = [
      r"\bslam\b|gazebo|манипулятор\w*|беспилотн\w*|\buav\b|\bбпла\b", ["robotics-engineer"], True),
     ("Встраиваемые системы", r"embedded|встраиваем\w*|микроконтроллер\w*|stm32|firmware|прошивк\w*|\bmqtt\b|modbus|\buart\b|rs-?485|\brtos\b",
      ["embedded-engineer", "robotics-engineer"], True),
-    ("Управление командой", r"head of|team ?lead|тимлид|engineering manager|руководител\w* (?:отдел|разработ|команд|групп)\w*|"
+    ("Backend", r"\bgolang\b|\bgo\b developer|node\.?js|\bphp\b|laravel|symfony|django|flask|fastapi|spring( boot)?|\bjava\b|kotlin|\.net\b|asp\.net|c#|ruby|rails|\brust\b|\bscala\b|elixir|microservice\w*|микросервис\w*|grpc|rabbitmq",
+     ["backend-developer", "software-engineer", "fullstack-developer"], True),
+    ("Frontend", r"react(\.js)?\b|\bvue(\.js)?\b|angular|svelte|next\.js|javascript|typescript|\bhtml\b|\bcss\b|sass|webpack|vite\b|redux|вёрстк\w*|верстк\w*",
+     ["frontend-developer", "fullstack-developer"], True),
+    ("Мобильная разработка", r"\bios\b|android|swift(ui)?\b|flutter|react native|jetpack compose|xcode|objective-c",
+     ["mobile-developer"], True),
+    ("DevOps / облака", r"docker|kubernetes|\bk8s\b|terraform|ansible|jenkins|gitlab ci|github actions|ci/cd|\baws\b|\bazure\b|\bgcp\b|prometheus|helm\b|nginx|\bsre\b|devops",
+     ["devops-engineer", "sysadmin"], True),
+    ("Администрирование", r"\blinux\b|\bbash\b|active directory|windows server|vmware|cisco|\bnetwork\w*|zabbix|системн\w* администр\w*|сетев\w* инженер\w*",
+     ["sysadmin", "it-support"], False),
+    ("Базы данных (DBA)", r"\bdba\b|администрирован\w* баз\w*|репликаци\w*|replication|шардирован\w*|sharding|pg_?bouncer|query optimi[sz]ation|оптимизаци\w* запросов",
+     ["dba"], False),
+    ("Автотесты", r"selenium|playwright|cypress|pytest|junit|testng|appium|rest[- ]assured|автотест\w*|autotest\w*|test automation|\bsdet\b",
+     ["qa-automation"], True),
+    ("Безопасность", r"информационн\w* безопасност\w*|cyber ?security|infosec|pentest\w*|пентест\w*|owasp|siem|\bsoc\b|vulnerab\w*|уязвимост\w*|\bsast\b|\bdast\b",
+     ["security-engineer"], True),
+    ("Игры", r"unity|unreal( engine)?|godot|gameplay|shader\w*|\bhlsl\b|\bglsl\b|game ?dev\w*",
+     ["game-developer"], True),
+    ("Техническая документация", r"technical writ\w*|технич\w* писател\w*|документаци\w* (?:api|для разработчик\w*)|docs[- ]as[- ]code",
+     ["tech-writer"], False),
+    ("Scrum / agile-роли", r"scrum master|скрам[- ]мастер|sprint planning|ретроспектив\w*",
+     ["scrum-master"], False),
+    ("ИТ-поддержка", r"\bl[123] support\b|helpdesk|service desk|техподдержк\w*|техническ\w* поддержк\w*|\bitil\b",
+     ["it-support"], False),    ("Управление командой", r"head of|team ?lead|тимлид|engineering manager|руководител\w* (?:отдел|разработ|команд|групп)\w*|"
      r"управлени\w* команд\w*|led a team|managed a team", ["engineering-manager"], False),
 ]
 SKILL_RE = [(label, re.compile(p, re.IGNORECASE), roles, word) for label, p, roles, word in SKILLS]
 GENERIC_WORDS = {"api", "rest", "soap", "ui", "ux", "qa", "seo", "utm", "1с", "1c",
-                 "ros", "ros2", "ros 2", "uav", "бпла", "uart", "mqtt", "slam", "rtos", "head of", "rs-485", "rs485"}
+                 "ros", "ros2", "ros 2", "uav", "бпла", "uart", "mqtt", "slam", "rtos", "head of", "rs-485", "rs485", "java", "html", "css", "ios", "docker", "linux", "aws", "azure", "gcp", "network", "react", "vue", "angular", "sre", "devops", "unity", "soc", "go", "rust"}
 
 # Words in a pool channel's name or title that make it fit a role family. A channel of a family
 # (analysts, designers…) is proposed only to that family; a general one («Remote IT») to everyone.
@@ -79,10 +102,15 @@ CHANNEL_HINTS = {
                    "fraud-analyst", "risk-analyst", "aml-analyst"}),
     "dev": (["python", "c++", "golang", "backend", "разработ", "программ", "embedded", "robot", "робот"],
             {"software-engineer", "embedded-engineer", "robotics-engineer", "ml-engineer", "engineering-manager",
-             "data-engineer", "analytics-engineer"}),
-    "web": (["frontend", "javascript", "php", "java", "devops"], {"software-engineer"}),
+             "data-engineer", "analytics-engineer", "backend-developer", "fullstack-developer", "mobile-developer",
+             "frontend-developer", "game-developer", "devops-engineer", "qa-automation", "security-engineer"}),
+    "web": (["frontend", "javascript", "php", "java", "react", "node"], {"frontend-developer", "fullstack-developer"}),
+    "mobile": (["ios", "android", "mobile", "мобиль"], {"mobile-developer"}),
+    "ops": (["devops", "sre", "sysadmin", "админ", "infra", "cloud"], {"devops-engineer", "sysadmin", "dba", "security-engineer", "it-support"}),
+    "game": (["game", "gamedev", "игр", "unity"], {"game-developer"}),
+    "sec": (["security", "infosec", "безопасн", "cyber"], {"security-engineer"}),
     "design": (["design", "дизайн"], {"designer", "graphic-designer"}),
-    "qa": (["qa", "тест", "test"], {"qa-engineer"}),
+    "qa": (["qa", "тест", "test"], {"qa-engineer", "qa-automation"}),
     "product": (["product", "продакт", "проджект"], {"product-manager", "project-manager", "product-analyst"}),
     "junior": (["junior", "джун", "стажир"], set()),  # for beginners: never proposed from a résumé
     "it": (["it", "remote", "career", "geek", "habr", "relocat", "удален", "удалён", "vakansii", "вакансии"], None),  # general
@@ -90,7 +118,7 @@ CHANNEL_HINTS = {
 TITLE_WORD_RE = re.compile(r"\b(engineer|developer|programmer|analyst|scientist|manager|designer|architect|consultant|"
                            r"specialist|head of|director|researcher|lead|инженер|разработчик|программист|аналитик|менеджер|"
                            r"руководитель|дизайнер|архитектор|консультант|специалист|директор|бухгалтер|тестировщик|рекрутер|"
-                           r"робототехник|surveyor|technician|technologist|operator|administrator|coordinator|assistant|"
+                           r"робототехник|devops|sre|frontend|backend|fullstack|full stack|full-stack|тимлид|разработчик|программист|администратор|surveyor|technician|technologist|operator|administrator|coordinator|assistant|"
                            r"officer|teacher|tutor|translator|interpreter|writer|editor|copywriter|marketer|lawyer|"
                            r"accountant|recruiter|nurse|doctor|геодезист|техник|технолог|оператор|администратор|"
                            r"координатор|ассистент|учитель|преподаватель|переводчик|редактор|копирайтер|маркетолог|"
