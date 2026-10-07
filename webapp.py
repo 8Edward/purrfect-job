@@ -1305,7 +1305,7 @@ class WebApp:
             hit = self.posts.get(key)
             if not hit or datetime.now(timezone.utc) - hit[0] >= POSTS_TTL:
                 asyncio.create_task(self.refresh_channel(key))
-        stamp = (data.get("at"), len(self.posts), sum(len(p) for _, p in self.posts.values()))
+        stamp = data.get("at")  # a channel read in the background no longer forces a rebuild (~7 s): new posts come within GIG_TTL
         hit = self.gig_cache
         if hit and hit[0] == stamp and time.monotonic() - hit[1] < self.GIG_TTL:
             return hit[2]
@@ -1354,7 +1354,7 @@ class WebApp:
             shown = sorted(shown, key=lambda r: (bool(r[0].get("undated")), -r[0]["date"].timestamp()))  # no date on the site: below the dated ones
         items = []
         cv = self.cv_text()
-        for job, a in shown[:150]:
+        for job, a in shown[:400]:  # the page filters and sorts these itself, so chip taps are instant
             have = inbox.get(job["key"])
             self.gig_found[job["key"]] = job
             d = item_json(job["key"], dict(job, status=have["status"] if have else "found", fav=bool(have and have.get("fav"))))

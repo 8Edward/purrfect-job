@@ -1578,7 +1578,7 @@ async function loadGigs() {
   if (!st.me || !st.me.owner) { g.hidden = true; return; }
   g.hidden = false;
   try {
-    gigs.d = await api("/api/gigs?" + new URLSearchParams({ all: gigs.all ? 1 : 0, sort: gigs.sort, src: gigs.fl ? "fl" : "" }));
+    gigs.d = await api("/api/gigs?all=1&sort=new");
   } catch (e) { $("#sum-gigs").textContent = "не загрузилось"; return; }
   renderGigs();
   clearTimeout(gigs.poll);
@@ -1586,10 +1586,23 @@ async function loadGigs() {
 }
 const hoursAgo = (h) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} мин назад` : `${String(Math.round(h * 10) / 10).replace(".", ",")} ч назад`);
 const usdOf = (v) => (v ? "$" + Math.round(v).toLocaleString("ru-RU") : "");
+/* the chips work on the list already in the page: no request, no wait */
+const GIG_SORT = {
+  new: (a, b) => (!!a.undated - !!b.undated) || (b.date > a.date ? 1 : b.date < a.date ? -1 : 0),
+  ease: (a, b) => ((a.gig.level !== "easy") - (b.gig.level !== "easy")) || (b.gig.ease - a.gig.ease) || GIG_SORT.new(a, b),
+  pay: (a, b) => payKey(b) - payKey(a) || GIG_SORT.new(a, b),
+};
+const payKey = (i) => (i.pay ? i.pay.hi * (i.pay.per === "/час" ? 160 : 1) : -1);
+function gigView() {
+  const all = gigs.d.items, mine = all.filter((i) => (i.gig.skills || []).length);
+  let list = gigs.fl ? all.filter((i) => i.fl) : gigs.all ? all : mine;
+  list = [...list].sort(GIG_SORT[gigs.sort] || GIG_SORT.new);
+  return { list, all: all.length, mine: mine.length, easy: list.filter((i) => i.gig.level === "easy").length };
+}
 function renderGigs() {
-  const d = gigs.d, box = $("#gigs");
-  $("#sum-gigs").textContent = d.total ? `🟢 ${d.easy} · всего ${d.total}` : d.refreshing ? "читаю биржи…" : "пока нет";
-  const shown = gigs.more ? d.items : d.items.slice(0, 10);
+  const d = gigs.d, box = $("#gigs"), v = gigView();
+  $("#sum-gigs").textContent = v.list.length ? `🟢 ${v.easy} · всего ${v.list.length}` : d.refreshing ? "читаю биржи…" : "пока нет";
+  const shown = gigs.more ? v.list : v.list.slice(0, 10);
   const src = Object.entries(d.sources || {}).map(([n, v]) => `${n} ${v.err && !v.n ? "—" : v.n ?? 0}`).join(" · ");
   const gl = (i) => i.gig || {};
   const sortChip = (k, label) => `<button class="chip" data-gs="${k}" aria-pressed="${gigs.sort === k}">${label}</button>`;
@@ -1603,20 +1616,20 @@ function renderGigs() {
     + '<p class="hint" style="margin:0 0 8px">Задачи, фриланс и неполная занятость с низким порогом входа. Отбор по словам в тексте, без ИИ: '
     + "🟢 легко зайти, 🟡 можно попробовать. Видите только вы.</p>"
     + `<div class="chips wrap" role="group" aria-label="Какие подработки"><button class="chip" id="gigs-fl" aria-pressed="${gigs.fl}">⚡ Freelancer</button>`
-    + `<button class="chip" data-ga="0" aria-pressed="${!gigs.all}">Под мои навыки${d.mine ? " · " + d.mine : ""}</button>`
-    + `<button class="chip" data-ga="1" aria-pressed="${gigs.all}">Все${d.all ? " · " + d.all : ""}</button></div>`
+    + `<button class="chip" data-ga="0" aria-pressed="${!gigs.all && !gigs.fl}">Под мои навыки${v.mine ? " · " + v.mine : ""}</button>`
+    + `<button class="chip" data-ga="1" aria-pressed="${gigs.all && !gigs.fl}">Все${v.all ? " · " + v.all : ""}</button></div>`
     + `<div class="chips wrap" role="group" aria-label="Порядок">${sortChip("new", "🆕 Свежие")}${sortChip("ease", "🟢 Лёгкие")}${sortChip("pay", "💵 По оплате")}</div>`
     + (shown.length ? shown.map((i, n) => `<button class="row" data-gn="${n}"><b>${gl(i).level === "easy" ? "🟢" : "🟡"} ${esc(i.title)}</b>`
       + `<span class="m${gl(i).level === "easy" ? " easy" : ""}">${esc(i.fl ? hoursAgo(i.fl.age_h) : i.undated ? "дата ?" : when(i.date))}</span>`
       + `<span class="s">${i.salary ? `<b class="pay">💵 ${esc(i.salary)}</b> · ` : ""}${esc(line(i).filter(Boolean).join(" · "))}</span></button>`).join("")
       : `<div class="hint" style="margin:0">${d.refreshing ? "Читаю биржи и hh.ru, это минута-другая…" : "Сейчас ничего подходящего."}</div>`)
-    + (d.items.length > 10 ? `<button class="link block" id="gigs-more">${gigs.more ? "Свернуть" : `Показать все (${d.items.length})`}</button>` : "")
+    + (v.list.length > 10 ? `<button class="link block" id="gigs-more">${gigs.more ? "Свернуть" : `Показать все (${v.list.length})`}</button>` : "")
     + `<p class="gig-src">${d.checked_at ? "Биржи проверены " + esc(ago(d.checked_at)) : "Биржи ещё не проверялись"}${src ? ": " + esc(src) : ""}. `
     + "Freelancer обновляется сам каждые 15 минут, кнопка «↻» наверху — сразу. Ставку вы делаете сами на сайте: в карточке заказа есть готовая заявка.</p>";
   $$("#gigs [data-gn]").forEach((b) => (b.onclick = () => openSheet(shown[+b.dataset.gn], true)));
-  $$("#gigs [data-ga]").forEach((b) => (b.onclick = () => { haptic(); gigs.all = b.dataset.ga === "1"; gigs.more = false; loadGigs(); }));
-  $$("#gigs [data-gs]").forEach((b) => (b.onclick = () => { haptic(); gigs.sort = b.dataset.gs; gigs.more = false; loadGigs(); }));
-  $("#gigs-fl").onclick = () => { haptic(); gigs.fl = !gigs.fl; gigs.more = false; loadGigs(); };
+  $$("#gigs [data-ga]").forEach((b) => (b.onclick = () => { haptic(); gigs.all = b.dataset.ga === "1"; gigs.fl = false; gigs.more = false; renderGigs(); }));
+  $$("#gigs [data-gs]").forEach((b) => (b.onclick = () => { haptic(); gigs.sort = b.dataset.gs; gigs.more = false; renderGigs(); }));
+  $("#gigs-fl").onclick = () => { haptic(); gigs.fl = !gigs.fl; gigs.more = false; renderGigs(); };
   if ($("#gigs-more")) $("#gigs-more").onclick = () => { gigs.more = !gigs.more; renderGigs(); };
   $("#gigs-refresh").onclick = refreshGigs;
 }
@@ -1630,7 +1643,7 @@ async function refreshGigs() {
     await api("/api/gigs/refresh", {});
     for (let n = 0; n < 40; n++) {
       await new Promise((r) => setTimeout(r, 3000));
-      const d = await api("/api/gigs?" + new URLSearchParams({ all: gigs.all ? 1 : 0, sort: gigs.sort, src: gigs.fl ? "fl" : "" }));
+      const d = await api("/api/gigs?all=1&sort=new");
       gigs.d = d;
       if (!d.refreshing) break;
     }
