@@ -28,4 +28,19 @@ assert gigs.pay_usd("$15 - $25 USD / hour", market=True)["per"] == "/час"
 assert gigs.pay_usd("60 000 руб/мес", cyrillic=True)["label"] == "$670/мес"
 assert gigs.pay_usd("25К", cyrillic=True)["hi"] == 278
 assert gigs.pay_usd("без оплаты") is None
+
+import freelancer
+proj = {"id": 1, "title": "PDF Contact Lists to Excel", "seo_url": "ocr/PDF-Contact-Lists-Excel", "type": "fixed",
+        "currency": {"code": "INR"}, "budget": {"minimum": 12500, "maximum": 37500},
+        "bid_stats": {"bid_count": 27, "bid_avg": 20000}, "time_submitted": int(now.timestamp()) - 3600,
+        "description": "Extract contacts from 20 PDF files into one Excel sheet. Sample attached.", "jobs": [{"name": "Excel"}]}
+fj = freelancer.to_job(proj)
+assert fj["url"].endswith("ocr/PDF-Contact-Lists-Excel") and fj["comp"] == "₹12500 - ₹37500 INR" and not freelancer.junk(fj)
+br = freelancer.brief(fj, "## Summary\nData Analyst with 3 years of experience. Excel, Python.")
+assert br["bid"] == 14000 and br["bids"] == 27 and br["days"] == 2 and 0.9 < br["age_h"] < 1.1, br
+assert freelancer.junk(dict(fj, title="IT Project Manager - Networks"))      # another job
+assert freelancer.junk(dict(fj, text="Must be done purely manual, no OCR"))     # automation forbidden
+assert freelancer.junk(dict(fj, fl=dict(fj["fl"], cur="USD", min=10, max=30)))  # under $50
+t = freelancer.template(fj, "## Summary\nData Analyst with 3 years of experience in Big Data analytics.")
+assert "I'm a Data Analyst with 3 years" in t and "@" not in t and "http" not in t
 print("ok")

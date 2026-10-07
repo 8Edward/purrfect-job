@@ -9,10 +9,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const SKINS = {  // three cat themes; the old skin names still open the closest new one
-  // head = Telegram's own top bar, the same colour as the top of our header panel (--hero-a), so the two read as one
-  hybrid: { name: "Гибрид", bg: "#f2f0ec", head: "#1f5f58", colors: ["#f2f0ec", "#7d8590", "#2f8f83"] },
-  remote: { name: "Удалёнка", bg: "#fff3d6", head: "#ff6a2b", colors: ["#fff3d6", "#26b6a6", "#ff7a2f"] },
-  office: { name: "Офис", bg: "#eceff3", head: "#0f1f3d", colors: ["#eceff3", "#3c4656", "#1d3a6e"] },
+  hybrid: { name: "Гибрид", bg: "#f2f0ec", colors: ["#f2f0ec", "#7d8590", "#2f8f83"] },
+  remote: { name: "Удалёнка", bg: "#fff3d6", colors: ["#fff3d6", "#26b6a6", "#ff7a2f"] },
+  office: { name: "Офис", bg: "#eceff3", colors: ["#eceff3", "#3c4656", "#1d3a6e"] },
 };
 const OLD_SKINS = { radar: "hybrid", tropic: "remote", dossier: "office" };
 const MATCH = { exact: "точно" };
@@ -105,7 +104,7 @@ function setSkin(skin, save) {
     setTimeout(() => html.classList.remove("skinning"), 600);
   }
   html.dataset.skin = skin;
-  try { tg.setHeaderColor(SKINS[skin].head); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
+  try { tg.setHeaderColor(SKINS[skin].bg); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { tg.setBottomBarColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { localStorage.setItem("jr-skin", skin); } catch (e) { /* blocked */ }
   $$(".skin").forEach((b) => b.setAttribute("aria-pressed", b.dataset.skin === skin));
@@ -456,7 +455,7 @@ function renderSheet() {
   $("#sheet").innerHTML = `<div class="grip"></div>
     <div class="src">${esc(originOf(i))} · ${esc(when(i.date))}</div>
     <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
-    <div class="meta">${metaHtml(i)}</div><div class="tags" style="margin-top:8px">${tagsHtml(i.tags)}</div>
+    <div class="meta">${metaHtml(i)}</div>${flBox(i)}<div class="tags" style="margin-top:8px">${tagsHtml(i.tags)}</div>
     ${i.summary && i.summary.length ? `<div class="sum" style="margin-top:8px">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : ""}
     ${status ? `<div class="status">${status}</div>` : ""}
     ${aiBox(i)}
@@ -469,13 +468,14 @@ function renderSheet() {
       ${i.status === "hidden" ? `<button data-a="restore" class="wide">↩ Вернуть в новые</button>` : ""}
       ${i.seen && i.status === "new" && !i.archived && st.saved === "seen" && !$("#s-saved").hidden ? `<button data-a="unsee" class="wide">↩ Вернуть в ленту</button>` : ""}
       ${fresh ? "" : `<button data-a="fav" class="wide">${i.fav ? "★ Убрать из избранного" : "☆ В избранное"}</button>`}
-      ${st.me && st.me.owner ? '<button data-a="apply" class="yes wide">✉️ Откликнуться</button>' : ""}
+      ${st.me && st.me.owner && !i.fl ? '<button data-a="apply" class="yes wide">✉️ Откликнуться</button>' : ""}
       ${i.link ? `<button data-a="open" class="wide">${i.source === "tg" ? "🔗 Пост" : "🔗 Вакансия"}</button>` : ""}
       ${viaSearchOrFresh(i) ? "" : `<button data-a="${i.archived ? "unarchive" : "archive"}" class="wide">${i.archived ? "↩ Вернуть из архива" : "🗄 В архив"}</button>`}
     </div>`;
   $$("#sheet [data-a]").forEach((b) => (b.onclick = () => sheetAction(b.dataset.a)));
   $$("#sheet [data-stage]").forEach((b) => (b.onclick = () => setStage(st.sheet.item, b.dataset.stage)));
   $$("#sheet [data-also]").forEach((b) => (b.onclick = () => openLink(i.also[+b.dataset.also].link)));
+  wireFl(i);
 }
 const viaSearchOrFresh = (i) => (st.sheet && st.sheet.viaSearch) || i.status === "new" || i.status === "found";
 function aiBox(i) {
@@ -1563,41 +1563,103 @@ $("#reset").onclick = showReset;
 
 /* 🧩 «Подработки» (owner, in the feed): gigs with a low barrier from every source, picked by words (gigs.py, no AI).
    Folded by default; 10 shown, the rest on a tap; a tap opens the usual card (★, ✕, ✉️ Откликнуться). */
-const gigs = { all: false, pay: false, more: false, d: null, poll: null };
+const gigs = { all: false, sort: "new", fl: false, more: false, d: null, poll: null, drafts: {} };
 async function loadGigs() {
   const g = $("#g-gigs");
   if (!st.me || !st.me.owner) { g.hidden = true; return; }
   g.hidden = false;
-  try { gigs.d = await api("/api/gigs?" + new URLSearchParams({ all: gigs.all ? 1 : 0, sort: gigs.pay ? "pay" : "ease" })); } catch (e) { $("#sum-gigs").textContent = "не загрузилось"; return; }
+  try {
+    gigs.d = await api("/api/gigs?" + new URLSearchParams({ all: gigs.all ? 1 : 0, sort: gigs.sort, src: gigs.fl ? "fl" : "" }));
+  } catch (e) { $("#sum-gigs").textContent = "не загрузилось"; return; }
   renderGigs();
   clearTimeout(gigs.poll);
   if (gigs.d.refreshing) gigs.poll = setTimeout(loadGigs, 20000);  // the exchanges are being read: look again soon
 }
+const hoursAgo = (h) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} мин назад` : `${String(Math.round(h * 10) / 10).replace(".", ",")} ч назад`);
+const usdOf = (v) => (v ? "$" + Math.round(v).toLocaleString("ru-RU") : "");
 function renderGigs() {
   const d = gigs.d, box = $("#gigs");
   $("#sum-gigs").textContent = d.total ? `🟢 ${d.easy} · всего ${d.total}` : d.refreshing ? "читаю биржи…" : "пока нет";
   const shown = gigs.more ? d.items : d.items.slice(0, 10);
   const src = Object.entries(d.sources || {}).map(([n, v]) => `${n} ${v.err && !v.n ? "—" : v.n ?? 0}`).join(" · ");
   const gl = (i) => i.gig || {};
+  const sortChip = (k, label) => `<button class="chip" data-gs="${k}" aria-pressed="${gigs.sort === k}">${label}</button>`;
+  const line = (i) => (i.fl
+    ? [`⏱ ${hoursAgo(i.fl.age_h)}`, `${i.fl.bids} ${plural(i.fl.bids, "заявка", "заявки", "заявок")}`, ...(gl(i).skills || []).slice(0, 2)]
+    : [originOf(i), ...(gl(i).why || []).slice(0, 2), ...(gl(i).skills || []).slice(0, 3)]);
   box.innerHTML = '<p class="hint" style="margin:0 0 8px">Задачи, фриланс и неполная занятость с низким порогом входа. Отбор по словам в тексте, без ИИ: '
     + "🟢 легко зайти, 🟡 можно попробовать. Видите только вы.</p>"
-    + `<div class="chips wrap" role="group" aria-label="Какие подработки"><button class="chip" data-ga="0" aria-pressed="${!gigs.all}">Под мои навыки${d.mine ? " · " + d.mine : ""}</button>`
-    + `<button class="chip" data-ga="1" aria-pressed="${gigs.all}">Все${d.all ? " · " + d.all : ""}</button>`
-    + `<button class="chip" id="gigs-pay" aria-pressed="${gigs.pay}">💵 По оплате</button></div>`
+    + `<div class="chips wrap" role="group" aria-label="Какие подработки"><button class="chip" id="gigs-fl" aria-pressed="${gigs.fl}">⚡ Freelancer</button>`
+    + `<button class="chip" data-ga="0" aria-pressed="${!gigs.all}">Под мои навыки${d.mine ? " · " + d.mine : ""}</button>`
+    + `<button class="chip" data-ga="1" aria-pressed="${gigs.all}">Все${d.all ? " · " + d.all : ""}</button></div>`
+    + `<div class="chips wrap" role="group" aria-label="Порядок">${sortChip("new", "🆕 Свежие")}${sortChip("ease", "🟢 Лёгкие")}${sortChip("pay", "💵 По оплате")}</div>`
     + (shown.length ? shown.map((i, n) => `<button class="row" data-gn="${n}"><b>${gl(i).level === "easy" ? "🟢" : "🟡"} ${esc(i.title)}</b>`
-      + `<span class="m${gl(i).level === "easy" ? " easy" : ""}">${esc(when(i.date))}</span>`
-      + `<span class="s">${i.salary ? `<b class="pay">💵 ${esc(i.salary)}</b> · ` : ""}${esc([originOf(i), ...(gl(i).why || []).slice(0, 2), ...(gl(i).skills || []).slice(0, 3)].filter(Boolean).join(" · "))}</span></button>`).join("")
+      + `<span class="m${gl(i).level === "easy" ? " easy" : ""}">${esc(i.fl ? hoursAgo(i.fl.age_h) : when(i.date))}</span>`
+      + `<span class="s">${i.salary ? `<b class="pay">💵 ${esc(i.salary)}</b> · ` : ""}${esc(line(i).filter(Boolean).join(" · "))}</span></button>`).join("")
       : `<div class="hint" style="margin:0">${d.refreshing ? "Читаю биржи и hh.ru, это минута-другая…" : "Сейчас ничего подходящего."}</div>`)
     + (d.items.length > 10 ? `<button class="link block" id="gigs-more">${gigs.more ? "Свернуть" : `Показать все (${d.items.length})`}</button>` : "")
     + `<p class="gig-src">${d.checked_at ? "Биржи проверены " + esc(ago(d.checked_at)) : "Биржи ещё не проверялись"}${src ? ": " + esc(src) : ""}. `
-    + 'На FL.ru и Freelancer.com откликаются на самом сайте: кнопка «🔗 Вакансия» в карточке. '
+    + "Freelancer обновляется каждые 15 минут. Ставку вы делаете сами на сайте: в карточке заказа есть готовая заявка. "
     + `<button class="link" id="gigs-refresh">${d.refreshing ? "Обновляю…" : "↻ Обновить"}</button></p>`;
   $$("#gigs [data-gn]").forEach((b) => (b.onclick = () => openSheet(shown[+b.dataset.gn], true)));
   $$("#gigs [data-ga]").forEach((b) => (b.onclick = () => { haptic(); gigs.all = b.dataset.ga === "1"; gigs.more = false; loadGigs(); }));
-  $("#gigs-pay").onclick = () => { haptic(); gigs.pay = !gigs.pay; gigs.more = false; loadGigs(); };
+  $$("#gigs [data-gs]").forEach((b) => (b.onclick = () => { haptic(); gigs.sort = b.dataset.gs; gigs.more = false; loadGigs(); }));
+  $("#gigs-fl").onclick = () => { haptic(); gigs.fl = !gigs.fl; gigs.more = false; loadGigs(); };
   if ($("#gigs-more")) $("#gigs-more").onclick = () => { gigs.more = !gigs.more; renderGigs(); };
   $("#gigs-refresh").onclick = async () => {
     try { haptic(); await api("/api/gigs/refresh", {}); toast("Проверяю биржи и hh.ru"); setTimeout(loadGigs, 1500); } catch (e) { fail(e); }
+  };
+}
+/* ⚡ a Freelancer order in the card: everything to decide in a glance, then a ready bid. The bid itself is placed by
+   Eduard on the site: «Скопировать и открыть» copies the text and opens the order page. */
+function flBox(i) {
+  const f = i.fl;
+  if (!f) return "";
+  const dr = gigs.drafts[i.key];
+  const bid = f.bid ? `${f.bid.toLocaleString("ru-RU")} ${f.cur}${f.cur !== "USD" && f.bid_usd ? ` (≈ ${usdOf(f.bid_usd)})` : ""}` : "по бюджету клиента";
+  const rows = [
+    ["⏱ Опубликован", hoursAgo(f.age_h)],
+    ["👥 Заявок", `${f.bids}${f.bid_avg_usd ? `, в среднем ${usdOf(f.bid_avg_usd)}` : ""}`],
+    ["💵 Бюджет", i.salary || "не указан"],
+    ["🛠 Что сделать", f.todo || "см. описание ниже"],
+    ["🤖 С Claude", `примерно ${f.hours[0]}–${f.hours[1]} ч работы`],
+    ["🎯 Ставка", `${bid}, срок ${f.days} ${plural(f.days, "день", "дня", "дней")} · ${f.fee_note}`],
+  ];
+  return `<div class="fl">${rows.map(([k, v]) => `<div class="fl-r"><span>${k}</span><b>${esc(v)}</b></div>`).join("")}
+    <div class="fl-risk">⚠️ ${f.risks.map(esc).join("<br>⚠️ ")}</div>
+    ${dr ? `<div class="fl-draft"><div class="lbl">✍️ Заявка (${esc(dr.how)})${dr.warning ? ` · <span class="warn">${esc(dr.warning)}</span>` : ""}</div>
+        <textarea class="inp" id="fl-text" rows="10">${esc(dr.text)}</textarea>
+        <div class="btns" style="margin-top:8px"><button class="yes wide" id="fl-copy">📋 Скопировать и открыть заказ</button>
+        <button class="wide" id="fl-done">✅ Я сделал ставку</button></div></div>`
+      : `<div class="btns" style="margin-top:8px"><button class="yes wide" id="fl-ai">✍️ Подготовить заявку (ИИ)</button>
+        <button class="wide" id="fl-tpl">📝 Шаблон без ИИ</button></div>`}
+  </div>`;
+}
+function wireFl(i) {
+  if (!i.fl) return;
+  const draft = async (ai) => {
+    const b = $(ai ? "#fl-ai" : "#fl-tpl");
+    if (b) { b.disabled = true; b.textContent = ai ? "ИИ пишет заявку… ~30 с" : "Готовлю…"; }
+    try {
+      const r = await api("/api/gigs/proposal", { key: i.key, ai });
+      gigs.drafts[i.key] = r.job ? await waitJob(r.job) : r.result;
+      haptic("ok");
+    } catch (e) { fail(e); }
+    if (st.sheet && st.sheet.item.key === i.key) renderSheet();
+  };
+  if ($("#fl-ai")) $("#fl-ai").onclick = () => draft(true);
+  if ($("#fl-tpl")) $("#fl-tpl").onclick = () => draft(false);
+  if ($("#fl-text")) $("#fl-text").oninput = (e) => { gigs.drafts[i.key].text = e.target.value; };
+  if ($("#fl-copy")) $("#fl-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("#fl-text").value); toast("Заявка скопирована"); } catch (e) { toast("Выделите текст и скопируйте вручную"); }
+    openLink(i.link);
+  };
+  if ($("#fl-done")) $("#fl-done").onclick = async () => {
+    try {
+      const f = i.fl;
+      await api("/api/gigs/applied", { key: i.key, bid: f.bid ? `${f.bid} ${f.cur}` : "" });
+      haptic("ok"); toast("Записал в «Мои отклики»"); closeSheet(); loadGigs(); loadMe().catch(() => {});
+    } catch (e) { fail(e); }
   };
 }
 async function start() {
@@ -1605,6 +1667,9 @@ async function start() {
   if (!INIT) { $("#gate").hidden = false; return; }
   tg.ready();
   tg.expand();
+  // phones: full screen, Telegram keeps only its two floating buttons and our header runs up behind them
+  const fs = () => document.documentElement.classList.toggle("fs", !!tg.isFullscreen);
+  try { tg.onEvent("fullscreenChanged", fs); fs(); if (["android", "ios"].includes(tg.platform)) tg.requestFullscreen(); } catch (e) { /* old client */ }
   try { tg.disableVerticalSwipes(); } catch (e) { /* old client: swiping down may close the app */ }
   try { tg.BackButton.onClick(closeSheet); } catch (e) { /* old client */ }
   renderMode();

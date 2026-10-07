@@ -248,7 +248,19 @@ def fetch_hh():
     return jobs
 
 
-SOURCES = {"hh.ru": fetch_hh, "FL.ru": fetch_fl, "Freelancer.com": fetch_freelancer, "Remotive": fetch_remotive}
+def fetch_freelancer_fast():
+    """Freelancer.com: the public API (bids, age, full text) — the skill RSS feeds only if the API fails."""
+    import freelancer  # here, not on top: freelancer.py imports this module
+    try:
+        return freelancer.fetch()
+    except Exception as e:
+        log.warning("freelancer API: %s, using RSS", e)
+        return fetch_freelancer()
+
+
+SOURCES = {"hh.ru": fetch_hh, "FL.ru": fetch_fl, "Freelancer.com": fetch_freelancer_fast, "Remotive": fetch_remotive}
+EVERY = {"Freelancer.com": timedelta(minutes=15), "FL.ru": timedelta(hours=1), "hh.ru": REFRESH, "Remotive": REMOTIVE_EVERY}
+FAST = timedelta(minutes=15)  # how often anything can be due (the quickest source)
 
 
 def load():
@@ -258,29 +270,33 @@ def load():
         return {}
 
 
-def due(data=None):
-    data = load() if data is None else data
+def source_due(src, name, now_=None):
     try:
-        return datetime.now(timezone.utc) - datetime.fromisoformat(data["at"]) >= REFRESH
-    except (KeyError, ValueError, TypeError):
+        return (now_ or datetime.now(timezone.utc)) - datetime.fromisoformat((src.get(name) or {}).get("at", "")) >= EVERY.get(name, REFRESH)
+    except (ValueError, TypeError):
         return True
 
 
-def refresh():
+def due(data=None):
+    """Some source wants reading again (Freelancer every 15 min, FL.ru hourly, hh.ru every 3 h, Remotive every 6 h)."""
+    data = load() if data is None else data
+    src = data.get("src") or {}
+    return any(source_due(src, name) for name in SOURCES)
+
+
+def refresh(force=False):
     """Read the free feeds (blocking; run in a thread) and keep the last DAYS days. -> the saved data."""
     data = load()
     old = {j["url"]: j for j in data.get("jobs") or []}
     src = data.get("src") or {}
     now_ = datetime.now(timezone.utc)
     for name, fetch in SOURCES.items():
-        if name == "Remotive":
-            try:
-                if now_ - datetime.fromisoformat(src.get(name, {}).get("at", "")) < REMOTIVE_EVERY:
-                    continue
-            except ValueError:
-                pass
+        if not source_due(src, name, now_) and (not force or name == "Remotive"):  # Remotive asks for a few calls a day
+            continue
         try:
             got = fetch()
+            if name == "Freelancer.com" and any(j.get("fl") for j in got):  # the API answered: its orders replace the RSS copies
+                old = {u: j for u, j in old.items() if j.get("site") != "Freelancer.com"}
             for j in got:
                 old[j["url"]] = j  # a fresh copy wins
             src[name] = {"at": now_.isoformat(), "n": len(got)}
@@ -303,6 +319,8 @@ def market_jobs(data=None):
         j = dict(j, title=str(j.get("title") or "").split("\n")[0].strip()[:120] or "Задача")
         job = guests.web_job(j, j.get("site") or "")
         job.update(text=j.get("text") or "", gig_src=j.get("site"), market=bool(j.get("market")))
+        if j.get("fl"):
+            job["fl"] = j["fl"]
         if j.get("kind"):
             job["text"] = f"{j['kind']}\n{job['text']}"
             job["gig_kind"] = j["kind"]

@@ -31,6 +31,7 @@ import apply
 import cv_reader
 import extras
 import filtercheck
+import freelancer
 import gigs
 import guests
 import resume
@@ -490,6 +491,7 @@ class WebApp:
         self.gig_found = {}          # key -> job: the gigs last shown in «🧩 Подработки» (owner), for their card's buttons
         self.gig_cache = None        # (stamp, [(job, assessment)])
         self.gig_task = None         # reading the free gig feeds (gigs.refresh) in the background
+        self.gig_loop = None         # keeps them fresh every 15 min once the owner opened «Подработки»
 
     # -- plumbing
 
@@ -616,6 +618,8 @@ class WebApp:
         r.add_get("/api/search", self.api_search)
         r.add_get("/api/gigs", self.api_gigs)
         r.add_post("/api/gigs/refresh", self.api_gigs_refresh)
+        r.add_post("/api/gigs/proposal", self.api_gig_proposal)
+        r.add_post("/api/gigs/applied", self.api_gig_applied)
         r.add_post("/api/search/{key}/{action}", self.api_search_action)
         r.add_get("/api/roles", self.api_roles)
         r.add_get("/api/source-health", self.api_source_health)
@@ -1257,20 +1261,43 @@ class WebApp:
 
     GIG_TTL = 300  # seconds the gig list is reused before it is built again
 
-    def start_gig_refresh(self):
+    def start_gig_refresh(self, force=False):
         """Read the free gig feeds (hh.ru part-time, FL.ru, Freelancer.com, Remotive) in the background."""
         if self.gig_task and not self.gig_task.done():
             return False
 
         async def run():
             try:
-                await asyncio.get_running_loop().run_in_executor(None, gigs.refresh)
+                await asyncio.get_running_loop().run_in_executor(None, gigs.refresh, force)
             except Exception as e:
                 log.warning("gigs refresh: %s", e)
             self.gig_cache = None
 
         self.gig_task = asyncio.create_task(run())
         return True
+
+    def start_gig_loop(self):
+        """⚡ Freelancer orders go stale in hours: read the due sources every 15 min while the bot runs."""
+        if self.gig_loop and not self.gig_loop.done():
+            return
+
+        async def loop():
+            while True:
+                try:
+                    if gigs.due():
+                        self.start_gig_refresh()
+                except Exception as e:
+                    log.warning("gig loop: %s", e)
+                await asyncio.sleep(gigs.FAST.total_seconds())
+
+        self.gig_loop = asyncio.create_task(loop())
+
+    @staticmethod
+    def cv_text():
+        try:
+            return (tc.ROOT / "cv.md").read_text(encoding="utf-8")
+        except OSError:
+            return ""
 
     async def gig_rows(self, m, data):
         pool = guests.load_pool()
@@ -1299,6 +1326,7 @@ class WebApp:
         """Gigs best first. ?all=1: every gig, not only the ones that name the owner's skills."""
         m = self.owner_only(request)
         data = gigs.load()
+        self.start_gig_loop()
         if gigs.due(data):
             self.start_gig_refresh()
         inbox = m.load_inbox()
@@ -1306,6 +1334,8 @@ class WebApp:
                 if not (inbox.get(j["key"], {}).get("status") == "hidden" or inbox.get(j["key"], {}).get("archived"))]
         mine = [r for r in rows if r[1]["skills"]]
         shown = rows if request.query.get("all") == "1" else mine
+        if request.query.get("src") == "fl":  # ⚡ only Freelancer orders from the API (bids, age, a ready bid)
+            shown = [r for r in rows if r[0].get("fl")]
         pays = {}
         for job, _ in shown:  # 💵 every amount in dollars: «$150–450 за проект», «$670/мес», «$15–25/час»
             pay = gigs.pay_usd(extras.salary_of(job), cyrillic=bool(re.search(r"[а-яё]", f"{job.get('title')} {job.get('text') or ''}", re.I)),
@@ -1318,7 +1348,10 @@ class WebApp:
                 p = pays.get(r[0]["key"])
                 return -(p["hi"] * (160 if p["per"] == "/час" else 1)) if p else 1
             shown = sorted(shown, key=by_pay)
+        elif request.query.get("sort") == "new":  # the freshest first: an hour-old order still has few bids
+            shown = sorted(shown, key=lambda r: r[0]["date"], reverse=True)
         items = []
+        cv = self.cv_text()
         for job, a in shown[:150]:
             have = inbox.get(job["key"])
             self.gig_found[job["key"]] = job
@@ -1327,6 +1360,8 @@ class WebApp:
             pay = pays.get(job["key"])
             d["salary"], d["salary_usd"] = (pay["label"] if pay else ""), 0  # already in dollars: no second «≈ $/мес»
             d["pay"] = pay
+            if job.get("fl"):
+                d["fl"] = freelancer.brief(job, cv)
             items.append(d)
         if len(self.gig_found) > 2000:
             self.gig_found = {d["key"]: self.gig_found[d["key"]] for d in items}
@@ -1335,10 +1370,67 @@ class WebApp:
                                   "checked_at": data.get("at"), "sources": data.get("src") or {},
                                   "refreshing": bool(self.gig_task and not self.gig_task.done())})
 
+    async def api_gig_proposal(self, request):
+        """{key, ai}: a bid text for a Freelancer order + the suggested bid and days. ai: Claude on the owner's subscription
+        (a job the page polls), checked against cv.md; otherwise a template at once. Nothing is sent anywhere."""
+        m = self.owner_only(request)
+        data = await self.body(request)
+        key = str(data.get("key") or "")
+        job = self.gig_found.get(key)
+        if not job:
+            return self.bad("Заказ устарел, обновите список", 404)
+        cv = self.cv_text()
+        base = {"key": key, "link": job.get("link"), **(freelancer.brief(job, cv) if job.get("fl") else {})}
+        if not data.get("ai"):
+            return web.json_response({"result": {**base, "text": freelancer.template(job, cv), "how": "шаблон"}})
+        if resume_ai.uses_left(m) <= 0:
+            return self.bad("ИИ на сегодня всё: дневной лимит исчерпан. Есть шаблон без ИИ.", 429)
+        if self.running(m, "proposal"):
+            return self.bad("Заявка уже пишется — подождите.", 409)
+
+        async def work():
+            raw = await self.ai.ask(freelancer.PROPOSAL_SYSTEM, freelancer.proposal_prompt(job, cv))
+            text = str(resume_ai.parse_json(raw).get("text") or "").strip()
+            if len(text) < 60:
+                raise ValueError("ИИ ответил пустым текстом. Возьмите шаблон.")
+            resume_ai.count_use(m)
+            order = (job.get("title") or "") + "\n" + (job.get("text") or "")
+            extra = [x for x in resume_ai.invented(text, cv + "\n" + order)  # the order's own words (any case) are fine
+                     if x.lower() not in order.lower() and x.lower() not in ("http", "https", "js", "api", "url", "csv", "xlsx")]
+            if extra:  # a number or tool that is neither in the CV nor in the order: that sentence goes
+                lines = []
+                for ln in text.split("\n"):  # by line, then by sentence — never splitting «1. Step» after its number
+                    kept = [x for x in re.split(r"(?<=[^\d\s][.!?])\s+", ln) if not any(t in x for t in extra)]
+                    if kept or not ln.strip():
+                        lines.append(" ".join(kept))
+                text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+            text = re.sub(r"\S+@\S+|https?://\S+|\+?\d[\d\s()-]{7,}\d|@\w{4,}", "", text)  # no contacts before hiring
+            return {**base, "text": text, "how": "ИИ", "warning": ("Убрал из текста то, чего нет в резюме: " + ", ".join(extra[:5])) if extra else ""}
+
+        jid = self.new_ai_job(m, "proposal", key=key)
+        asyncio.create_task(self.run_ai_job(jid, m, work))
+        return web.json_response({"job": jid})
+
+    async def api_gig_applied(self, request):
+        """{key, bid}: the owner placed the bid himself on Freelancer: into «Мои отклики» as «Откликнулся»."""
+        m = self.owner_only(request)
+        data = await self.body(request)
+        key = str(data.get("key") or "")
+        job = self.gig_found.get(key)
+        inbox = m.load_inbox()
+        if key not in inbox:
+            if not job:
+                return self.bad("Заказ устарел, обновите список", 404)
+            inbox[key] = guests.to_item(job)
+            inbox[key]["via"] = "gigs"
+            m.save_inbox(inbox)
+        item = apply.mark_applied(m, key, ("Freelancer, ставка " + str(data.get("bid"))[:20]) if data.get("bid") else "Freelancer")
+        return web.json_response({"ok": True, "item": item_json(key, item) if item else None})
+
     async def api_gigs_refresh(self, request):
         self.owner_only(request)
         self.gig_cache = None
-        return web.json_response({"ok": True, "started": self.start_gig_refresh()})
+        return web.json_response({"ok": True, "started": self.start_gig_refresh(force=True)})
 
     # -- sources and settings
 
