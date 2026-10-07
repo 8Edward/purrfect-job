@@ -9,9 +9,10 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const SKINS = {  // three cat themes; the old skin names still open the closest new one
-  hybrid: { name: "Гибрид", bg: "#f2f0ec", colors: ["#f2f0ec", "#7d8590", "#2f8f83"] },
-  remote: { name: "Удалёнка", bg: "#fff3d6", colors: ["#fff3d6", "#26b6a6", "#ff7a2f"] },
-  office: { name: "Офис", bg: "#eceff3", colors: ["#eceff3", "#3c4656", "#1d3a6e"] },
+  // head = Telegram's own top bar, the same colour as the top of our header panel (--hero-a), so the two read as one
+  hybrid: { name: "Гибрид", bg: "#f2f0ec", head: "#1f5f58", colors: ["#f2f0ec", "#7d8590", "#2f8f83"] },
+  remote: { name: "Удалёнка", bg: "#fff3d6", head: "#ff6a2b", colors: ["#fff3d6", "#26b6a6", "#ff7a2f"] },
+  office: { name: "Офис", bg: "#eceff3", head: "#0f1f3d", colors: ["#eceff3", "#3c4656", "#1d3a6e"] },
 };
 const OLD_SKINS = { radar: "hybrid", tropic: "remote", dossier: "office" };
 const MATCH = { exact: "точно" };
@@ -104,7 +105,7 @@ function setSkin(skin, save) {
     setTimeout(() => html.classList.remove("skinning"), 600);
   }
   html.dataset.skin = skin;
-  try { tg.setHeaderColor(SKINS[skin].bg); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
+  try { tg.setHeaderColor(SKINS[skin].head); tg.setBackgroundColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { tg.setBottomBarColor(SKINS[skin].bg); } catch (e) { /* old client */ }
   try { localStorage.setItem("jr-skin", skin); } catch (e) { /* blocked */ }
   $$(".skin").forEach((b) => b.setAttribute("aria-pressed", b.dataset.skin === skin));

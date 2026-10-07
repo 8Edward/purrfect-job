@@ -627,6 +627,26 @@ html[data-skin="remote"] .hero .blob { background: rgb(255 255 255 / .28); opaci
 .hero > .mascot { filter: drop-shadow(0 6px 10px rgb(0 0 0 / .18)); }
 .hero .mascot svg rect:first-child { opacity: .35; }  /* the desk line under the cat: lighter on a coloured panel */
 
+/* compact header (2026-10-07): Telegram's own bar is painted --hero-a (SKINS.head in app.js), so the panel
+   starts in that same colour and only keeps the essentials: brand + buttons, greeting, the funnel in one slim row */
+.screen > .hero { padding: 6px clamp(12px, 4vw, 18px) 10px; border-radius: 0 0 18px 18px;
+  background: linear-gradient(180deg, var(--hero-a), var(--hero-b)); box-shadow: 0 6px 18px rgb(var(--glow) / .22); }
+.hero > :is(.mascot, .sweep, .blob, .stamp) { display: none; }
+.hero .brand { font-size: 15px; gap: 8px; }
+.hero .brand .mark { width: 24px; height: 24px; }
+.hero .icon-btn { width: 32px; height: 32px; }
+.hero .icon-btn svg { width: 17px; height: 17px; }
+.hero .hello { margin: 6px 0 0; font-size: clamp(17px, 5vw, 19px); padding-right: 0; }
+.hero .sub { font-size: 12px; padding-right: 0; }
+.hero .stats.funnel { margin-top: 8px; gap: 5px; }
+.hero .stat { padding: 4px 6px; border-radius: 10px; text-align: center; line-height: 1.15; }
+html[data-skin="remote"] .hero .stat { border-radius: 12px; }
+.hero .stat b, .hero .stat:first-child b { font-size: 15px; }
+.hero .stat span { display: block; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the card takes the room the slimmer header gave back */
+.stack { height: clamp(220px, calc(var(--tg-viewport-stable-height, 100vh) - 385px), 440px); }
+@media (max-height: 740px) { .stack { height: clamp(210px, calc(var(--tg-viewport-stable-height, 100vh) - 330px), 420px); } }
+
 /* surfaces: lift with shadow, hairline borders */
 .card, .group, .row, .stat:not(.hero .stat), .chip, .field, .seg, .watchbar, .lrow, .remark, .skeleton { border-color: var(--line-soft); }
 .group, .row, .watchbar, .field { box-shadow: var(--sh1); }
