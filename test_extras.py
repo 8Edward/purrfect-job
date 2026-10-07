@@ -528,6 +528,9 @@ with tempfile.TemporaryDirectory() as tmp:
     sourcestats.save(data)
     assert sourcestats.status(sourcestats.load()["site:c"])["state"] == "quiet"
     assert [r["id"] for r in sourcestats.report({"site:a"})] == ["site:a"]
+assert round(extras.salary_value({"comp": "от 500 000 KZT"})) == 1042  # the «k» of «KZT» is not «thousand»
+assert round(extras.salary_value({"comp": "16.5k - 25.5k USD"})) == 2125  # a year
+assert round(extras.salary_value({"comp": "75 - 90 USD"})) == 14400  # an hourly rate
 print("ok")
 # hh.ru: one role per city, no text, same publish second -> one card; a different second stays apart
 _h = lambda c, d: {"source": "web", "site": "hh.ru", "title": "Senior BI Analyst", "company": "Nitka", "location": c, "date": d, "text": ""}

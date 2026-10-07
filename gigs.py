@@ -357,11 +357,11 @@ def collect(posts, inbox, feed, market, skip=()):
 # ---------------------------------------------------------------- 💵 pay in dollars
 
 USD_RATES = [  # rough rates, only to show «≈ $» and sort; longer codes first so «A$» is not read as «$»
-    (r"a\$|aud", 0.65), (r"c\$|cad", 0.73), (r"nz\$|nzd", 0.6), (r"s\$|sgd", 0.75), (r"hk\$|hkd", 0.13),
-    (r"₹|inr|rs\.?\s?\d|рупи", 1 / 84), (r"₽|руб|rub|\bр\.|\d\s?р\b|&#8381;", 1 / 90), (r"€|eur|евро", 1.1), (r"£|gbp", 1.27),
-    (r"₸|kzt|тенге", 1 / 480), (r"₴|uah|грн", 1 / 41), (r"byn|бел\w* руб", 0.3), (r"zł|pln", 0.25),
-    (r"so'?m|сум|uzs", 1 / 12700), (r"₫|\bvnd\b", 1 / 25000), (r"₱|\bphp\b", 1 / 57), (r"idr|\brp\.?\s?\d", 1 / 16000), (r"₺|\btry\b", 1 / 34),
-    (r"r\$|\bbrl\b", 0.18), (r"\bmxn\b", 0.055), (r"\bzar\b", 0.055), (r"¥|\bjpy\b", 1 / 150), (r"cny|rmb|юан", 0.14), (r"\bpkr\b", 1 / 280),
+    (r"a\$|\baud\b", 0.65), (r"c\$|\bcad\b", 0.73), (r"nz\$|\bnzd\b", 0.6), (r"s\$|\bsgd\b", 0.75), (r"hk\$|\bhkd\b", 0.13),
+    (r"₹|\binr\b|\brs\.?\s?\d|рупи", 1 / 84), (r"₽|руб|\brub\b|\bр\.|\d\s?р\b|&#8381;", 1 / 90), (r"€|\beur\b|евро", 1.1), (r"£|\bgbp\b", 1.27),
+    (r"₸|\bkzt\b|тенге", 1 / 480), (r"₴|\buah\b|грн", 1 / 41), (r"\bbyn\b|бел\w* руб", 0.3), (r"zł|\bpln\b", 0.25),
+    (r"\bso'?m\b|\bсум\b|\buzs\b", 1 / 12700), (r"₫|\bvnd\b", 1 / 25000), (r"₱|\bphp\b", 1 / 57), (r"\bidr\b|\brp\.?\s?\d", 1 / 16000), (r"₺|\btry\b", 1 / 34),
+    (r"r\$|\bbrl\b", 0.18), (r"\bmxn\b", 0.055), (r"\bzar\b", 0.055), (r"¥|\bjpy\b", 1 / 150), (r"\bcny\b|\brmb\b|юан", 0.14), (r"\bpkr\b", 1 / 280),
     (r"₦|\bngn\b", 1 / 1500), (r"\bbdt\b", 1 / 120), (r"\bchf\b", 1.15), (r"\baed\b", 0.27), (r"\$|usd|долл", 1.0),
 ]
 USD_RATES = [(re.compile(p, re.IGNORECASE), r) for p, r in USD_RATES]

@@ -12,6 +12,7 @@ import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
+import gigs
 import guests
 import resume
 import resume_ai
@@ -657,10 +658,7 @@ def dumps(x):
 
 # ---------------------------------------------------------------- 🔢 sorting by pay, 📝 short summary, 📊 funnel
 
-RATE = [  # rough conversion to USD per month, only to put cards in order (never shown)
-    (r"₽|руб|rub|\bр\.", 1 / 90), (r"€|eur|евро", 1.1), (r"£|gbp", 1.27), (r"₸|kzt|тенге", 1 / 480),
-    (r"so'?m|сум|uzs", 1 / 12700), (r"\$|usd|долл", 1.0),
-]
+RATE = gigs.USD_RATES  # one rough rate table for the feed and «Подработки» (specific codes first, plain «$» last)
 
 
 def salary_value(item):
@@ -670,20 +668,24 @@ def salary_value(item):
         return 0.0
     low = s.lower()
     nums = []
-    for m in re.finditer(r"(\d{1,3}(?:[  .,]\d{3})+|\d+(?:[.,]\d+)?)\s?(k|к|тыс\.?|млн)?", low):
+    # «k» only as a word of its own: the «k» of «KZT» once made 500 000 tenge read as 500 million
+    for m in re.finditer(r"(\d{1,3}(?:[  \u202f.,]\d{3})+|\d+(?:[.,]\d+)?)\s?(?:(k|к|тыс\w*\.?|млн)(?![a-zа-яё]))?", low):
         raw = m.group(1)
-        v = float(re.sub(r"[  .,](?=\d{3}\b)", "", raw).replace(",", "."))
-        v *= {"k": 1e3, "к": 1e3, "тыс": 1e3, "тыс.": 1e3, "млн": 1e6}.get(m.group(2) or "", 1)
+        v = float(re.sub(r"[  \u202f.,](?=\d{3}\b)", "", raw).replace(",", "."))
+        mult = m.group(2) or ""
+        v *= 1e6 if mult.startswith("млн") else 1e3 if mult else 1
         nums.append(v)
     if not nums:
         return 0.0
     value = max(nums)
-    rate = next((r for pat, r in RATE if re.search(pat, low)), 1 / 90 if value > 20000 else 1.0)
+    rate = next((r for pat, r in RATE if pat.search(low)), 1 / 90 if value > 20000 else 1.0)
     value *= rate
     if re.search(r"/\s?(h|hr|hour|час)|в час|per hour|hourly", low):
         value *= 160
-    elif re.search(r"year|год|annum|annual|/\s?yr", low) or value > 30000:
+    elif re.search(r"year|год|annum|annual|/\s?yr", low) or value > 12000:  # «16.5k - 25.5k USD» is a year, not a month
         value /= 12
+    elif value < 200 and not re.search(r"month|мес", low):  # «75 - 90 USD», «$15.5», «от 300 ₽»: an hourly rate
+        value *= 160
     return round(value, 2)
 
 
