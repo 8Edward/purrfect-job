@@ -457,6 +457,22 @@ def feed_pairs(m, inbox, since=None):
     return keep, len(new) - len(keep)
 
 
+def feed_only(m, items):
+    """Of just-stored vacancies, those the feed shows (same filters: words, ticked sites, time zone, country,
+    excluded sources; twins as one): a chat alert announces exactly these, so its count and the app agree."""
+    group = {}
+    for n, g in enumerate(extras.groups(feed_pairs(m, m.load_inbox())[0])):
+        for _, v in g:
+            group.setdefault((v.get("link"), v.get("title")), n)
+    out, taken = [], set()
+    for item in items:
+        n = group.get((item.get("link"), item.get("title")))
+        if n is not None and n not in taken:
+            taken.add(n)
+            out.append(item)
+    return out
+
+
 def feed_new_count(m):
     """How many new vacancies the feed shows (what fits today's settings, duplicates merged): the same number everywhere."""
     return len(extras.groups(feed_pairs(m, m.load_inbox())[0]))

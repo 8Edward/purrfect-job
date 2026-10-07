@@ -260,6 +260,12 @@ def plural(n, one, few, many):
     return many
 
 
+def feed_inbox(member, view):
+    """«🆕 Новые» in the chat = the app's feed (same filters as the alert that led here); other lists as stored."""
+    inbox = member.load_inbox()
+    return dict(webapp.feed_pairs(member, inbox)[0]) if view == "new" else inbox
+
+
 def list_screen(inbox, view, page=0):
     title, keep = VIEWS[view]
     items = sorted(((k, v) for k, v in inbox.items() if keep(v)), key=lambda kv: kv[1]["date"], reverse=True)
@@ -866,7 +872,9 @@ class JobRadar:
         await self.notify(self.me, items)
 
     async def notify(self, member, items):
-        """«N новых вакансий» in the chat, unless the person switched these off in the app («Ещё»)."""
+        """«N новых вакансий» in the chat, unless the person switched these off in the app («Ещё»). Only what the
+        feed shows counts: a vacancy its filters leave out (site not ticked, country, time zone…) is not announced."""
+        items = webapp.feed_only(member, items or [])
         if items and not member.load_state().get("alerts_off"):
             await self.send_screen(*self.found(items), guest=self.g(member))
 
@@ -992,7 +1000,7 @@ class JobRadar:
 
     async def b_list(self, event, view, page):
         await event.answer()
-        await self.edit_screen(event, *list_screen(load_inbox(), view, int(page)))
+        await self.edit_screen(event, *list_screen(feed_inbox(self.me, view), view, int(page)))
 
     async def b_open(self, event, key, view="all", page="0"):
         item = load_inbox().get(key)
@@ -1675,7 +1683,7 @@ class JobRadar:
             return await self.guest_show_home(guest, event)
         if action == "l" and len(args) == 2 and args[0] in VIEWS:
             await event.answer()
-            return await self.edit_screen(event, *list_screen(guest.load_inbox(), args[0], to_int(args[1])), guest=guest)
+            return await self.edit_screen(event, *list_screen(feed_inbox(guest, args[0]), args[0], to_int(args[1])), guest=guest)
         if action in ("o", "t", "n", "r", "f") and args:
             return await self.guest_job(event, guest, action, *args[:3])
         if action == "full" and args:
