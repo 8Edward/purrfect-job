@@ -1261,14 +1261,14 @@ class WebApp:
 
     GIG_TTL = 300  # seconds the gig list is reused before it is built again
 
-    def start_gig_refresh(self, force=False):
+    def start_gig_refresh(self, force=False, only=None):
         """Read the free gig feeds (hh.ru part-time, FL.ru, Freelancer.com, Remotive) in the background."""
         if self.gig_task and not self.gig_task.done():
             return False
 
         async def run():
             try:
-                await asyncio.get_running_loop().run_in_executor(None, gigs.refresh, force)
+                await asyncio.get_running_loop().run_in_executor(None, gigs.refresh, force, only)
             except Exception as e:
                 log.warning("gigs refresh: %s", e)
             self.gig_cache = None
@@ -1315,7 +1315,7 @@ class WebApp:
         def build():
             listed = guests.listed_sites()
             feed = guests.read_json(FEED_CACHE_PATH, {}).get("feed", {})
-            jobs = [guests.web_job(j, listed.get(pid, pid)) for pid, v in feed.items() for j in (v or {}).get("jobs", []) if j.get("url")]
+            jobs = [dict(guests.web_job(j, listed.get(pid, pid)), undated=not j.get("posted")) for pid, v in feed.items() for j in (v or {}).get("jobs", []) if j.get("url")]
             return gigs.collect(posts, inbox, jobs, gigs.market_jobs(data))
 
         rows = await asyncio.get_running_loop().run_in_executor(None, build)
@@ -1329,6 +1329,8 @@ class WebApp:
         self.start_gig_loop()
         if gigs.due(data):
             self.start_gig_refresh()
+        busy = bool(self.gig_task and not self.gig_task.done())  # taken before the list is built, so «done» never comes with old data
+        data = gigs.load() if not busy else data
         inbox = m.load_inbox()
         rows = [(j, a) for j, a in await self.gig_rows(m, data)
                 if not (inbox.get(j["key"], {}).get("status") == "hidden" or inbox.get(j["key"], {}).get("archived"))]
@@ -1349,14 +1351,14 @@ class WebApp:
                 return -(p["hi"] * (160 if p["per"] == "/час" else 1)) if p else 1
             shown = sorted(shown, key=by_pay)
         elif request.query.get("sort") == "new":  # the freshest first: an hour-old order still has few bids
-            shown = sorted(shown, key=lambda r: r[0]["date"], reverse=True)
+            shown = sorted(shown, key=lambda r: (bool(r[0].get("undated")), -r[0]["date"].timestamp()))  # no date on the site: below the dated ones
         items = []
         cv = self.cv_text()
         for job, a in shown[:150]:
             have = inbox.get(job["key"])
             self.gig_found[job["key"]] = job
             d = item_json(job["key"], dict(job, status=have["status"] if have else "found", fav=bool(have and have.get("fav"))))
-            d["gig"] = a
+            d["gig"], d["undated"] = a, bool(job.get("undated"))
             pay = pays.get(job["key"])
             d["salary"], d["salary_usd"] = (pay["label"] if pay else ""), 0  # already in dollars: no second «≈ $/мес»
             d["pay"] = pay
@@ -1368,7 +1370,7 @@ class WebApp:
         return web.json_response({"items": items, "total": len(shown), "all": len(rows), "mine": len(mine),
                                   "easy": sum(1 for r in shown if r[1]["level"] == "easy"),
                                   "checked_at": data.get("at"), "sources": data.get("src") or {},
-                                  "refreshing": bool(self.gig_task and not self.gig_task.done())})
+                                  "refreshing": busy})
 
     async def api_gig_proposal(self, request):
         """{key, ai}: a bid text for a Freelancer order + the suggested bid and days. ai: Claude on the owner's subscription
@@ -1430,7 +1432,7 @@ class WebApp:
     async def api_gigs_refresh(self, request):
         self.owner_only(request)
         self.gig_cache = None
-        return web.json_response({"ok": True, "started": self.start_gig_refresh(force=True)})
+        return web.json_response({"ok": True, "started": self.start_gig_refresh(force=True, only=gigs.QUICK)})
 
     # -- sources and settings
 

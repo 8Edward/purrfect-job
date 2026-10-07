@@ -145,7 +145,7 @@ def budget_value(blob):
 
 # ---------------------------------------------------------------- free feeds read here
 
-def _get(url, timeout=25, size=3_000_000, headers=None):
+def _get(url, timeout=15, size=3_000_000, headers=None):
     with urlopen(Request(url, headers=headers or UA), timeout=timeout) as resp:
         return resp.read(size)
 
@@ -261,6 +261,7 @@ def fetch_freelancer_fast():
 SOURCES = {"hh.ru": fetch_hh, "FL.ru": fetch_fl, "Freelancer.com": fetch_freelancer_fast, "Remotive": fetch_remotive}
 EVERY = {"Freelancer.com": timedelta(minutes=15), "FL.ru": timedelta(hours=1), "hh.ru": REFRESH, "Remotive": REMOTIVE_EVERY}
 FAST = timedelta(minutes=15)  # how often anything can be due (the quickest source)
+QUICK = ("Freelancer.com", "FL.ru")  # what «↻» in «Подработки» re-reads: a few seconds, nothing else
 
 
 def load():
@@ -284,13 +285,15 @@ def due(data=None):
     return any(source_due(src, name) for name in SOURCES)
 
 
-def refresh(force=False):
+def refresh(force=False, only=None):
     """Read the free feeds (blocking; run in a thread) and keep the last DAYS days. -> the saved data."""
     data = load()
     old = {j["url"]: j for j in data.get("jobs") or []}
     src = data.get("src") or {}
     now_ = datetime.now(timezone.utc)
     for name, fetch in SOURCES.items():
+        if only and name not in only:  # ↻ in «Подработки»: just the quick exchanges
+            continue
         if not source_due(src, name, now_) and (not force or name == "Remotive"):  # Remotive asks for a few calls a day
             continue
         try:
@@ -306,7 +309,7 @@ def refresh(force=False):
     cutoff = now_ - timedelta(days=DAYS)
     jobs = sorted((j for j in old.values() if guests.parse_posted(j.get("posted")) >= cutoff),
                   key=lambda j: j.get("posted") or "", reverse=True)[:KEEP_MAX]
-    data = {"at": now_.isoformat(), "src": src, "jobs": jobs}
+    data = {"at": datetime.now(timezone.utc).isoformat(), "src": src, "jobs": jobs}  # when it finished: «обновлено только что»
     guests.write_json(PATH, data)
     return data
 

@@ -13,6 +13,7 @@ The API does not show the client's «Payment verified» without a login: the car
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -46,7 +47,7 @@ EFFORT = [  # (words in the order, hours with Claude) — first match wins
 
 def _get(params):
     url = API + "?" + urlencode(params, doseq=True)
-    with urllib.request.urlopen(urllib.request.Request(url, headers=gigs.UA), timeout=30) as resp:
+    with urllib.request.urlopen(urllib.request.Request(url, headers=gigs.UA), timeout=15) as resp:
         return json.loads(resp.read(10_000_000))
 
 
@@ -76,14 +77,19 @@ def to_job(p):
 def fetch():
     """Fresh fixed-price projects for the owner's topics, junk dropped, newest first."""
     jobs, seen, errors = [], set(), []
-    for i, q in enumerate(QUERIES):
-        if i:
-            time.sleep(0.4)
+
+    def one(q):
         try:
-            data = _get({"query": q, "limit": PER_QUERY, "full_description": "true", "job_details": "true",
-                         "project_types[]": "fixed"})
+            return q, _get({"query": q, "limit": PER_QUERY, "full_description": "true", "job_details": "true",
+                            "project_types[]": "fixed"}), None
         except Exception as e:
-            errors.append(f"{q}: {e}")
+            return q, None, e
+
+    with ThreadPoolExecutor(max_workers=4) as pool:  # 10 queries side by side: ~3 s instead of ~15 (one slow answer no longer holds the rest)
+        answers = list(pool.map(one, QUERIES))
+    for q, data, err in answers:
+        if err is not None:
+            errors.append(f"{q}: {err}")
             continue
         for p in (data.get("result") or {}).get("projects") or []:
             if p.get("id") in seen or p.get("type") != "fixed":
