@@ -7,7 +7,8 @@ funnel for résumés). Two independent signals out of four are needed, never one
   - mass-posted: 5+ copies of it open at once (one per city…);
   - evergreen words: «always hiring», «кадровый резерв», «постоянно ищем»…
 🪦 Closed: the vacancy vanished from its site's own list while that site answered fine twice
-since (a site that failed or was cut off by our cap says nothing: unreachable ≠ closed).
+since (a site that failed or was cut off by our cap says nothing: unreachable ≠ closed). Only an
+employer's own careers list counts: an aggregator showing its newest N drops open vacancies too.
 
 Ported from freehire (MIT), Copyright (c) 2026 freehire contributors: internal/job/jobreality
 (classify.go thresholds and convergence, dictionary.go phrases) and internal/job/liveness
@@ -32,6 +33,13 @@ CONVERGENCE = 2
 FORGET_DAYS = 200        # a link not listed for this long leaves the ledger
 CLOSED_AFTER_RUNS = 2    # complete, successful site runs without the link
 FEED_CAP = 3000          # board-feed.mjs MAX_JOBS_PER_BOARD: a board that hit it is not complete
+# Aggregators list only their newest N (Himalayas 300, Jobicy 500, AgileFluent…): an older vacancy scrolls off
+# the list while it is still open, so «gone from the list» proves nothing there. Only an employer's own careers
+# list can say «closed». Job boards from portals.yml (ids without «co-») are aggregators too.
+ROLLING = {"co-agilefluent", "co-jobgether", "co-linkedin", "co-mastodon", "co-bluesky", "co-djinni", "co-himalayas-th",
+           "co-getmatch", "co-habr", "co-geekjob", "co-trudvsem", "co-remotecom", "co-finder"}
+ROLLING_RATIO = 1.5      # a «co-» board that has shown 1.5× more links than it lists now is a window as well
+ROLLING_MIN = 50         # (judged only from 50 links on: a small careers page can close half its jobs in a week)
 
 EVERGREEN = re.compile("|".join(re.escape(p) for p in (
     "always hiring", "always looking for", "we are always", "we're always", "talent community", "talent pool",
@@ -62,7 +70,7 @@ def load():
 def save(data):
     PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = PATH.with_suffix(".partial")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.write_text(json.dumps({k: v for k, v in data.items() if not k.startswith("_")}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     os.replace(tmp, PATH)
 
 
@@ -75,6 +83,7 @@ def observe_feed(feed, names=None, data=None, at=None):
     """Remember what each site listed this time. feed = board-feed.mjs output; a board that
     failed, came from the stale cache or hit the cap is not a complete run."""
     data = data if data is not None else load()
+    data.pop("_rolling", None)
     at = (at or now()).isoformat(timespec="seconds")
     for board, r in feed.items():
         jobs = r.get("jobs") or []
@@ -108,15 +117,36 @@ def index(data):
     return roles
 
 
+def rolling(data):
+    """Boards whose list is a moving window (see ROLLING): nothing on them counts as closed. Cached per ledger."""
+    cache = data.get("_rolling")
+    if cache is None:
+        seen, listed = {}, {}
+        for e in data["urls"].values():
+            seen[e["b"]] = seen.get(e["b"], 0) + 1
+            runs = data["boards"].get(e["b"]) or []
+            if runs and e["l"] >= runs[-1]:
+                listed[e["b"]] = listed.get(e["b"], 0) + 1
+        cache = {b for b in seen if not b.startswith("co-") or b in ROLLING
+                 or (seen[b] >= ROLLING_MIN and seen[b] > ROLLING_RATIO * max(1, listed.get(b, 0)))}
+        data["_rolling"] = cache  # dropped by save()
+    return cache
+
+
+def gone(e, data):
+    """This listing left its site's own list (two complete runs without it), on a board where that means closed."""
+    if e["b"] in rolling(data):
+        return False
+    return len([r for r in data["boards"].get(e["b"], []) if r > e["l"]]) >= CLOSED_AFTER_RUNS
+
+
 def verdict(item, data, roles, at=None):
     """{"kind": "closed" | "evergreen" | "stale" | "reposted", "why": text} or None."""
     at = at or now()
     url = extras.link_key(item.get("link") or "")
     mine = data["urls"].get(url) if url else None
-    if mine and item.get("source") == "web":
-        runs = [r for r in data["boards"].get(mine["b"], []) if r > mine["l"]]
-        if len(runs) >= CLOSED_AFTER_RUNS:
-            return {"kind": "closed", "why": "пропала с сайта"}
+    if mine and item.get("source") == "web" and gone(mine, data):
+        return {"kind": "closed", "why": "пропала с сайта"}
     text = item.get("text") or ""
     if CLOSED_TEXT.search(text):
         return {"kind": "closed", "why": "в тексте: набор закрыт"}
@@ -128,13 +158,14 @@ def verdict(item, data, roles, at=None):
     except ValueError:
         age = 0
     open_now = [e for e in copies if not [r for r in data["boards"].get(e["b"], []) if r > e["l"]]]
-    gone = len(copies) - len(open_now)
-    came_back = len([e for e in copies if e not in open_now and e is not mine])  # earlier copies, not this vacancy itself
+    left = [e for e in copies if e not in open_now and e["b"] not in rolling(data)]  # a window scrolling on is no repost
+    reposts = len(left)
+    came_back = len([e for e in left if e is not mine])  # earlier copies, not this vacancy itself
     signals = []
     if age >= OLD_DAYS:
         signals.append(f"висит {age} дн.")
-    if gone >= REPOST_MIN:
-        signals.append(f"{gone} перевыкладок")
+    if reposts >= REPOST_MIN:
+        signals.append(f"{reposts} перевыкладок")
     if len(open_now) >= MASS_MIN:
         signals.append(f"{len(open_now)} копий сразу")
     if EVERGREEN.search(text):

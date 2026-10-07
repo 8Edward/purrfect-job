@@ -32,6 +32,15 @@ assert reality.verdict(item, data, reality.index(data), at=day(5)) is None  # on
 reality.observe_feed({"co-a": {"jobs": [job("https://a/9", "Welder")]}}, data=data, at=day(6))
 assert reality.verdict(item, data, reality.index(data), at=day(6))["kind"] == "closed"
 
+# an aggregator lists only its newest N: a vacancy that scrolled off is still open (named, a job board, or a window)
+for board in ("co-agilefluent", "himalayas", "co-wide"):
+    w = {"urls": {}, "boards": {}}
+    reality.observe_feed({board: {"jobs": [job(f"https://w/{n}", f"Role {n}") for n in range(60)]}}, data=w, at=day(0))
+    for d in (1, 2):
+        reality.observe_feed({board: {"jobs": [job(f"https://w/{n}", f"Role {n}") for n in range(60 * d, 60 * d + 30)]}}, data=w, at=day(d))
+    first = {"source": "web", "link": "https://w/1", "title": "Role 1", "company": "Acme", "date": day(0).isoformat()}
+    assert reality.verdict(first, w, reality.index(w), at=day(3)) is None, board
+
 # evergreen: two signals needed, one never enough
 d2 = {"urls": {}, "boards": {}}
 for n in range(4):  # the same role re-posted under a new link every month, old links gone

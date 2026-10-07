@@ -166,6 +166,15 @@ async function loadFeed() {
   renderScoreNew();
   renderStack();
 }
+/* the feed did not load: say so in the card area (never a blank space under «Фильтры») and offer another try */
+function feedFailed(e) {
+  if ((st.feed || []).length) return fail(e);
+  $("#stack").hidden = false;
+  $("#stack").innerHTML = `<div class="empty"><b>Лента не загрузилась</b>${esc(e && e.message ? e.message : "Нет связи с ботом.")}<br><button class="link" id="feed-retry">Повторить</button></div>`;
+  $("#feed-retry").onclick = () => loadFeed().catch(feedFailed);
+  $("#left").textContent = "";
+  $("#acts").hidden = true;
+}
 /* «Исключить источник»: whole channels / sites left out of the feed (kept on the server, so the counters follow) */
 const RVC = /^RVC \|/;
 function renderExclude(d) {
@@ -1563,7 +1572,7 @@ $("#reset").onclick = showReset;
 
 /* 🧩 «Подработки» (owner, in the feed): gigs with a low barrier from every source, picked by words (gigs.py, no AI).
    Folded by default; 10 shown, the rest on a tap; a tap opens the usual card (★, ✕, ✉️ Откликнуться). */
-const gigs = { all: false, sort: "new", fl: false, more: false, d: null, poll: null, drafts: {} };
+const gigs = { all: false, sort: "new", fl: false, more: false, d: null, poll: null, drafts: {}, busy: false, fresh: null };
 async function loadGigs() {
   const g = $("#g-gigs");
   if (!st.me || !st.me.owner) { g.hidden = true; return; }
@@ -1587,7 +1596,11 @@ function renderGigs() {
   const line = (i) => (i.fl
     ? [`⏱ ${hoursAgo(i.fl.age_h)}`, `${i.fl.bids} ${plural(i.fl.bids, "заявка", "заявки", "заявок")}`, ...(gl(i).skills || []).slice(0, 2)]
     : [originOf(i), ...(gl(i).why || []).slice(0, 2), ...(gl(i).skills || []).slice(0, 3)]);
-  box.innerHTML = '<p class="hint" style="margin:0 0 8px">Задачи, фриланс и неполная занятость с низким порогом входа. Отбор по словам в тексте, без ИИ: '
+  const busy = gigs.busy || d.refreshing;
+  box.innerHTML = `<button class="gig-refresh" id="gigs-refresh" ${busy ? "disabled" : ""}>${busy
+      ? '<span class="spin-dot"></span> Читаю Freelancer и FL.ru…' : "↻ Обновить подработки"}</button>`
+    + (gigs.fresh != null && !busy ? `<div class="gig-fresh">${gigs.fresh ? `🆕 Новых: ${gigs.fresh}, они сверху` : "Новых заказов пока нет"} · ${esc(ago(d.checked_at))}</div>` : "")
+    + '<p class="hint" style="margin:0 0 8px">Задачи, фриланс и неполная занятость с низким порогом входа. Отбор по словам в тексте, без ИИ: '
     + "🟢 легко зайти, 🟡 можно попробовать. Видите только вы.</p>"
     + `<div class="chips wrap" role="group" aria-label="Какие подработки"><button class="chip" id="gigs-fl" aria-pressed="${gigs.fl}">⚡ Freelancer</button>`
     + `<button class="chip" data-ga="0" aria-pressed="${!gigs.all}">Под мои навыки${d.mine ? " · " + d.mine : ""}</button>`
@@ -1599,16 +1612,34 @@ function renderGigs() {
       : `<div class="hint" style="margin:0">${d.refreshing ? "Читаю биржи и hh.ru, это минута-другая…" : "Сейчас ничего подходящего."}</div>`)
     + (d.items.length > 10 ? `<button class="link block" id="gigs-more">${gigs.more ? "Свернуть" : `Показать все (${d.items.length})`}</button>` : "")
     + `<p class="gig-src">${d.checked_at ? "Биржи проверены " + esc(ago(d.checked_at)) : "Биржи ещё не проверялись"}${src ? ": " + esc(src) : ""}. `
-    + "Freelancer обновляется каждые 15 минут. Ставку вы делаете сами на сайте: в карточке заказа есть готовая заявка. "
-    + `<button class="link" id="gigs-refresh">${d.refreshing ? "Обновляю…" : "↻ Обновить"}</button></p>`;
+    + "Freelancer обновляется сам каждые 15 минут, кнопка «↻» наверху — сразу. Ставку вы делаете сами на сайте: в карточке заказа есть готовая заявка.</p>";
   $$("#gigs [data-gn]").forEach((b) => (b.onclick = () => openSheet(shown[+b.dataset.gn], true)));
   $$("#gigs [data-ga]").forEach((b) => (b.onclick = () => { haptic(); gigs.all = b.dataset.ga === "1"; gigs.more = false; loadGigs(); }));
   $$("#gigs [data-gs]").forEach((b) => (b.onclick = () => { haptic(); gigs.sort = b.dataset.gs; gigs.more = false; loadGigs(); }));
   $("#gigs-fl").onclick = () => { haptic(); gigs.fl = !gigs.fl; gigs.more = false; loadGigs(); };
   if ($("#gigs-more")) $("#gigs-more").onclick = () => { gigs.more = !gigs.more; renderGigs(); };
-  $("#gigs-refresh").onclick = async () => {
-    try { haptic(); await api("/api/gigs/refresh", {}); toast("Проверяю биржи и hh.ru"); setTimeout(loadGigs, 1500); } catch (e) { fail(e); }
-  };
+  $("#gigs-refresh").onclick = refreshGigs;
+}
+/* ↻ only the gig exchanges (Freelancer API + FL.ru, ~10–30 s), the main feed is not touched; then «Новых: N» */
+async function refreshGigs() {
+  if (gigs.busy) return;
+  haptic();
+  const before = new Set((gigs.d ? gigs.d.items : []).map((i) => i.key));
+  gigs.busy = true; gigs.fresh = null; renderGigs();
+  try {
+    await api("/api/gigs/refresh", {});
+    for (let n = 0; n < 40; n++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const d = await api("/api/gigs?" + new URLSearchParams({ all: gigs.all ? 1 : 0, sort: gigs.sort, src: gigs.fl ? "fl" : "" }));
+      gigs.d = d;
+      if (!d.refreshing) break;
+    }
+    gigs.fresh = gigs.d.items.filter((i) => !before.has(i.key)).length;
+    if (gigs.sort === "new") gigs.more = false;
+    haptic("ok");
+  } catch (e) { fail(e); }
+  gigs.busy = false;
+  renderGigs();
 }
 /* ⚡ a Freelancer order in the card: everything to decide in a glance, then a ready bid. The bid itself is placed by
    Eduard on the site: «Скопировать и открыть» copies the text and opens the order page. */
@@ -1682,12 +1713,13 @@ async function start() {
   }
   if (st.me.skin) setSkin(st.me.skin);
   if (!st.me.onboarded) showOnboarding();
-  await loadFeed().catch(fail);
+  await loadFeed().catch(feedFailed);
   loadGigs();
   setInterval(() => { // keep the counters fresh while the app is open
     if (document.hidden) return;
     const before = st.me && st.me.stats.new;
-    loadMe().then(() => { if (st.me.stats.new !== before && !$("#s-feed").hidden) loadFeed(); }).catch(() => {});
+    // a feed that failed to load (the bot was restarting) comes back by itself once the counter says there is something
+    loadMe().then(() => { if ((st.me.stats.new !== before || (st.me.stats.new && !(st.feed || []).length)) && !$("#s-feed").hidden) loadFeed().catch(() => {}); }).catch(() => {});
   }, 60000);
 }
 start();
