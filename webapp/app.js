@@ -156,8 +156,14 @@ function flushSeen() {
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushSeen(); });
 const feedUrl = (offset) => `/api/jobs?view=new&since=${encodeURIComponent(VISIT)}&sort=${st.sort}&f=${st.filter}&age=${st.age}&grade=${st.grade}&offset=${offset}&limit=${PAGE}`;
-async function loadFeed() {
+async function loadFeed(report) {
+  const had = st.feed && st.feed.length >= st.total ? st.feed.map((i) => i.key) : null;  // the whole feed was on hand
   const d = await api(feedUrl(0));
+  if (report && had && d.total <= PAGE) {  // cards the bot took away by itself (archived: office, other country, closed)
+    const keys = new Set(d.items.flatMap((i) => [i.key, ...(i.also || []).map((a) => a.key)]));
+    const gone = had.filter((k) => !keys.has(k)).length;
+    if (gone) toast(`${gone} ${plural(gone, "вакансию", "вакансии", "вакансий")} бот убрал в архив: офис, другая страна или закрыта. Они в «Ещё → Архив»`);
+  }
   st.feed = d.items;
   st.total = d.total;
   st.tzHidden = d.tz_hidden || 0;
@@ -286,7 +292,7 @@ function renderList(items) {
 async function quick(item, yes, row) {
   haptic(yes ? "ok" : "medium");
   if (row) row.classList.add(yes ? "gone-yes" : "gone-no");
-  st.feed = st.feed.filter((i) => i !== item);
+  dropCard(item);
   setTimeout(renderStack, 180);
   try {
     const d = await api(`/api/jobs/${encodeURIComponent(item.key)}/${yes ? "take" : "hide"}`, {});
@@ -295,13 +301,20 @@ async function quick(item, yes, row) {
   } catch (e) { fail(e); loadFeed().catch(() => {}); }
 }
 function topCard() { return $("#stack .card:last-child"); }
+/* a decided card leaves the feed and the «Ещё N» count at once (the count used to lag behind, so the last
+   few cards looked like they vanished: «Ещё 5» with 3 left) */
+function dropCard(item) {
+  const n = st.feed.length;
+  st.feed = st.feed.filter((i) => i !== item);
+  if (st.feed.length < n) st.total = Math.max(st.feed.length, (st.total || 0) - 1);
+}
 
 async function decide(card, yes) {
   const item = byKey(card.dataset.key);
   card.style.transform = `translateX(${yes ? 480 : -480}px) rotate(${yes ? 18 : -18}deg)`;
   card.style.opacity = 0;
   haptic(yes ? "ok" : "medium");
-  st.feed = st.feed.filter((i) => i !== item);
+  dropCard(item);
   setTimeout(() => { renderStack(); const next = topCard(); if (next) next.classList.add("rise"); }, 260);
   try {
     const d = await api(`/api/jobs/${encodeURIComponent(item.key)}/${yes ? "take" : "hide"}`, {});
@@ -729,7 +742,9 @@ async function sheetAction(action) {
     haptic(action === "take" ? "ok" : "light");
     toast(d.note);
     st.sheet.item = { ...item, ...d.item, text: item.text, match: item.match };
+    const was = st.feed.length;
     st.feed = st.feed.map((i) => (i.key === item.key ? { ...i, ...d.item, text: i.text } : i)).filter((i) => i.status === "new");
+    if (st.feed.length < was) st.total = Math.max(st.feed.length, (st.total || 0) - (was - st.feed.length));
     st.results = st.results.map((i) => (i.key === item.key ? { ...i, status: d.item.status, fav: d.item.fav } : i));
     if (action === "unsee") { closeSheet(); loadSaved(); loadMe().catch(() => {}); loadFeed().catch(() => {}); return; }
     if (action === "archive" || action === "unarchive") { closeSheet(); loadSaved(); loadArchive().catch(() => {}); loadMe().catch(() => {}); return; }
@@ -1732,7 +1747,7 @@ async function start() {
     if (document.hidden) return;
     const before = st.me && st.me.stats.new;
     // a feed that failed to load (the bot was restarting) comes back by itself once the counter says there is something
-    loadMe().then(() => { if ((st.me.stats.new !== before || (st.me.stats.new && !(st.feed || []).length)) && !$("#s-feed").hidden) loadFeed().catch(() => {}); }).catch(() => {});
+    loadMe().then(() => { if ((st.me.stats.new !== before || (st.me.stats.new && !(st.feed || []).length)) && !$("#s-feed").hidden) loadFeed(true).catch(() => {}); }).catch(() => {});
   }, 60000);
 }
 start();
