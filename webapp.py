@@ -366,12 +366,13 @@ FILTERS = {  # the feed's chips
 SCORE_BATCH = 10  # «Оценить новые»: at most this many per tap
 
 
-def page_json(pairs, sort="date", offset=0, limit=40):
+def page_json(pairs, sort="date", offset=0, limit=40, last=None):
     """One page of a list with duplicates merged: only the page gets turned into JSON, so a feed of
     thousands stays light. -> (items, total)"""
     gs = extras.groups(pairs)  # pairs come newest first, and the sort is stable
     by = SORTS.get(sort, SORTS["date"])
-    gs.sort(key=lambda g: (int(any((v.get("reality") or {}).get("kind") in ("evergreen", "closed", "stale") for _, v in g)), by(g)))  # ♾ / 🪦 go below
+    gs.sort(key=lambda g: (int(bool(last) and all(last(v) for _, v in g)),  # `last`: the feed's 👁 opened earlier, at the end
+                           int(any((v.get("reality") or {}).get("kind") in ("evergreen", "closed", "stale") for _, v in g)), by(g)))  # ♾ / 🪦 go below
     return grouped_json(gs[offset:offset + limit], grouped=True), len(gs)
 
 
@@ -443,11 +444,11 @@ def parse_since(value):
 
 
 def feed_pairs(m, inbox, since=None):
-    """The «new» feed: newest first, nothing seen before this visit, the person's time zone and country filters
-    applied. -> (pairs, filtered out)"""
+    """The «new» feed: newest first, the person's time zone and country filters applied. A vacancy opened but not
+    decided (★ / ✕) stays: from the next visit on it waits at the end with 👁 (see page_json `last`). -> (pairs, filtered out)"""
     tz, cs = extras.tz_settings(m), extras.country_settings(m)
     fits = fits_now(m)
-    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and unseen(v, since) and fits(v)),
+    new = sorted(((k, v) for k, v in inbox.items() if v["status"] == "new" and not v.get("archived") and fits(v)),
                  key=lambda kv: kv[1]["date"], reverse=True)
     new = [(k, v) for k, v in new if v.get("source") == "web" or not tc.looks_like_article(v.get("text", ""))]
     keep = [(k, v) for k, v in new if extras.tz_fits(v, tz) and extras.country_fits(v, cs)]
@@ -876,7 +877,9 @@ class WebApp:
         if sort == "algo":  # «По совпадению слов»: the quick score, best first (newest first among equals)
             items = sorted(items, key=lambda kv: -(scoring.score(ctx, kv[1])["score"] or 0))
             sort = "date"
-        page, total = page_json(items, sort, offset, limit)
+        visit = parse_since(request.query.get("since"))
+        last = (lambda v: not unseen(v, visit)) if view == "new" or view not in VIEWS else None  # opened before this visit
+        page, total = page_json(items, sort, offset, limit, last=last)
         for d in page:
             d["algo"] = scoring.score(ctx, inbox.get(d["key"]) or {})
         unscored = sum(1 for g in extras.groups(items) if not any(v.get("ai") for _, v in g)) if view == "new" else 0
