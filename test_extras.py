@@ -389,7 +389,8 @@ async def main():
                 await c.post("/api/feed/exclude", headers=auth, json={"origin": gone, "on": False})
                 assert (await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json())["total"] == before["total"]
 
-                # 👁 «Просмотрено»: a seen card stays for this visit, leaves the feed on the next, waits in «Мои», comes back on «unsee»
+                # 👁 «Просмотрено»: a seen card stays in place this visit, from the next one it waits at the END of the feed
+                # (Eduard 2026-10-08: never gone before ★ / ✕), is listed in «Мои», «unsee» clears the mark
                 visit = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
                 first = before["items"][0]["key"]
                 assert (await (await c.post("/api/seen", headers=auth, json={"keys": [first]})).json())["marked"] >= 1
@@ -397,7 +398,7 @@ async def main():
                 same = await (await c.get("/api/jobs?view=new&limit=100&since=" + quote(visit), headers=auth)).json()
                 assert first in [i["key"] for i in same["items"]]
                 later = await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json()
-                assert first not in [i["key"] for i in later["items"]] and later["total"] == before["total"] - 1
+                assert [i["key"] for i in later["items"]][-1] == first and later["total"] == before["total"]
                 seen = (await (await c.get("/api/jobs?view=seen", headers=auth)).json())["items"]
                 assert [i["key"] for i in seen][:1] == [first] and seen[0]["seen"]
                 assert (await (await c.post(f"/api/jobs/{first}/unsee", headers=auth, json={})).json())["ok"]

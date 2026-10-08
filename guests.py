@@ -60,7 +60,7 @@ PROPOSALS_PER_DAY = 3     # site proposals per guest per day
 MAX_WORDS = 40            # keywords per group
 MAX_WORD_LEN = 40
 MAX_INPUT = 1000          # characters of a typed message that get looked at
-INBOX_CAP = 500           # stored vacancies per person; oldest unstarred go first
+INBOX_CAP = 1000          # stored vacancies per person; archive / hidden go first (trim_inbox)
 SITE_JOBS_PER_RUN = 20    # new site vacancies per person per check
 REFRESH_COOLDOWN = timedelta(minutes=5)
 POOL_EVERY = timedelta(minutes=15)
@@ -326,12 +326,18 @@ class Owner(Member):
 
 
 def trim_inbox(inbox):
-    """Keep at most INBOX_CAP vacancies: drop the oldest that aren't starred or taken."""
+    """Keep at most INBOX_CAP vacancies, never a starred / taken / tracked one. What goes first: the archive, then
+    hidden, then opened ones, the feed's undecided vacancies only last (oldest first within each). By date alone, a fresh
+    find with an old publication date pushed undecided cards out of the feed as soon as the next batch came in."""
     extra = len(inbox) - INBOX_CAP
     if extra <= 0:
         return inbox
+
+    def rank(v):
+        return 0 if v.get("archived") else 1 if v.get("status") == "hidden" else 2 if v.get("seen") else 3
+
     droppable = sorted((k for k, v in inbox.items() if not v.get("fav") and v.get("status") != "taken" and not v.get("track")),
-                       key=lambda k: inbox[k].get("date", ""))
+                       key=lambda k: (rank(inbox[k]), inbox[k].get("date", "")))
     for k in droppable[:extra]:
         del inbox[k]
     return inbox
@@ -926,10 +932,13 @@ def match_site_jobs(feed, member, listed, full=False):
             key = boards.board_key(j["url"])
             if key in skip or key in inbox:
                 continue
-            seen.add(key)
             text = " ".join([j["title"], j.get("company", ""), j.get("location", "")])
             if not any(p.search(text) for p in role) or any(p.search(text) for p in negative):
+                seen.add(key)
                 continue
+            if len(jobs) >= SITE_JOBS_PER_RUN:
+                continue  # over this run's cap: not «seen», it comes with the next run (it used to be lost for good)
+            seen.add(key)
             jobs.append(web_job(j, listed.get(provider, provider), member))
     member.update_state(site_seen=sorted(seen)[-20000:], sites_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]
@@ -1193,11 +1202,12 @@ def match_hh_jobs(raw, member, full=False):
         key = boards.board_key(j["url"])
         if key in skip or key in inbox:
             continue
+        if (role and not any(p.search(j["title"]) for p in role)) or any(p.search(f"{j['title']} {j['company']}") for p in negative):
+            seen.add(key)
+            continue
+        if len(jobs) >= SITE_JOBS_PER_RUN:
+            continue  # see match_site_jobs: the next run takes it
         seen.add(key)
-        if role and not any(p.search(j["title"]) for p in role):
-            continue
-        if any(p.search(f"{j['title']} {j['company']}") for p in negative):
-            continue
         jobs.append(web_job(j, HH_NAME, member))
     member.update_state(hh_seen=sorted(seen)[-20000:], hh_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]

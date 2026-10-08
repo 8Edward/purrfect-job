@@ -454,6 +454,10 @@ with tempfile.TemporaryDirectory() as d:
     big = {f"k{i}": dict(bot.to_inbox(dict(job, msg_id=i)), date=f"2026-01-{i % 28 + 1:02d}") for i in range(guests.INBOX_CAP + 30)}
     big["k0"]["fav"] = True
     assert len(guests.trim_inbox(big)) == guests.INBOX_CAP and "k0" in big
+    # the archive and hidden ones go before an undecided feed card, however old its date
+    full = {f"a{i}": dict(bot.to_inbox(dict(job, msg_id=i)), date="2026-02-01", archived=True) for i in range(guests.INBOX_CAP)}
+    full["old"] = dict(bot.to_inbox(dict(job, msg_id=9999)), date="2020-01-01")
+    assert "old" in guests.trim_inbox(full) and len(full) == guests.INBOX_CAP
 
     assert guests.remove(reg, 101) and guests.get(reg, 101) is None and mama.dir.exists()
     guests.USERS_DIR, guests.REGISTRY_PATH, guests.POOL_PATH, guests.PORTALS_PATH = saved
