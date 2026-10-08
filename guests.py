@@ -926,6 +926,7 @@ def match_site_jobs(feed, member, listed, full=False):
     seen = set(state.get("site_seen", []))
     skip = set() if full else seen
     inbox = member.load_inbox()
+    hidden_now = feed_blocked(member)
     jobs = []
     for provider in member.sites(listed):
         for j in (feed.get(provider) or {}).get("jobs", []):
@@ -938,13 +939,24 @@ def match_site_jobs(feed, member, listed, full=False):
                 continue
             if len(jobs) >= SITE_JOBS_PER_RUN:
                 continue  # over this run's cap: not «seen», it comes with the next run (it used to be lost for good)
+            job = web_job(j, listed.get(provider, provider), member)
+            if hidden_now(job):
+                continue  # not «seen» either: back as soon as the person drops that stop company / country filter
             seen.add(key)
-            jobs.append(web_job(j, listed.get(provider, provider), member))
+            jobs.append(job)
     member.update_state(site_seen=sorted(seen)[-20000:], sites_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]
 
 
 # ---------------------------------------------------------------- hh.ru (RSS)
+
+def feed_blocked(member):
+    """item -> True when the feed would hide it anyway (a stop company, the country filter). Such finds no longer
+    take the 20 places of a run: Sber (a stop company) and Colombia-only Plata roles used to fill half of them."""
+    import extras  # extras imports this module
+    stopped, cs = stop_companies(member), extras.country_settings(member)
+    return lambda item: bool(stopped and stopped(item)) or not extras.country_fits(item, cs)
+
 
 def stop_companies(member):
     """Compiled «стоп-компании» of a person (their search.yml keywords.companies) or None. Literal, case-free."""
@@ -1197,6 +1209,7 @@ def match_hh_jobs(raw, member, full=False):
     seen = set(state.get("hh_seen", []))
     skip = set() if full else seen  # see match_site_jobs
     inbox = member.load_inbox()
+    hidden_now = feed_blocked(member)
     jobs = []
     for j in raw:
         key = boards.board_key(j["url"])
@@ -1207,7 +1220,10 @@ def match_hh_jobs(raw, member, full=False):
             continue
         if len(jobs) >= SITE_JOBS_PER_RUN:
             continue  # see match_site_jobs: the next run takes it
+        job = web_job(j, HH_NAME, member)
+        if hidden_now(job):
+            continue
         seen.add(key)
-        jobs.append(web_job(j, HH_NAME, member))
+        jobs.append(job)
     member.update_state(hh_seen=sorted(seen)[-20000:], hh_run=now().isoformat())
     return jobs[:SITE_JOBS_PER_RUN]
