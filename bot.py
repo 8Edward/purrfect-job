@@ -137,8 +137,9 @@ def load_inbox():
 
 
 def save_inbox(inbox):
-    INBOX_PATH.parent.mkdir(exist_ok=True)
-    INBOX_PATH.write_text(json.dumps(inbox, ensure_ascii=False, indent=1), encoding="utf-8")
+    # Atomic (tmp + replace): a failed write (MemoryError, power loss) used to leave a 0-byte file
+    # that then crashed every start (2026-10-19).
+    guests.write_json(INBOX_PATH, inbox)
 
 
 def job_key(job):
