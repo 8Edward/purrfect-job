@@ -56,6 +56,15 @@ assert "numbers" in ids and "cliches" in ids and "summary-i" in ids and "where" 
 d_good = resume.doctor(open(ROOT / "cv.md", encoding="utf-8").read())
 assert d_good["score"] >= 85, d_good
 assert resume.doctor("Иван")["score"] < 60 and "contacts" in {r["id"] for r in resume.doctor("Иван")["remarks"]}
+# -- level: Junior / Middle / Senior / Lead
+assert d_good["grade"]["level"] == "Middle", d_good["grade"]
+assert resume.experience_months("## Опыт работы\n### A\nМарт 2020 — Май 2021\n### B\nЯнварь 2021 — Декабрь 2021") == 22  # overlap once
+lead = resume.grade("## Experience\n### Senior Data Engineer\nJan 2012 - present\n- Led a team of 6 engineers\n"
+                    "- Mentored 4 juniors\n- Designed the DWH from scratch, cutting costs by 30%")
+assert lead["level"] == "Lead", lead
+assert resume.grade("## Experience\n### Data Analyst\nJun 2026 - present\n- Built 3 reports")["level"] == "Junior"
+assert resume.grade("Иван")["level"] is None
+assert not resume.LEADS.search("Analyzed leading schools; worked with organizers and mentors")
 assert [r["level"] for r in d["remarks"]] == sorted((r["level"] for r in d["remarks"]), key=["must", "should", "nice"].index)
 
 # -- vacancy match

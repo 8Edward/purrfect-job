@@ -186,6 +186,20 @@ function aiBtn(op, label, extra = "") {
   const ai = rs.data.ai, off = !ai.allowed || !ai.ready;
   return `<button class="rs-act${off ? " off" : ""}" data-ai="${op}" ${extra}>${label}</button>`;
 }
+const GRADES = ["Junior", "Middle", "Senior", "Lead"];
+function gradeHtml(g) {
+  if (!g) return "";
+  const idx = GRADES.indexOf(g.level), at = Math.max(0, Math.min(100, ((g.pos + 0.5) / 4) * 100));
+  return `<div class="rs-grade">
+    <div class="gh"><span>Уровень по резюме</span><b>${g.level ? esc(g.level) : "не понять"}</b></div>
+    ${g.level ? `<div class="gscale">${GRADES.map((_, i) => `<i class="${i <= idx ? "on" : ""}"></i>`).join("")}<u style="left:${at}%"></u></div>
+    <div class="gnames">${GRADES.map((n, i) => `<span class="${i === idx ? "on" : ""}">${n}</span>`).join("")}</div>` : ""}
+    <details><summary>Почему так и что поднимет уровень</summary>
+      <ul>${g.why.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
+      ${g.next.length ? `<h5>${idx >= 0 && idx < 3 ? `До ${GRADES[idx + 1]}:` : "Что дальше:"}</h5><ul>${g.next.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+      <small>Оценка по правилам, без ИИ: даты работы, уровень в должностях, руководство людьми, цифры. Каждый работодатель решает по-своему.</small>
+    </details></div>`;
+}
 function renderMain() {
   const d = rs.data, doc = d.doctor, lang = d.active.lang;
   const remarks = rs.showAll ? doc.remarks : doc.remarks.slice(0, 3);
@@ -196,6 +210,7 @@ function renderMain() {
         <span class="muted">${doc.stats.words} слов · пунктов в опыте ${doc.stats.bullets}, с цифрами ${doc.stats.with_numbers}</span>
         ${doc.good.length ? `<div class="oks">${doc.good.map((g) => `<span>✓ ${esc(g)}</span>`).join("")}</div>` : ""}</div>
     </div>
+    ${gradeHtml(doc.grade)}
     ${doc.remarks.length ? `<div class="rs-remarks">${remarks.map((r, ri) => `<div class="remark ${r.level}">
         <div class="rh"><i></i><b>${esc(r.title)}</b><small>${LEVEL[r.level]}</small></div>
         <p>${esc(r.detail)}</p>

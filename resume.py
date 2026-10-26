@@ -787,8 +787,128 @@ def doctor(markdown):
     remarks.sort(key=lambda r: order[r["level"]])
     level = ("Отличное резюме" if score >= 85 else "Хорошее резюме" if score >= 70
              else "Можно сделать сильнее" if score >= 50 else "Нужно доработать")
-    return {"score": score, "level": level, "remarks": remarks, "good": good,
+    return {"score": score, "level": level, "remarks": remarks, "good": good, "grade": grade(text),
             "stats": {"words": words, "bullets": len(bullets), "with_numbers": len(with_numbers), "lang": lang}}
+
+
+# ---------------------------------------------------------------- level: Junior / Middle / Senior / Lead
+
+GRADES = ["Junior", "Middle", "Senior", "Lead"]
+MONTH_NO = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "май": 5, "мая": 5, "июн": 6, "июл": 7, "авг": 8, "сен": 9, "окт": 10,
+            "ноя": 11, "дек": 12, "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9,
+            "oct": 10, "nov": 11, "dec": 12}
+TITLE_GRADE = [  # a grade word in a job title; checked from the top grade down
+    (3, re.compile(r"\b(lead|head of|principal|staff|chief|team ?lead|тимлид\w*|руководител\w*|директор\w*)\b", re.I)),
+    (2, re.compile(r"\b(senior|sr\.?|старш\w*|сеньор\w*|ведущ\w*)\b", re.I)),
+    (1, re.compile(r"\b(middle|mid|мидл\w*)\b", re.I)),
+    (0, re.compile(r"\b(junior|jr\.?|intern|trainee|младш\w*|джун\w*|стаж[её]р\w*)\b", re.I)),
+]
+LEADS = re.compile(r"\b(led|managed a|manag\w+ (a |the )?team|mentored|mentoring|coached|coaching|hired|onboard\w* (new|junior)|team of \d+|"
+                   r"руководил\w*|возглавля?л\w*|наставни\w*|менторил\w*|был\w* ментором|обучал\w* (сотрудник|коллег|новичк|джун)\w*|"
+                   r"нанимал\w*|собрал\w* команд\w*|команд\w* из \d+)\b", re.I)
+OWNS = re.compile(r"\b(designed|architected|built|created|introduced|implemented|launched|owned|initiated|from scratch|"
+                  r"спроектировал\w*|построил\w*|внедрил\w*|создал\w*|запустил\w*|инициировал\w*|с нуля)\b", re.I)
+
+
+def _month(s, end=False):
+    """«March 2024» / «2024» / «сейчас» -> months since year 0, or None."""
+    s = (s or "").strip().lower()
+    now = datetime.now()
+    if re.match(r"(наст|н\.?\s?в|сейчас|present|now|current|today)", s):
+        return now.year * 12 + now.month
+    y = re.search(r"(19|20)\d{2}", s)
+    if not y:
+        return None
+    m = MONTH_NO.get(re.sub(r"[^a-zа-яё]", "", s)[:3])
+    return int(y.group(0)) * 12 + (m or (12 if end else 1))
+
+
+def experience_months(markdown):
+    """Months of work by the date ranges of the experience section; overlapping jobs counted once."""
+    secs = sections(markdown)
+    exp = "\n".join(b["x"] for k, _, bl in secs if k == "experience" for b in bl) or (markdown or "")
+    spans = []
+    for m in DATE_RANGE.finditer(exp):
+        a, b = _month(m.group(1)), _month(m.group(6), end=True)
+        if a and b and a <= b:
+            spans.append((a, b))
+    total, last = 0, None
+    for a, b in sorted(spans):
+        if last is not None and a <= last:
+            if b > last:
+                total, last = total + b - last, b
+            continue
+        total, last = total + b - a + 1, b
+    return total if spans else None
+
+
+def grade(markdown):
+    """Rough Junior → Lead level of a résumé, rules only (no AI): years by dates, the grade word in the
+    latest title, leading people, owning things end to end, results in numbers.
+    {"level": name or None, "pos": 0..3, "why": [...], "next": [...]}."""
+    text = markdown or ""
+    months = experience_months(text)
+    years = months / 12 if months else None
+    bullets = experience_bullets(text)
+    titles = [b["x"] for k, _, bl in sections(text) if k == "experience" for b in bl if b["t"] == "h3"]
+    title_grade = title = None
+    for t in titles:  # résumés go newest first: the first title with a grade word
+        for g, rx in TITLE_GRADE:
+            if rx.search(t):
+                title_grade, title = g, t
+                break
+        if title_grade is not None:
+            break
+    leads = [b for b in bullets if LEADS.search(b)]
+    owns = [b for b in bullets if OWNS.search(b)]
+    numbers = [b for b in bullets if NUMBER.search(b)]
+    why, nxt = [], []
+    if years is None and title_grade is None:
+        return {"level": None, "pos": 0, "why": ["Не нашёл ни дат работы, ни уровня в должностях."],
+                "next": ["Добавьте к каждому месту работы период: «Март 2024 — сейчас»."]}
+    pos = None
+    if years is not None:
+        points = [(0, 0), (1, 0.3), (2, 0.8), (3, 1.1), (5, 1.8), (7, 2.2), (10, 2.6)]
+        for (x1, y1), (x2, y2) in zip(points, points[1:]):
+            if years <= x2:
+                pos = y1 + (y2 - y1) * (years - x1) / (x2 - x1)
+                break
+        pos = 2.6 if pos is None else pos
+        n = round(years)
+        why.append("Опыт по датам: " + ("меньше года" if years < 1 else "около года" if n == 1 else f"около {n} лет"))
+    if title_grade is not None:
+        pos = title_grade if pos is None else (pos + title_grade) / 2
+        role = re.split(r"\s+[—–-]\s+|,|\|", title)[0].strip()[:50]
+        why.append(f"В должности указан уровень {GRADES[title_grade]}: «{role}»")
+    if len(leads) >= 2 and (years or 0) >= 4:
+        pos += 0.5
+    elif leads:
+        pos += 0.2
+    why.append(f"Руководство или наставничество упомянуто (пунктов: {len(leads)})" if leads else "Руководство людьми и наставничество не упомянуты")
+    if bullets and len(owns) / len(bullets) >= 0.4:
+        pos += 0.15
+        why.append("Много задач «сделал сам от начала до конца» (спроектировал, внедрил, построил)")
+    if bullets and len(numbers) / len(bullets) >= 0.5:
+        pos += 0.1
+        why.append("Результаты подтверждены цифрами")
+    pos = max(0.0, min(3.0, pos))
+    idx = min(3, int(pos + 0.5))
+    if idx == 0:
+        nxt += ["Для Middle обычно ждут от 2 лет опыта и задач, которые вы ведёте сами",
+                "Пишите результат с цифрами: сколько, на сколько процентов, за какое время"]
+    elif idx == 1:
+        if (years or 0) < 5:
+            nxt.append("Для Senior обычно ждут 5+ лет опыта")
+        nxt.append("Пункты, где вы сами выбирали решение и вели проект целиком (архитектура, витрины, пайплайны с нуля)")
+        if not leads:
+            nxt.append("Наставничество или ревью работы коллег — если такое было, напишите об этом")
+    elif idx == 2:
+        nxt += ["Для Lead ждут опыт руководства людьми: команда, найм, планы работ",
+                "Влияние на решения бизнеса и других команд, а не только свои задачи"]
+    else:
+        nxt.append("Это верхний уровень шкалы: дальше Head of / руководитель направления")
+    return {"level": GRADES[idx], "pos": round(pos, 2), "years": round(years, 1) if years is not None else None,
+            "why": why[:5], "next": nxt[:3]}
 
 
 # ---------------------------------------------------------------- vacancy match

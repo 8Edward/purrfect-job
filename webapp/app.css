@@ -263,6 +263,21 @@ code { font-size: 12px; background: var(--tag); padding: 1px 4px; border-radius:
 .ring b { font-family: var(--f-display); font-size: 20px; }
 .lvl { font-size: 16px; }
 .oks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ok); margin-top: 2px; }
+.rs-grade { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; margin-bottom: 10px; min-width: 0; }
+.rs-grade .gh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rs-grade .gh span { font-size: 13px; color: var(--muted); }
+.rs-grade .gh b { font-size: 16px; color: var(--accent); }
+.gscale { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin: 10px 0 4px; }
+.gscale i { height: 6px; border-radius: 3px; background: var(--line); }
+.gscale i.on { background: var(--accent); }
+.gscale u { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--surface); border: 3px solid var(--accent); }
+.gnames { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); font-size: 11.5px; color: var(--muted); text-align: center; }
+.gnames .on { color: var(--fg); font-weight: 600; }
+.rs-grade details { margin-top: 8px; font-size: 13px; }
+.rs-grade summary { cursor: pointer; color: var(--accent); }
+.rs-grade ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.rs-grade h5 { margin: 10px 0 0; font-size: 13px; }
+.rs-grade small { display: block; margin-top: 8px; color: var(--muted); font-size: 11.5px; }
 .rs-remarks { display: grid; gap: 8px; margin-bottom: 12px; }
 .remark { background: var(--surface); border: 1px solid var(--line); border-left-width: 4px; border-radius: var(--r-sm); padding: 10px 12px; min-width: 0; }
 html[data-skin="remote"] .remark, html[data-skin="remote"] .chg, html[data-skin="remote"] .wz-job { border-radius: 16px; }
