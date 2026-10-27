@@ -225,7 +225,7 @@ const keep = () => true;  // the server filters now (chips go with each page req
 function renderScoreNew() {
   const b = $("#score-new");
   b.hidden = !(st.me && st.me.ai) || !st.unscored;
-  if (!st.scoringAll) b.textContent = `✨ Оценить ИИ (${st.unscored})`;
+  if (!st.scoringAll && !b.dataset.sure) b.textContent = `✨ Оценить ИИ (${st.unscored})`;
 }
 function renderStack() {
   const items = st.feed.filter(keep), box = $("#stack");
@@ -378,49 +378,53 @@ function setFilter(f) {
   renderFilterSum();
   loadFeed().catch(fail);
 }
-/* «Избранное → Оценить все ИИ»: first tap says how many will be scored (the day's limit counts), the second runs it */
-async function scoreFav() {
-  const b = $("#score-fav");
-  if (st.scoringAll) return;
+/* «Оценить ИИ» (feed) and «Избранное → Оценить все ИИ»: the first tap says how many will be scored (the day's
+   limit counts), the second runs it; while it runs, the same button stops it after the vacancy in progress */
+async function scoreAll(b, body, label) {
+  if (st.scoringAll) {
+    if (st.scoreJob && !b.dataset.stopping) {
+      b.dataset.stopping = "1";
+      b.textContent = "Останавливаю…";
+      haptic();
+      api("/api/score/stop", { job: st.scoreJob }).catch(fail);
+    }
+    return;
+  }
   try {
     if (!b.dataset.sure) {
-      const q = await api("/api/score/new", { view: "fav", dry: true });
+      const q = await api("/api/score/new", { ...body, dry: true });
       b.dataset.sure = "1";
       b.textContent = q.will < q.unscored ? `Оценю ${q.will} из ${q.unscored} (лимит на сегодня). Нажмите ещё раз` : `Оценю ${q.will}. Нажмите ещё раз`;
-      setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = `✨ Оценить все ИИ (${q.unscored})`; } }, 6000);
+      setTimeout(() => { if (b.isConnected && b.dataset.sure && !st.scoringAll) { delete b.dataset.sure; b.textContent = label(q.unscored); } }, 6000);
       return;
     }
+    delete b.dataset.sure;
     st.scoringAll = true;
-    const d = await api("/api/score/new", { view: "fav" });
+    const d = await api("/api/score/new", body);
+    st.scoreJob = d.job;
+    b.textContent = `✨ 0 из ${d.total} · ✕ остановить`;
     for (let n = 0; n < 400; n++) {
-      b.textContent = `✨ Оцениваю…`;
       await new Promise((r) => setTimeout(r, 3000));
       const j = await api("/api/resume/ai/" + d.job);
-      if (j.progress) b.textContent = `✨ Оцениваю ${j.progress.done} из ${j.progress.total}…`;
+      if (j.progress && !b.dataset.stopping) b.textContent = `✨ ${j.progress.done} из ${j.progress.total} · ✕ остановить`;
       if (j.status === "error") throw new Error(j.error);
-      if (j.status === "done") { haptic("ok"); toast(`Оценил ${j.result.scored}` + (j.result.failed ? `, не вышло: ${j.result.failed}` : "")); break; }
+      if (j.status === "done") {
+        haptic("ok");
+        toast((j.result.stopped ? "Остановил. " : "") + `Оценил ${j.result.scored}` + (j.result.failed ? `, не вышло: ${j.result.failed}` : ""));
+        break;
+      }
     }
   } catch (e) { fail(e); }
   st.scoringAll = false;
-  loadSaved().catch(() => {});
+  st.scoreJob = null;
+  delete b.dataset.stopping;
+  return true;  // a run happened (not just the «нажмите ещё раз» tap or a stop tap)
+}
+async function scoreFav() {
+  if (await scoreAll($("#score-fav"), { view: "fav" }, (n) => `✨ Оценить все ИИ (${n})`)) loadSaved().catch(() => {});
 }
 async function scoreNew() {
-  if (st.scoringAll) return;
-  const b = $("#score-new");
-  st.scoringAll = true;
-  try {
-    const d = await api("/api/score/new", {});
-    b.textContent = `✨ Оцениваю 0 из ${d.total}…`;
-    for (let n = 0; n < 400; n++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const j = await api("/api/resume/ai/" + d.job);
-      if (j.progress) b.textContent = `✨ Оцениваю ${j.progress.done} из ${j.progress.total}…`;
-      if (j.status === "error") throw new Error(j.error);
-      if (j.status === "done") { haptic("ok"); toast(`Оценил ${j.result.scored}` + (j.result.failed ? `, не вышло: ${j.result.failed}` : "")); break; }
-    }
-  } catch (e) { fail(e); }
-  st.scoringAll = false;
-  await loadFeed().catch(() => {});
+  if (await scoreAll($("#score-new"), {}, (n) => `✨ Оценить ИИ (${n})`)) await loadFeed().catch(() => {});
 }
 async function refresh() {
   const b = $("#refresh");

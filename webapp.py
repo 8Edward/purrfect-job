@@ -647,6 +647,7 @@ class WebApp:
         r.add_post("/api/refresh", self.api_refresh)
         r.add_post("/api/score", self.api_score)
         r.add_post("/api/score/new", self.api_score_new)
+        r.add_post("/api/score/stop", self.api_score_stop)
         r.add_post("/api/apply/prepare", self.api_apply_prepare)
         r.add_post("/api/apply/send", self.api_apply_send)
         r.add_post("/api/apply/done", self.api_apply_done)
@@ -2066,6 +2067,8 @@ class WebApp:
         async def work():
             done, failed = 0, 0
             for key, item in todo:
+                if self.ai_jobs[jid].get("stop"):  # «✕ остановить»: the vacancy in progress finishes, the rest wait
+                    return {"scored": done, "failed": failed, "left": extras.scores_left(m), "stopped": True}
                 try:
                     await self.score_one(m, key, item)
                     done += 1
@@ -2077,6 +2080,16 @@ class WebApp:
             return {"scored": done, "failed": failed, "left": extras.scores_left(m)}
         asyncio.create_task(self.run_ai_job(jid, m, work))
         return web.json_response({"job": jid, "total": len(todo), "queued": self.ai.lock.locked()})
+
+    async def api_score_stop(self, request):
+        """✕ Stops a running «Оценить ИИ» after the vacancy being scored now."""
+        m = self.member(request)
+        job = self.ai_jobs.get(str((await self.body(request)).get("job") or ""))
+        if not job or job["member"] != m.id or job["op"] != "score_new":
+            return self.bad("Задача не найдена", 404)
+        if job["status"] == "running":
+            job["stop"] = True
+        return web.json_response({"ok": True, "status": job["status"]})
 
     # -- ✉️ «Откликнуться» (owner only; apply.py). Nothing is sent without the owner's own tap.
 

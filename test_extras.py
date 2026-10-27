@@ -414,11 +414,24 @@ async def main():
                 reg = guests.load_registry()
                 reg["users"]["5"]["ai"] = True
                 guests.save_registry(reg)
-                app.ai = FakeClaude([json.dumps({"score": 4.0, "verdict": "ok", "pros": [], "cons": []})] * 7)
+                # ✕ stop: the vacancy in progress finishes, the rest stay unscored
+                class SlowClaude(FakeClaude):
+                    async def ask(self, system, prompt, timeout=0):
+                        await asyncio.sleep(0.1)
+                        return await super().ask(system, prompt, timeout)
+                app.ai = SlowClaude([json.dumps({"score": 4.0, "verdict": "ok", "pros": [], "cons": []})] * 7)
                 job = await (await c.post("/api/score/new", headers=auth, json={})).json()
-                assert job["total"] == 7
+                await asyncio.sleep(0.05)
+                assert (await (await c.post("/api/score/stop", headers=auth, json={"job": job["job"]})).json())["ok"]
                 j = await wait(c, auth, job["job"])
-                assert j["status"] == "done" and j["result"]["scored"] == 7 and j["progress"]["done"] == 7, j
+                assert j["status"] == "done" and j["result"]["stopped"] and j["result"]["scored"] == 1, j
+                assert (await (await c.get("/api/jobs?view=new", headers=auth)).json())["unscored"] == 6
+                assert (await c.post("/api/score/stop", headers=auth, json={"job": "nope"})).status == 404
+                app.ai = FakeClaude([json.dumps({"score": 4.0, "verdict": "ok", "pros": [], "cons": []})] * 6)
+                job = await (await c.post("/api/score/new", headers=auth, json={})).json()
+                assert job["total"] == 6
+                j = await wait(c, auth, job["job"])
+                assert j["status"] == "done" and j["result"]["scored"] == 6 and j["progress"]["done"] == 6, j
                 assert (await (await c.get("/api/jobs?view=new", headers=auth)).json())["unscored"] == 0
                 assert (await c.post("/api/score/new", headers=auth, json={})).status == 400  # nothing left: no tokens spent
                 assert extras.summary({"title": "Data Analyst", "text": "Удалёнка. Задачи: строить отчёты в Power BI; SQL"})[0] == "🛠 SQL, Power BI"
