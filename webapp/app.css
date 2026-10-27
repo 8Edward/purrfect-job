@@ -852,3 +852,46 @@ details.group > .pad { padding: 0 14px 14px; }  /* folded blocks: their content 
 #gigs .gig-fresh { font-size: 12.5px; color: var(--muted); text-align: center; margin: -2px 0 8px; }
 #gigs .spin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: gigspin .8s linear infinite; }
 @keyframes gigspin { to { transform: rotate(360deg); } }
+
+/* ---- own drop-down lists (app.js `picker`): the closed field, and the list that rises from the bottom ---- */
+select.pk-src { display: none !important; }
+.pk { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .12s ease; }
+.pk > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk > svg { flex: none; color: var(--accent); }
+.pk:active { transform: scale(.98); border-color: var(--accent); }
+.pk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pk:disabled { opacity: .5; }
+.pick-bg { position: fixed; inset: 0; z-index: 40; background: rgb(5 8 15 / .38); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); animation: bg-in .25s ease; }
+.pick { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; max-width: 560px; margin: 0 auto; max-height: 72%; display: flex; flex-direction: column;
+  background: var(--bg); border-radius: 26px 26px 0 0; padding: 10px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgb(0 0 0 / .18); animation: sheet-in .38s var(--ease); }
+.pick-bg.closing { animation: bg-out .2s ease forwards; }
+.pick.closing { animation: sheet-out .2s cubic-bezier(.4, 0, 1, 1) forwards; }
+.pick .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 10px; flex: none; }
+.pick h4 { margin: 0 8px 12px; text-align: center; font-family: var(--f-display); font-size: 16px; letter-spacing: -.01em; }
+.pick-list { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: grid; gap: 7px; padding: 2px 2px 4px; }
+.pick-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+  padding: 13px 16px; border-radius: 16px; border: 1.5px solid var(--line-soft, var(--line)); background: var(--surface); font-size: 15px; line-height: 1.3;
+  box-shadow: var(--sh1, none); transition: background .15s ease, border-color .15s ease, transform .12s ease;
+  animation: opt-in .32s var(--ease) both; animation-delay: calc(var(--i, 0) * 18ms); }
+.pick-opt > span { min-width: 0; overflow-wrap: anywhere; }
+.pick-opt > i { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700;
+  background: var(--accent); color: var(--accent-fg); opacity: 0; transform: scale(.4); transition: opacity .18s ease, transform .25s var(--spring, ease); }
+.pick-opt[aria-selected="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-weight: 700; }
+.pick-opt[aria-selected="true"] > i { opacity: 1; transform: none; }
+.pick-opt:active { transform: scale(.98); }
+.pick-opt:disabled { opacity: .45; }
+html[data-skin="office"] .pick { border-radius: 12px 12px 0 0; }
+html[data-skin="office"] :is(.pick-opt, .pk) { border-radius: 8px; }
+@keyframes opt-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .pick, .pick-bg, .pick-opt { animation: none; } }
+
+/* full screen: a band of the page colour under Telegram's floating buttons once the page is scrolled,
+   so headers and tiles no longer slide under «Закрыть» and «⌄ ⋮» */
+html.fs body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--top); z-index: 15; pointer-events: none;
+  background: var(--bg); box-shadow: 0 6px 18px rgb(0 0 0 / .08); opacity: 0; transition: opacity .2s ease; }
+html.fs.scrolled body::before { opacity: 1; }
+
+/* explanatory paragraphs: centred, lines of even length */
+.hint, .res-head, .feed-set + .hint { text-align: center; text-wrap: balance; }.feed-set { text-align: center; }

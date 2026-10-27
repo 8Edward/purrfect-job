@@ -1721,7 +1721,102 @@ function wireFl(i) {
     } catch (e) { fail(e); }
   };
 }
+/* Drop-down lists: every <select> opens our own list from the bottom instead of the phone's system dialog
+   (grey radio buttons on Android). The <select> stays in the page, hidden: its value, options and «change»
+   events keep working for all the code that already uses it; the button next to it only shows and sets it. */
+const picker = (() => {
+  const proto = HTMLSelectElement.prototype;
+  for (const k of ["value", "selectedIndex"]) {  // code that sets sel.value refreshes the visible button too
+    const d = Object.getOwnPropertyDescriptor(proto, k);
+    Object.defineProperty(proto, k, { configurable: true, enumerable: d.enumerable, get() { return d.get.call(this); },
+      set(v) { d.set.call(this, v); if (this._pk) label(this); } });
+  }
+  const label = (sel) => {
+    const o = sel.options[sel.selectedIndex];
+    sel._pk.firstChild.textContent = o ? o.textContent : "";
+    sel._pk.disabled = sel.disabled;
+  };
+  const titleOf = (sel) => {
+    if (sel.getAttribute("aria-label")) return sel.getAttribute("aria-label");
+    const lb = sel.closest("label, .fld, .tg");
+    const t = lb && [...lb.childNodes].find((n) => n !== sel && (n.nodeType === 3 ? n.textContent.trim() : n.tagName === "SPAN"));
+    return t ? t.textContent.trim() : "";
+  };
+  function wrap(sel) {
+    if (sel._pk || sel.multiple) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pk " + sel.className;
+    b.setAttribute("aria-haspopup", "listbox");
+    b.innerHTML = '<span></span><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    sel._pk = b;
+    sel.classList.add("pk-src");
+    sel.after(b);
+    label(sel);
+    b.addEventListener("click", (e) => { e.preventDefault(); open(sel); });
+    new MutationObserver(() => label(sel)).observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "selected"] });
+  }
+  let cur = null;
+  function open(sel) {
+    close(true);
+    haptic("light");
+    const bg = document.createElement("div"), box = document.createElement("div");
+    bg.className = "pick-bg";
+    box.className = "pick";
+    box.setAttribute("role", "listbox");
+    const title = titleOf(sel);
+    box.innerHTML = `<div class="grip"></div>${title ? `<h4>${esc(title)}</h4>` : ""}<div class="pick-list"></div>`;
+    const list = box.lastChild;
+    [...sel.options].forEach((o, i) => {
+      if (o.hidden) return;
+      const r = document.createElement("button");
+      r.type = "button";
+      r.className = "pick-opt";
+      r.setAttribute("role", "option");
+      r.setAttribute("aria-selected", String(i === sel.selectedIndex));
+      r.style.setProperty("--i", Math.min(list.children.length, 12));
+      r.disabled = o.disabled;
+      r.innerHTML = '<span></span><i aria-hidden="true">✓</i>';
+      r.firstChild.textContent = o.textContent;
+      r.onclick = () => {
+        if (i !== sel.selectedIndex) {
+          sel.selectedIndex = i;
+          sel.dispatchEvent(new Event("input", { bubbles: true }));
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        list.querySelectorAll(".pick-opt").forEach((x) => x.setAttribute("aria-selected", String(x === r)));
+        haptic("light");
+        setTimeout(close, 120);
+      };
+      list.append(r);
+    });
+    bg.onclick = () => close();
+    document.body.append(bg, box);
+    cur = { bg, box };
+    const on = list.querySelector('[aria-selected="true"]');
+    if (on && list.scrollHeight > list.clientHeight) list.scrollTop = on.offsetTop - list.clientHeight / 2;
+  }
+  function close(now) {
+    if (!cur) return false;
+    const { bg, box } = cur;
+    cur = null;
+    if (now === true || matchMedia("(prefers-reduced-motion: reduce)").matches) { bg.remove(); box.remove(); return true; }
+    bg.classList.add("closing"); box.classList.add("closing");
+    setTimeout(() => { bg.remove(); box.remove(); }, 200);
+    return true;
+  }
+  const scan = (root) => root.querySelectorAll("select").forEach(wrap);
+  scan(document);
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => {
+    if (n.nodeType !== 1) return;
+    if (n.tagName === "SELECT") wrap(n); else scan(n);
+  }))).observe(document.body, { childList: true, subtree: true });
+  return { close };
+})();
+
 async function start() {
+  // in full screen, content scrolled up slides under a band of the page colour, not under Telegram's buttons
+  $("main").addEventListener("scroll", (e) => document.documentElement.classList.toggle("scrolled", e.target.scrollTop > 6), { passive: true });
   try { setSkin(localStorage.getItem("jr-skin") || "hybrid"); } catch (e) { setSkin("hybrid"); }
   if (!INIT) { $("#gate").hidden = false; return; }
   tg.ready();
@@ -1730,7 +1825,7 @@ async function start() {
   const fs = () => document.documentElement.classList.toggle("fs", !!tg.isFullscreen);
   try { tg.onEvent("fullscreenChanged", fs); fs(); if (["android", "ios"].includes(tg.platform)) tg.requestFullscreen(); } catch (e) { /* old client */ }
   try { tg.disableVerticalSwipes(); } catch (e) { /* old client: swiping down may close the app */ }
-  try { tg.BackButton.onClick(closeSheet); } catch (e) { /* old client */ }
+  try { tg.BackButton.onClick(() => { if (!picker.close()) closeSheet(); }); } catch (e) { /* old client */ }
   renderMode();
   try {
     await loadMe();
