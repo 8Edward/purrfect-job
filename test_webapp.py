@@ -269,6 +269,7 @@ async def main():
         guests.REGISTRY_PATH = Path(d) / "users.json"
         guests.POOL_PATH = Path(d) / "pool.json"
         webapp.FEED_CACHE_PATH = Path(d) / "feed.json"
+        webapp.POSTS_CACHE_PATH = Path(d) / "posts.json"  # never the live channel posts: a search would find them
         try:
             guests.save_pool({"channels": {"datajob": {"title": "Data Jobs", "added_by": 5, "added": "a"}}, "adds": {}, "proposals": {}})
             reg = guests.load_registry()
