@@ -1600,7 +1600,7 @@ class JobRadar:
         if guest is None:
             if self.too_fast(event.sender_id):
                 return
-            guest, why = guests.join(reg, await event.get_sender())  # open access (Эдуард, 2026-10-05): anyone may use the bot
+            guest, why = guests.join(reg, await event.get_sender())  # open access (the owner asked, 2026-10-05): anyone may use the bot
             if guest is None:
                 return await event.respond(guests.BLOCKED_TEXT if why == "blocked" else "Сейчас нет свободных мест. Загляните позже.")
             guests.save_registry(reg)

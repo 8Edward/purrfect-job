@@ -1,44 +1,53 @@
 # Purrfect Job
 
-Telegram-бот с мини-приложением для поиска удалённой работы. Собирает вакансии из Telegram-каналов,
-hh.ru, job-бордов и карьерных страниц компаний, отсеивает офис и «удалёнку только для США/РФ»,
-подбирает по смыслу роли, помогает с резюме и откликами.
+A Telegram bot with a Mini App for finding remote work. It collects vacancies from Telegram channels,
+hh.ru, job boards and company career pages, drops office-only and "remote, but US/RU only" postings,
+matches jobs by the meaning of the role, and helps with the résumé and applications.
 
-Один владелец (бот читает каналы через его аккаунт), любое число гостей: каждый со своими словами,
-каналами, сайтами и резюме.
+One owner (the bot reads channels through their own Telegram account) and any number of guests, each with
+their own keywords, channels, sites and résumé. The user interface is in Russian: it was built for
+Russian-speaking job seekers.
 
-## Что умеет
+## What it does
 
-- **Лента**: карточки вакансий из 100+ источников, фильтры по дате, грейду, источнику, зарплате; дубли из разных
-  источников склеиваются; «вечнозелёные» и исчезнувшие вакансии уходят вниз.
-- **Поиск по роли**: точная фраза или «похожие роли» по графу ролей (`rolegraph.yml`, названия из O*NET);
-  неизвестные названия размечает Claude в фоне, ответы запоминаются.
-- **Резюме**: версии, проверка на ATS, уровень Junior/Middle/Senior по правилам, сравнение с вакансией,
-  конструктор с шаблонами, PDF; улучшения через Claude с проверкой фактов (новые цифры и названия отбрасываются).
-- **Отклики**: сопроводительное письмо на языке вакансии, трекер стадий, пачка писем из избранного.
-  Ничего не отправляется без нажатия человека.
-- **Подработки**: фриланс и part-time из hh.ru, FL.ru, Freelancer, Remotive с оценкой «насколько просто».
-- **Надёжность**: страж перезапускает бота после падения или зависания, ежедневные копии ленты.
+- **Feed**: vacancy cards from 100+ sources with filters by date, grade, source and salary; duplicates from
+  different sources are merged; "evergreen" and vanished postings sink to the bottom.
+- **Search by role**: an exact phrase or "similar roles" over a role graph (`rolegraph.yml`, titles from
+  O*NET); unknown titles are labelled by Claude in the background and the answers are remembered.
+- **Résumé**: versions, an ATS check, a rule-based Junior/Middle/Senior estimate, a match against a vacancy,
+  a builder with templates, PDF export; AI rewrites go through a fact check (new numbers and names are dropped).
+- **Applications**: a cover letter in the vacancy's language, a stage tracker, a batch of letters from
+  favourites. Nothing is sent without a human tap.
+- **Gigs**: freelance and part-time work from hh.ru, FL.ru, Freelancer and Remotive with an "how easy to get
+  in" score.
+- **Reliability**: a watchdog restarts the bot after a crash or a hang; daily copies of the feed.
 
-## Стек
+## Stack
 
-Python 3.12 (Telethon, aiohttp, Pillow), JavaScript без фреймворков для мини-приложения, Node.js для
-сканеров сайтов и PDF (Playwright), Cloudflare quick tunnel для адреса приложения, Claude Code по подписке
-для ИИ-функций. Сделано с AI-ассистентом: требования, дизайн и проверка на живых данных — мои, большая часть
-кода написана Claude.
+Python 3.12 (Telethon, aiohttp, Pillow); plain JavaScript for the Mini App; Node.js for the site scanners and
+PDF (Playwright); a Cloudflare quick tunnel for the app's address; Claude Code on a subscription for the AI
+features.
 
-## Зависимость от career-ops
+## How it was built
 
-Репозиторий лежит внутри клона [career-ops](https://github.com/santifer/career-ops) (папка `purrfect-job/`
-в его корне) и берёт оттуда сканер job-бордов `scan.mjs`, `portals.yml`, провайдеры `providers/` и `cv.md`.
-Другое расположение: переменная `CAREER_OPS_DIR`.
+Built with an AI coding assistant (Claude Code). I set the product requirements, made the design decisions
+and tested every feature on real data and real users; the AI wrote most of the code. The commit history is
+the log of that work.
 
-## Запуск (Windows)
+## Relation to career-ops
 
-1. `setup.bat` — пакеты и `config.yml` (api_id, api_hash с my.telegram.org, токен бота от @BotFather).
-2. `login.bat` — вход в Telegram владельца.
-3. `autostart.ps1` — бот как задача Windows, запускается при входе; `watchdog-install.ps1` — страж.
+The repository is checked out inside a clone of [career-ops](https://github.com/santifer/career-ops)
+(as `purrfect-job/` in its root) and uses its job-board scanner `scan.mjs`, `portals.yml`, the `providers/`
+modules and `cv.md`. Another location can be given in the `CAREER_OPS_DIR` environment variable.
 
-Тесты: `py -3 test_webapp.py` и остальные `test_*.py` печатают `ok`.
+## Running it (Windows)
 
-Личные данные (сессии, `config.yml`, `users/`, `data/`) в репозиторий не попадают.
+1. `setup.bat`: packages and `config.yml` (api_id and api_hash from my.telegram.org, a bot token from
+   @BotFather).
+2. `login.bat`: the owner's Telegram login.
+3. `autostart.ps1`: the bot as a Windows scheduled task that starts at logon; `watchdog-install.ps1`: the
+   watchdog.
+
+Tests: `py -3 test_webapp.py` and the other `test_*.py` files print `ok`.
+
+Private data (sessions, `config.yml`, `users/`, `data/`) never enters the repository.

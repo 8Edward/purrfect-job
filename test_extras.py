@@ -390,7 +390,7 @@ async def main():
                 assert (await (await c.get("/api/jobs?view=new&limit=100", headers=auth)).json())["total"] == before["total"]
 
                 # 👁 «Просмотрено»: a seen card stays in place this visit, from the next one it waits at the END of the feed
-                # (Eduard 2026-10-08: never gone before ★ / ✕), is listed in «Мои», «unsee» clears the mark
+                # (the owner, 2026-10-08: never gone before ★ / ✕), is listed in «Мои», «unsee» clears the mark
                 visit = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
                 first = before["items"][0]["key"]
                 assert (await (await c.post("/api/seen", headers=auth, json={"keys": [first]})).json())["marked"] >= 1

@@ -1,8 +1,7 @@
-﻿# Чаты и каналы, из которых собирать вакансии. По одному на строку.
-# Можно писать как удобнее:
-#   @username              — публичный канал или группа
-#   https://t.me/username  — ссылка на канал (или на любой пост в нём)
-#   https://t.me/c/1234567 — приватный канал: ссылка на любой пост в нём
-#   Название чата          — точно как в Telegram (регистр не важен)
-# Строки, начинающиеся с #, не читаются: так можно временно выключить канал.
+# Chats and channels to collect vacancies from, one per line. Any of these forms works:
+#   @username              - a public channel or group
+#   https://t.me/username  - a link to the channel (or to any post in it)
+#   https://t.me/c/1234567 - a private channel: a link to any post in it
+#   Chat title             - exactly as in Telegram (case does not matter)
+# Lines starting with # are skipped, so a channel can be switched off for a while.
 
