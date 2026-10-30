@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import tg_collect as tc
 
-PATH = tc.ROOT / "data" / "tg-source-stats.json"
+PATH = tc.DATA_DIR / "tg-source-stats.json"
 KEEP_DAYS = 14
 QUIET_DAYS = 3  # this many days of zero after earlier activity = «замолчал»
 

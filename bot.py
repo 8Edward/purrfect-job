@@ -40,10 +40,10 @@ import watch
 import webapp
 import workmode
 
-INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
-DISCARD_LOG = tc.ROOT / "data" / "discard.log"
-LOG_PATH = tc.ROOT / "data" / "tg-bot.log"
-SCREENS_DIR = tc.ROOT / "data" / "tg-screens"
+INBOX_PATH = tc.DATA_DIR / "tg-inbox.json"
+DISCARD_LOG = tc.DATA_DIR / "discard.log"
+LOG_PATH = tc.DATA_DIR / "tg-bot.log"
+SCREENS_DIR = tc.DATA_DIR / "tg-screens"
 BOT_SESSION = tc.TG_DIR / "bot"
 
 PAGE_SIZE = 8

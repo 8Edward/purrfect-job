@@ -559,7 +559,7 @@ def candidate_text(member):
             return md[:12000]
     except ValueError:
         pass
-    path = (tc.ROOT / "data" / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
+    path = (tc.DATA_DIR / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
     if path.exists():
         return path.read_text(encoding="utf-8")[:12000]
     return ""

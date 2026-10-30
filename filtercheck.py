@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import tg_collect as tc
 import usage
 
-PATH = tc.ROOT / "data" / "tg-filter-check.json"
+PATH = tc.DATA_DIR / "tg-filter-check.json"
 PENDING_MAX = 300
 SAMPLE = 15
 EVERY_DAYS = 7  # the check is a slow-moving statistic: once a week is enough and spares the subscription

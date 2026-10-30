@@ -22,7 +22,7 @@ TEXT = (f"🐾 <b>Бот переехал</b>\nТеперь Purrfect Job жив�
         f"🐾 <b>The bot has moved</b>\nPurrfect Job now lives at @{NEW_BOT}. Open it and press Start: "
         f"your settings and vacancies are all there.")
 SESSION = tc.TG_DIR / "old_bot"
-LOG_PATH = tc.ROOT / "data" / "old-bot.log"
+LOG_PATH = tc.DATA_DIR / "old-bot.log"
 log = logging.getLogger("old-bot")
 
 

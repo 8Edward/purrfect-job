@@ -29,7 +29,7 @@ DEFAULT_EXE = Path(r"D:\tools\cloudflared\cloudflared.exe")
 METRICS = "127.0.0.1:20241"
 WATCH_EVERY = 30
 DEAD_AFTER = 120
-LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "tunnel.log"
+LOG_PATH = Path(__file__).resolve().parent / "data" / "tunnel.log"
 
 # Windows: no console window, own process group, and out of the bot's job object, so
 # stopping the bot's scheduled task doesn't take the tunnel (and its address) down too.

@@ -27,7 +27,7 @@ import guests
 import tg_collect as tc
 import usage
 
-CACHE_PATH = tc.ROOT / "data" / "tg-roles-ai.json"
+CACHE_PATH = tc.DATA_DIR / "tg-roles-ai.json"
 BATCH = 50          # titles per Claude call
 PER_RUN = 2         # calls per background run (each ~20 s, the résumé AI waits meanwhile)
 DAILY = 6           # title calls per day: a small strict budget (owner's subscription, shared with everything else)

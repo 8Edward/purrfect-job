@@ -18,7 +18,8 @@ import { loadProviders } from '../providers/_registry.mjs';
 import { parseHimalayasResponse } from '../providers/himalayas.mjs';
 import { parseJobicyResponse } from '../providers/jobicy.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HERE = path.dirname(fileURLToPath(import.meta.url));  // Purrfect Job
+const ROOT = path.resolve(HERE, '..');  // career-ops: this repo is checked out inside it (providers/, node_modules)
 const PER_BOARD_TIMEOUT_MS = 240_000;
 const MAX_JOBS_PER_BOARD = 3000;
 
@@ -235,7 +236,7 @@ const FETCHERS = {
     return [...seen.values()];
   },
   async tierb() {  // «tier B» (telegram/tierb.yml): remote companies hiring worldwide / APAC, their own boards, 6 at a time
-    const list = (yaml.load(fs.readFileSync(path.join(ROOT, 'telegram', 'tierb.yml'), 'utf8'))?.companies || [])
+    const list = (yaml.load(fs.readFileSync(path.join(HERE, 'tierb.yml'), 'utf8'))?.companies || [])
       .filter((c) => FETCHERS[c.ats] && ['greenhouse', 'lever', 'ashby', 'workable'].includes(c.ats) && c.slug);
     const out = [];
     const failed = [];
@@ -814,7 +815,7 @@ const FETCHERS = {
   },
 };
 async function fetchCompanies(id) {
-  const cfg = yaml.load(fs.readFileSync(path.join(ROOT, 'telegram', 'companies.yml'), 'utf8')) || {};
+  const cfg = yaml.load(fs.readFileSync(path.join(HERE, 'companies.yml'), 'utf8')) || {};
   const jobs = [];
   const errors = [];
   for (const c of (cfg.companies || []).filter((x) => x.id === id)) {

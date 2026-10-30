@@ -1,0 +1,10 @@
+# Never commit: Telegram credentials and login sessions (full account access)
+config.yml
+*.session
+*.session-journal
+# Per-person and runtime data (feed, résumés, logs, caches, backups)
+users/
+data/
+search.yml
+__pycache__/
+node_modules/

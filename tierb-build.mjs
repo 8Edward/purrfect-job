@@ -14,13 +14,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HERE = path.dirname(fileURLToPath(import.meta.url));  // Purrfect Job
+const ROOT = path.resolve(HERE, '..');  // career-ops: this repo is checked out inside it (providers/, node_modules)
 const SRC = process.argv[2];
 if (!SRC || !fs.existsSync(path.join(SRC, 'src', 'companies'))) {
   console.error('usage: node telegram/tierb-build.mjs <path to a remoteintech/remote-jobs clone>');
   process.exit(1);
 }
-const OUT = path.join(ROOT, 'telegram', 'tierb.yml');
+const OUT = path.join(HERE, 'tierb.yml');
 const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36' };
 const OPEN_TO_ASIA = /worldwide|anywhere|all (?:a)?round the world|all over the world|any(?:where in the)? (?:country|world)|asia|apac|thailand|south[- ]?east|doesn'?t matter where|no matter where|global/i;
 const LOCKED = /\b(?:us|usa|u\.s\.|united states|uk|canada|europe|eu)[- ]based|\bonly\b/i;

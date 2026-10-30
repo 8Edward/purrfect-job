@@ -11,8 +11,8 @@ import yaml
 
 import tg_collect as tc
 
-LIST_PATH = tc.ROOT / "telegram" / "tierb.yml"
-SEEN_PATH = tc.ROOT / "data" / "tg-tierb-seen.json"
+LIST_PATH = tc.TG_DIR / "tierb.yml"
+SEEN_PATH = tc.DATA_DIR / "tg-tierb-seen.json"
 _names = None
 
 

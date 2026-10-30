@@ -48,8 +48,8 @@ log = logging.getLogger("job-radar.app")
 
 WEB_DIR = tc.TG_DIR / "webapp"
 GRAPH_PATH = tc.TG_DIR / "rolegraph.yml"
-FEED_CACHE_PATH = tc.ROOT / "data" / "tg-feed-cache.json"
-FEEDBACK_PATH = tc.ROOT / "data" / "tg-feedback.json"   # «Ещё → Обратная связь»: [{who, id, text, at}], newest last
+FEED_CACHE_PATH = tc.DATA_DIR / "tg-feed-cache.json"
+FEEDBACK_PATH = tc.DATA_DIR / "tg-feedback.json"   # «Ещё → Обратная связь»: [{who, id, text, at}], newest last
 FEEDBACK_MAX, FEEDBACK_KEEP, FEEDBACK_GAP = 1500, 300, 30  # characters, stored messages, seconds between two from one person
 HOST, PORT = "127.0.0.1", 8787
 SKINS = ("hybrid", "remote", "office")  # cat themes; old names map onto them
@@ -61,7 +61,7 @@ POSTS_PER_CHANNEL = 300
 SEARCH_WAIT = 20        # seconds a search waits for channels not read yet
 TEXT_HEAD = 450          # a post counts for «в тексте поста» only when the phrase is in its first characters (digests / ads name it deep inside)
 SEARCH_LIVE_WAIT = 6    # seconds a search waits for hh.ru / Himalayas
-POSTS_CACHE_PATH = tc.ROOT / "data" / "tg-posts-cache.json"   # channel posts kept on disk (~4 MB), so the first search after a restart is fast
+POSTS_CACHE_PATH = tc.DATA_DIR / "tg-posts-cache.json"   # channel posts kept on disk (~4 MB), so the first search after a restart is fast
 POSTS_STALE_MAX = timedelta(days=2)  # older than this the disk copy is not used
 QUERY_MAX = 80
 RESULTS_MAX = 80

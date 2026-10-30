@@ -1,5 +1,5 @@
 # Watchdog for the bot: run every 5 minutes by the scheduled task "career-ops bot watchdog".
-# Install / remove: powershell -ExecutionPolicy Bypass -File telegram\watchdog-install.ps1 [-Remove]
+# Install / remove: powershell -ExecutionPolicy Bypass -File watchdog-install.ps1 [-Remove]
 #
 # Each run:
 #   1. Once a day copies the owner's inbox/state to data\backups (only if they are valid JSON, keeps 14 days).
@@ -11,7 +11,7 @@
 # bot alone for 15 minutes (a start can take ~7 min when Telegram is slow).
 
 $ErrorActionPreference = "Continue"
-$Root = Split-Path $PSScriptRoot -Parent
+$Root = $PSScriptRoot
 $Data = Join-Path $Root "data"
 $Backups = Join-Path $Data "backups"
 $WdLog = Join-Path $Data "tg-watchdog.log"
@@ -61,7 +61,7 @@ function AppAnswers {
 
 function BotProcs {
     Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Name='python.exe'" |
-        Where-Object { $_.CommandLine -match '\\telegram\\bot\.py' }
+        Where-Object { $_.CommandLine -match '(\\telegram|\\purrfect-job)\\bot\.py' }
 }
 
 New-Item -ItemType Directory -Force -Path $Backups | Out-Null

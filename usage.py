@@ -17,7 +17,7 @@ from datetime import date, timedelta
 
 import tg_collect as tc
 
-PATH = tc.ROOT / "data" / "tg-ai-usage.json"
+PATH = tc.DATA_DIR / "tg-ai-usage.json"
 KEEP_DAYS = 90
 SYSTEM = "system"
 

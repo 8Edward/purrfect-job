@@ -25,7 +25,7 @@ import tg_collect as tc
 
 log = logging.getLogger("job-radar.gigs")
 
-PATH = tc.ROOT / "data" / "tg-gigs.json"
+PATH = tc.DATA_DIR / "tg-gigs.json"
 DAYS = 7                 # how old a gig may be
 KEEP_MAX = 400           # market gigs kept on disk
 REFRESH = timedelta(hours=3)

@@ -45,7 +45,7 @@ POOL_PATH = USERS_DIR / "pool.json"
 PRESET_PATH = tc.TG_DIR / "preset.data-analyst.yml"
 RU_TAG = "ru-company"
 PORTALS_PATH = tc.ROOT / "portals.yml"
-OWNER_INBOX_PATH = tc.ROOT / "data" / "tg-inbox.json"
+OWNER_INBOX_PATH = tc.DATA_DIR / "tg-inbox.json"
 FEED_SCRIPT = tc.TG_DIR / "board-feed.mjs"
 
 # Hard limits: keep your account's reading modest and the bot hard to break.
@@ -439,7 +439,7 @@ def reset_member(member, wipe_jobs=False):
     for k in ("skin", "app_onboarded", "cv", "manual_at", "resumes", "resume_draft"):
         state.pop(k, None)
     member.save_state(state)
-    cv = (tc.ROOT / "data" / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
+    cv = (tc.DATA_DIR / "tg-cv.txt") if member.is_owner else member.dir / "cv.txt"
     if cv.exists():
         cv.unlink()
     rdir = resume_dir(member)
@@ -452,7 +452,7 @@ def reset_member(member, wipe_jobs=False):
 
 def resume_dir(member):
     """Where a person's résumé versions live (Markdown files)."""
-    return (tc.ROOT / "data" / "tg-resumes") if member.is_owner else member.dir / "resumes"
+    return (tc.DATA_DIR / "tg-resumes") if member.is_owner else member.dir / "resumes"
 
 
 def load_preset():
@@ -507,7 +507,7 @@ def web_job(j, site, member=None, tagger=None):
 
 # ---------------------------------------------------------------- one vacancy: store and act
 
-DISCARD_LOG = tc.ROOT / "data" / "discard.log"
+DISCARD_LOG = tc.DATA_DIR / "discard.log"
 
 
 def to_item(job):

@@ -26,14 +26,17 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
-TG_DIR = ROOT / "telegram"
+TG_DIR = Path(__file__).resolve().parent  # Purrfect Job itself (this repository)
+DATA_DIR = TG_DIR / "data"               # the bot's own runtime data: feed, state, logs, caches
+# career-ops (job board scanner, portals.yml, cv.md, pipeline.md): the folder this repo is checked out in,
+# or CAREER_OPS_DIR. Node scripts here import its providers/ and node_modules through that same parent.
+ROOT = Path(os.environ.get("CAREER_OPS_DIR") or TG_DIR.parent).resolve()
 CONFIG_PATH = TG_DIR / "config.yml"
 CHANNELS_PATH = TG_DIR / "channels.txt"
 SEARCH_DEFAULT_PATH = TG_DIR / "search.default.yml"
 SEARCH_PATH = TG_DIR / "search.yml"  # written by the bot's settings menu
 SESSION_PATH = TG_DIR / "tg"  # Telethon adds .session
-STATE_PATH = ROOT / "data" / "tg-state.json"
+STATE_PATH = DATA_DIR / "tg-state.json"
 PIPELINE_PATH = ROOT / "data" / "pipeline.md"
 JDS_DIR = ROOT / "jds"
 

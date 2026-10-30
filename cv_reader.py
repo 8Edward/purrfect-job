@@ -391,7 +391,7 @@ def hh_query(graph, rids):
 # ---------------------------------------------------------------- storing and applying
 
 def cv_path(member):
-    return (tc.ROOT / "data" / "tg-cv.txt") if member.is_owner else (member.dir / "cv.txt")
+    return (tc.DATA_DIR / "tg-cv.txt") if member.is_owner else (member.dir / "cv.txt")
 
 
 def save(member, filename, text, analysis):
