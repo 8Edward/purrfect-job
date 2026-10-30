@@ -893,5 +893,5 @@ html.fs body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; 
   background: var(--bg); box-shadow: 0 6px 18px rgb(0 0 0 / .08); opacity: 0; transition: opacity .2s ease; }
 html.fs.scrolled body::before { opacity: 1; }
 
-/* explanatory paragraphs: centred, lines of even length */
-.hint, .res-head, .feed-set + .hint { text-align: center; text-wrap: balance; }.feed-set { text-align: center; }
+/* explanatory paragraphs: justified (the user's choice), with hyphenation so narrow phones get no wide gaps */
+.hint, .res-head, .feed-set + .hint { text-align: justify; -webkit-hyphens: auto; hyphens: auto; overflow-wrap: break-word; }
