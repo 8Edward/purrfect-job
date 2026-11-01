@@ -55,15 +55,15 @@ function when(iso) {
   const d = new Date(iso), now = new Date();
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
   const diff = Math.round((day(now) - day(d)) / 864e5);
-  const hm = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const hm = d.toLocaleTimeString(I18N.locale(), { hour: "2-digit", minute: "2-digit" });
   if (diff <= 0) return "сегодня " + hm;
   if (diff === 1) return "вчера " + hm;
   if (diff < 7) return diff + " " + plural(diff, "день", "дня", "дней") + " назад";
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return d.toLocaleDateString(I18N.locale(), { day: "numeric", month: "short" });
 }
 function seenAt(iso) {  // «сегодня 14:32», «вчера 09:10», «3 окт. 18:05»: always with the time
   const d = new Date(iso), w = when(iso);
-  return /^(сегодня|вчера)/.test(w) ? w : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return /^(сегодня|вчера)/.test(w) ? w : d.toLocaleDateString(I18N.locale(), { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString(I18N.locale(), { hour: "2-digit", minute: "2-digit" });
 }
 function ago(iso) {
   const min = Math.max(0, Math.round((Date.now() - new Date(iso)) / 6e4));
@@ -77,11 +77,11 @@ const originOf = (i) => (i.source === "tg" ? "💬 " + i.origin : i.origin === "
 const tagsHtml = (tags) => (tags || []).map((t) =>
   `<span class="tag${t === "ru-company" ? " ru" : ""}">#${esc(t.replace(/-/g, "_"))}</span>`).join("");
 /* the pay in one currency: «≈ $2 700/мес» next to what the vacancy says, unless it is dollars already */
-const salaryUsd = (i) => (i.salary_usd && !/\$|usd|доллар/i.test(i.salary || "") ? ` ≈ $${i.salary_usd.toLocaleString("ru-RU")}/мес` : "");
+const salaryUsd = (i) => (i.salary_usd && !/\$|usd|доллар/i.test(i.salary || "") ? ` ≈ $${i.salary_usd.toLocaleString(I18N.locale())}/мес` : "");
 const metaHtml = (i) => [i.location && "📍 " + i.location, i.salary && "💰 " + i.salary + salaryUsd(i), i.tz && "🕒 " + i.tz, i.old && "🕰 старше 2 недель"].filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("");
 const alsoText = (i) => (i.also && i.also.length ? `＋ ещё в: ${i.also.map((a) => (a.source === "tg" ? "💬 " : "🌐 ") + a.origin + (a.location ? " · " + a.location : "")).join(", ")}` : "");
 function aiLine(i) {
-  if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}</div>`;
+  if (i.ai) return `<div class="ai"><b>✨ ${i.ai.score}/5</b> <span translate="no">${esc(i.ai.verdict)}</span></div>`;
   const algo = i.algo && i.algo.score ? `<div class="algo" title="${esc(i.algo.why.join("; "))}">⚖️ ${i.algo.score}/5 по совпадению слов${i.algo.why.length ? " · " + esc(i.algo.why[0]) : ""}</div>` : "";
   if (st.scoring.has(i.key)) return '<div class="ai busy">✨ ИИ оценивает…</div>';
   return algo + (st.me && st.me.ai ? '<button class="ai-btn" data-score>✨ Оценить ИИ: подходит ли мне</button>' : "");
@@ -121,10 +121,10 @@ function bindSkins(root) { $$(".skin", root).forEach((b) => (b.onclick = () => {
 
 async function loadMe() {
   st.me = await api("/api/me?since=" + encodeURIComponent(VISIT));
-  const m = st.me, s = m.stats;
+  const m = st.me, s = m.stats, name = `<span translate="no">${esc(tr(m.name))}</span>`;
   $("#hello").innerHTML = s.new
-    ? `${esc(m.name)}, <em>${s.new}</em> ${plural(s.new, "новая", "новые", "новых")}`
-    : `${esc(m.name)}, всё разобрано`;
+    ? `${name}, <em>${s.new}</em> ${plural(s.new, "новая", "новые", "новых")}`
+    : `${name}, <span>всё разобрано</span>`;
   $("#checked").textContent = (m.checked_at ? "Проверено " + ago(m.checked_at) : "Первая проверка скоро")
     + (m.next_check ? ` · следующая через ${m.next_check} мин` : "");
   const f = m.funnel || {};
@@ -258,11 +258,11 @@ function renderStack() {
     const depth = arr.length - 1 - n;
     return `<article class="card" data-key="${esc(i.key)}" style="transform:translateY(${depth * 10}px) scale(${1 - depth * 0.04});opacity:${1 - depth * 0.25};z-index:${10 - depth}">
       <span class="verdict yes">В ИЗБРАННОЕ</span><span class="verdict no">СКРЫТЬ</span><span class="verdict up">✨ ОЦЕНКА ИИ</span><span class="verdict down">✉️ ОТКЛИК</span>
-      <div class="src"><span>${esc(originOf(i))}</span><span>${esc(when(i.date))}${i.fav ? " · ★" : ""}${i.seen ? " · 👁" : ""}</span></div>
-      <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
+      <div class="src"><span translate="no">${esc(originOf(i))}</span><span>${esc(when(i.date))}${i.fav ? " · ★" : ""}${i.seen ? " · 👁" : ""}</span></div>
+      <h3 translate="no">${esc(i.title)}</h3>${i.company ? `<div class="co" translate="no">${esc(i.company)}</div>` : ""}
       <div class="meta">${metaHtml(i)}</div><div class="tags">${tagsHtml(i.tags)}</div>${aiLine(i)}
       ${i.also ? `<div class="also">${esc(alsoText(i))}</div>` : ""}
-      ${summaryHtml(i)}<p>${esc(i.text || (i.summary && i.summary.length ? "" : "Полное описание на сайте."))}</p><button type="button" class="more">Подробнее →</button></article>`;
+      ${summaryHtml(i)}<p${i.text ? ' translate="no"' : ""}>${esc(i.text || (i.summary && i.summary.length ? "" : "Полное описание на сайте."))}</p><button type="button" class="more">Подробнее →</button></article>`;
   }).join("");
   const top = box.querySelector(".card:last-child");
   if (top) drag(top);
@@ -276,7 +276,7 @@ function renderList(items) {
   box.innerHTML = items.map((i, n) => {
     const facts = [i.company, originOf(i), when(i.date)].filter(Boolean).join(" · ");
     const extra = [i.salary && "💰 " + i.salary + salaryUsd(i), i.tz && "🕒 " + i.tz, i.also && "＋" + i.also.length].filter(Boolean).join(" · ");
-    return `<div class="lrow" data-n="${n}"><button class="lmain" data-open="${n}"><b>${esc(i.title)}${i.fav ? " ★" : ""}</b>
+    return `<div class="lrow" data-n="${n}"><button class="lmain" data-open="${n}"><b translate="no">${esc(i.title)}${i.fav ? " ★" : ""}</b>
       <span class="s">${esc(facts)}</span>${extra ? `<span class="s x">${esc(extra)}</span>` : ""}${i.summary && i.summary[0] ? `<span class="s x">${esc(i.summary[0])}</span>` : ""}
       ${i.ai ? `<span class="sc">✨ ${i.ai.score}</span>` : ""}</button>
       <span class="lacts"><button class="no" data-no="${n}" aria-label="Скрыть">✕</button><button class="yes" data-yes="${n}" aria-label="В избранное">★</button></span></div>`;
@@ -480,7 +480,7 @@ function renderSheet() {
   const status = i.archived ? "🗄 В архиве" : { hidden: "✕ Скрыта" }[i.status] || (i.fav ? "★ В избранном" : "");
   $("#sheet").innerHTML = `<div class="grip"></div>
     <div class="src">${esc(originOf(i))} · ${esc(when(i.date))}</div>
-    <h3>${esc(i.title)}</h3>${i.company ? `<div class="co">${esc(i.company)}</div>` : ""}
+    <h3 translate="no">${esc(i.title)}</h3>${i.company ? `<div class="co" translate="no">${esc(i.company)}</div>` : ""}
     <div class="meta">${metaHtml(i)}</div>${flBox(i)}<div class="tags" style="margin-top:8px">${tagsHtml(i.tags)}</div>
     ${i.summary && i.summary.length ? `<div class="sum" style="margin-top:8px">${i.summary.map((l) => `<span>${esc(l)}</span>`).join("")}</div>` : ""}
     ${status ? `<div class="status">${status}</div>` : ""}
@@ -488,7 +488,7 @@ function renderSheet() {
     ${i.also ? `<div class="also">Эта же вакансия ещё в: ${i.also.map((a, n) => a.link ? `<button class="link" data-also="${n}">${esc(a.origin + (a.location ? " · " + a.location : ""))}</button>` : esc(a.origin)).join(", ")}</div>` : ""}
     <div class="track"><div class="lbl">📋 Мой отклик${i.silent >= 7 ? ` · <span class="warn">⏰ тишина ${i.silent} дн.</span>` : ""}</div><div class="chiprow">${[["", "—"], ...Object.entries(STAGES)].map(([k, v]) =>
       `<button class="stage" data-stage="${k}" aria-pressed="${((i.track && i.track.stage) || "") === k}">${v}</button>`).join("")}</div></div>
-    <div class="body">${esc(i.text || "Полное описание на сайте: кнопка ниже.")}</div>
+    <div class="body"${i.text ? ' translate="no"' : ""}>${esc(i.text || "Полное описание на сайте: кнопка ниже.")}</div>
     <div class="btns">
       ${fresh ? `<button class="yes" data-a="take">★ В избранное</button><button data-a="hide">✕ Скрыть</button>` : ""}
       ${i.status === "hidden" ? `<button data-a="restore" class="wide">↩ Вернуть в новые</button>` : ""}
@@ -506,8 +506,8 @@ function renderSheet() {
 const viaSearchOrFresh = (i) => (st.sheet && st.sheet.viaSearch) || i.status === "new" || i.status === "found";
 function aiBox(i) {
   if (i.ai) {
-    return `<div class="aibox"><b>✨ ${i.ai.score}/5</b> ${esc(i.ai.verdict)}${i.ai.thin ? " <small>(оценка по названию: полный текст не подтянулся)</small>" : ""}
-      <ul>${(i.ai.pros || []).map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${(i.ai.cons || []).map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>
+    return `<div class="aibox"><b>✨ ${i.ai.score}/5</b> <span translate="no">${esc(i.ai.verdict)}</span>${i.ai.thin ? " <small>(оценка по названию: полный текст не подтянулся)</small>" : ""}
+      <ul translate="no">${(i.ai.pros || []).map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${(i.ai.cons || []).map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>
       <button class="link" data-a="score">Оценить заново</button></div>`;
   }
   if (st.scoring.has(i.key)) return '<div class="aibox busy">✨ ИИ сравнивает вакансию с вашим резюме…</div>';
@@ -1253,7 +1253,7 @@ async function loadRoles(body) {
 
 let usersShown = 10;
 const tok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n || 0));
-const dmy = (iso) => (iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "—");
+const dmy = (iso) => (iso ? new Date(iso).toLocaleDateString(I18N.locale(), { day: "2-digit", month: "2-digit" }) : "—");
 function usageLine(u) {
   return `${u.total.n} ${plural(u.total.n, "запрос", "запроса", "запросов")} · ${tok(u.total.in + u.total.out)} токенов`;
 }
@@ -1588,6 +1588,10 @@ $("#interval").onchange = async () => {
 };
 $("#memo").onclick = showMemo;
 $("#reset").onclick = showReset;
+$$("#lang-seg button").forEach((b) => {
+  b.setAttribute("aria-pressed", b.dataset.lang === I18N.lang);
+  b.onclick = () => { haptic(); I18N.set(b.dataset.lang, true); };
+});
 
 /* 🧩 «Подработки» (owner, in the feed): gigs with a low barrier from every source, picked by words (gigs.py, no AI).
    Folded by default; 10 shown, the rest on a tap; a tap opens the usual card (★, ✕, ✉️ Откликнуться). */
@@ -1604,7 +1608,7 @@ async function loadGigs() {
   if (gigs.d.refreshing) gigs.poll = setTimeout(loadGigs, 20000);  // the exchanges are being read: look again soon
 }
 const hoursAgo = (h) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} мин назад` : `${String(Math.round(h * 10) / 10).replace(".", ",")} ч назад`);
-const usdOf = (v) => (v ? "$" + Math.round(v).toLocaleString("ru-RU") : "");
+const usdOf = (v) => (v ? "$" + Math.round(v).toLocaleString(I18N.locale()) : "");
 /* the chips work on the list already in the page: no request, no wait */
 const GIG_SORT = {
   new: (a, b) => (!!a.undated - !!b.undated) || (b.date > a.date ? 1 : b.date < a.date ? -1 : 0),
@@ -1679,7 +1683,7 @@ function flBox(i) {
   const f = i.fl;
   if (!f) return "";
   const dr = gigs.drafts[i.key];
-  const bid = f.bid ? `${f.bid.toLocaleString("ru-RU")} ${f.cur}${f.cur !== "USD" && f.bid_usd ? ` (≈ ${usdOf(f.bid_usd)})` : ""}` : "по бюджету клиента";
+  const bid = f.bid ? `${f.bid.toLocaleString(I18N.locale())} ${f.cur}${f.cur !== "USD" && f.bid_usd ? ` (≈ ${usdOf(f.bid_usd)})` : ""}` : "по бюджету клиента";
   const rows = [
     ["⏱ Опубликован", hoursAgo(f.age_h)],
     ["👥 Заявок", `${f.bids}${f.bid_avg_usd ? `, в среднем ${usdOf(f.bid_avg_usd)}` : ""}`],
@@ -1822,6 +1826,7 @@ async function start() {
   // in full screen, content scrolled up slides under a band of the page colour, not under Telegram's buttons
   $("main").addEventListener("scroll", (e) => document.documentElement.classList.toggle("scrolled", e.target.scrollTop > 6), { passive: true });
   try { setSkin(localStorage.getItem("jr-skin") || "hybrid"); } catch (e) { setSkin("hybrid"); }
+  I18N.watch();
   if (!INIT) { $("#gate").hidden = false; return; }
   tg.ready();
   tg.expand();
@@ -1839,6 +1844,7 @@ async function start() {
     return;
   }
   if (st.me.skin) setSkin(st.me.skin);
+  I18N.fromServer(st.me);
   if (!st.me.onboarded) showOnboarding();
   await loadFeed().catch(feedFailed);
   loadGigs();

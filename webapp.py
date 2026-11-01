@@ -825,6 +825,7 @@ class WebApp:
             "owner": m.is_owner,
             "skin": OLD_SKINS.get(state.get("skin"), state.get("skin")) if OLD_SKINS.get(state.get("skin"), state.get("skin")) in SKINS else None,
             "onboarded": bool(state.get("app_onboarded")),
+            "lang": state.get("lang") if state.get("lang") in ("ru", "en") else None,
             "digest": not state.get("digest_off"),
             "alerts": not state.get("alerts_off"),
             "interval": int(self.radar.cfg.get("interval_minutes", 15)),
@@ -1558,6 +1559,8 @@ class WebApp:
             fields["skin"] = data["skin"]
         if data.get("onboarded"):
             fields["app_onboarded"] = True
+        if data.get("lang") in ("ru", "en"):
+            fields["lang"] = data["lang"]
         if "digest" in data:
             fields["digest_off"] = not data["digest"]
         if "alerts" in data:

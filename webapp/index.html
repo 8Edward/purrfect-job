@@ -163,6 +163,7 @@
     <details class="group fold" id="g-archive"><summary><span class="sn">🗄 Архив</span><small id="sum-archive"></small></summary><div class="pad" id="archive-list"></div></details>
     <div class="group" hidden><div class="tg" style="border-top:0"><span>☀️ Утренняя сводка<small>в 9:00 по вашему поясу: 5 лучших вакансий за сутки</small></span><button class="sw" id="digest" aria-pressed="true" aria-label="Утренняя сводка"></button></div></div>
     <div class="group"><h4>Стиль</h4><div class="skins" id="skins"></div></div>
+    <div class="group"><h4 translate="no">🌐 Язык · Language</h4><div class="pad" style="padding-top:0"><div class="seg two" id="lang-seg" role="group" aria-label="Язык" translate="no"><button data-lang="ru" aria-pressed="false">Русский</button><button data-lang="en" aria-pressed="false">English</button></div></div></div>
     <div class="group" id="g-radar"><h4>📡 Поиск вакансий</h4>
       <div class="tg"><span>Как часто искать<small id="int-note"></small></span><select class="inp sm" id="interval" aria-label="Как часто искать"></select></div>
       <div class="tg"><span>Сообщения в Telegram о новых вакансиях<small>короткое саммари в чат с ботом, когда что-то нашлось</small></span><button class="sw" id="alerts" aria-pressed="true" aria-label="Сообщения о новых вакансиях"></button></div></div>
@@ -200,6 +201,8 @@
 
 <div class="gate" id="gate" hidden><b>Откройте через бота</b><span id="gate-text">Это приложение работает внутри Telegram: нажмите кнопку «Purrfect Job» в чате с ботом.</span></div>
 
+<script src="/static/en.js?v={{v}}"></script>
+<script src="/static/i18n.js?v={{v}}"></script>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/resume.js?v={{v}}"></script>
 <script src="/static/plan.js?v={{v}}"></script>

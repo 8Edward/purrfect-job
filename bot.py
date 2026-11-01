@@ -223,6 +223,8 @@ def add_keywords(search, group, text):
 # ---------------------------------------------------------------- screens (caption, buttons)
 
 HOME_BTN = btn("🏠 Домой", "h")
+RU_FAMILY = {"ru", "uk", "be", "kk", "uz", "ky", "tg", "hy", "az"}  # same list as webapp/i18n.js
+EN_STAGES = {"applied": "applied", "test": "test task", "interview": "interview", "offer": "offer", "rejected": "rejected"}
 
 
 def app_button(url, text="📱 Открыть приложение"):
@@ -230,7 +232,7 @@ def app_button(url, text="📱 Открыть приложение"):
     return types.KeyboardInlineButton(text, types.InlineButtonTypeWebView(url))
 
 
-def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None):
+def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None, lang="ru"):
     """The chat's only screen: the radar animation, a line about new vacancies and the app button.
     Everything else (feed, search, settings, résumé) lives in the app; the owner keeps 👥 Пользователи here."""
     s = stats_of(inbox)
@@ -238,19 +240,37 @@ def home_screen(inbox, next_check=None, owner=False, app_url=None, new=None):
         s["new"] = new
     if s["new"]:
         n = s["new"]
-        hello = f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя"
+        hello = (f"🔥 <b>{n}</b> {'new job is' if n == 1 else 'new jobs are'} waiting for you" if lang == "en" else
+                 f"🔥 <b>{n}</b> {plural(n, 'новая вакансия ждёт', 'новые вакансии ждут', 'новых вакансий ждут')} тебя")
     else:
-        hello = "✨ Всё разобрано — новых вакансий пока нет"
+        hello = T(lang, "✨ Всё разобрано — новых вакансий пока нет", "✨ All caught up: no new jobs yet")
     lines = ["🐾 <b>Purrfect Job</b>", hello]
     if next_check:
-        lines.append(f"⏱ Следующая проверка через {next_check} мин")
-    rows = [[app_button(app_url, "📱 Открыть Purrfect Job")]] if app_url else \
-        [[btn("🔄 Проверить сейчас", "rf:1")]]
+        lines.append(T(lang, f"⏱ Следующая проверка через {next_check} мин", f"⏱ Next check in {next_check} min"))
+    rows = [[app_button(app_url, T(lang, "📱 Открыть Purrfect Job", "📱 Open Purrfect Job"))]] if app_url else \
+        [[btn(T(lang, "🔄 Проверить сейчас", "🔄 Check now"), "rf:1")]]
     if not app_url:
-        lines.append("<i>Приложение сейчас подключается — кнопка появится через минуту.</i>")
+        lines.append(T(lang, "<i>Приложение сейчас подключается — кнопка появится через минуту.</i>",
+                       "<i>The app is connecting: the button will show up in a minute.</i>"))
     if owner:
-        rows.append([btn("👥 Пользователи", "u")])
+        rows.append([btn(T(lang, "👥 Пользователи", "👥 Users"), "u")])
     return "\n".join(lines), rows
+
+
+def lang_of(member):
+    """The language the person picked in the app (Ещё → Язык): "en" or "ru"."""
+    try:
+        return "en" if member and member.load_state().get("lang") == "en" else "ru"
+    except Exception:
+        return "ru"
+
+
+def T(lang, ru, en):
+    return en if lang == "en" else ru
+
+
+def jobs_word(lang, n, ru_one, ru_few, ru_many, en_one="new job", en_many="new jobs"):
+    return (en_one if n == 1 else en_many) if lang == "en" else plural(n, ru_one, ru_few, ru_many)
 
 
 def plural(n, one, few, many):
@@ -337,17 +357,17 @@ def card_screen(key, item, view="all", page=0, status_lines=STATUS_LINE):
     return caption, rows
 
 
-def found_screen(items, period=None):
+def found_screen(items, period=None, lang="ru"):
     if not items:
         where = f" за {period} дн." if period else ""
         return f"🔍 <b>Новых вакансий{where} нет</b>\n\nВсё найденное раньше — в «📋 Все вакансии».", [[HOME_BTN]]
     n = len(items)
-    lines = [f"🔔 <b>{n} {plural(n, 'новая вакансия', 'новые вакансии', 'новых вакансий')}</b>", ""]
+    lines = [f"🔔 <b>{n} {jobs_word(lang, n, 'новая вакансия', 'новые вакансии', 'новых вакансий')}</b>", ""]
     for item in items[:6]:
         lines.append(f"• {esc(short(title_of(item), 48))}\n   <i>{esc(origin_of(item)[:40])}</i>")
     if n > 6:
-        lines.append(f"…и ещё {n - 6}")
-    return "\n".join(lines), [[btn("👀 Смотреть новые", "l:new:0")], [HOME_BTN]]
+        lines.append(T(lang, f"…и ещё {n - 6}", f"…and {n - 6} more"))
+    return "\n".join(lines), [[btn(T(lang, "👀 Смотреть новые", "👀 See new ones"), "l:new:0")], [HOME_BTN]]
 
 
 def settings_screen(cfg):
@@ -660,7 +680,7 @@ class JobRadar:
         home = tc.load_state().get("home_msg")
         if home:
             try:
-                caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=url, new=webapp.feed_new_count(self.me))
+                caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=url, new=webapp.feed_new_count(self.me), lang=lang_of(self.me))
                 await self.edit_screen(home, caption, buttons)
             except Exception:
                 pass  # the home message may be gone or unchanged
@@ -774,7 +794,7 @@ class JobRadar:
         log.info("app buttons re-pointed in %d messages", fixed)
 
     async def show_home(self, target=None):
-        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url, new=webapp.feed_new_count(self.me))
+        caption, buttons = home_screen(load_inbox(), self.minutes_to_next_check(), owner=True, app_url=self.app_url, new=webapp.feed_new_count(self.me), lang=lang_of(self.me))
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True)
         state = tc.load_state()
@@ -862,11 +882,11 @@ class JobRadar:
         save_inbox(inbox)
         return items
 
-    def found(self, items, period=None):
+    def found(self, items, period=None, lang="ru"):
         """The «new vacancies» screen, with the app button on top once the app is online."""
-        caption, rows = found_screen(items, period)
+        caption, rows = found_screen(items, period, lang)
         if self.app_url and items:
-            rows.insert(0, [app_button(self.app_url, "📱 Разобрать в приложении")])
+            rows.insert(0, [app_button(self.app_url, T(lang, "📱 Разобрать в приложении", "📱 Go through them in the app"))])
         return caption, rows
 
     async def alert(self, items):
@@ -877,7 +897,7 @@ class JobRadar:
         feed shows counts: a vacancy its filters leave out (site not ticked, country, time zone…) is not announced."""
         items = webapp.feed_only(member, items or [])
         if items and not member.load_state().get("alerts_off"):
-            await self.send_screen(*self.found(items), guest=self.g(member))
+            await self.send_screen(*self.found(items, lang=lang_of(member)), guest=self.g(member))
 
     async def scheduler(self):
         """Checks the wall clock once a minute instead of one long sleep, so a laptop
@@ -1320,11 +1340,11 @@ class JobRadar:
                     items, total = extras.digest_items(m, m.load_inbox())
                     log.info("digest for %s: %d of %d", m.name, len(items), total)
                     if items:
-                        await self.send_screen(*self.digest_screen(items, total), guest=self.g(m))
+                        await self.send_screen(*self.digest_screen(items, total, lang_of(m)), guest=self.g(m))
                 if not m.load_state().get("alerts_off"):
                     fresh = watch.to_announce(m)
                     if fresh:
-                        await self.send_screen(*self.watch_screen(fresh), guest=self.g(m))
+                        await self.send_screen(*self.watch_screen(fresh, lang_of(m)), guest=self.g(m))
                         watch.mark_announced(m, [k for k, _ in fresh])
                 if not 9 <= extras.local_now(m).hour < 22:
                     continue
@@ -1334,12 +1354,14 @@ class JobRadar:
                     for _, item in due:
                         item["track"]["reminded"] = item["track"]["at"]
                     m.save_inbox(inbox)
-                    await self.send_screen(*self.reminder_screen(due), guest=self.g(m))
+                    await self.send_screen(*self.reminder_screen(due, lang_of(m)), guest=self.g(m))
             except Exception:
                 log.exception("daily pass for %s failed", m.name)
 
-    def digest_screen(self, items, total):
-        lines = [f"☀️ <b>Доброе утро! {len(items)} {plural(len(items), 'лучшая вакансия', 'лучшие вакансии', 'лучших вакансий')} за сутки</b>", ""]
+    def digest_screen(self, items, total, lang="ru"):
+        k = len(items)
+        lines = [T(lang, f"☀️ <b>Доброе утро! {k} {plural(k, 'лучшая вакансия', 'лучшие вакансии', 'лучших вакансий')} за сутки</b>",
+                   f"☀️ <b>Good morning! The day's {k} best {'job' if k == 1 else 'jobs'}</b>"), ""]
         for n, (_, item) in enumerate(items, 1):
             title = esc(short(title_of(item), 60))
             if item.get("link"):
@@ -1351,31 +1373,35 @@ class JobRadar:
                 extra.append(f"✨ {item['ai']['score']}/5")
             lines.append(f"{n}. {title}\n   <i>{esc(short(' · '.join(x for x in extra if x), 70))}</i>")
         if total > len(items):
-            lines.append(f"\nВсего новых за сутки: {total}")
-        rows = [[app_button(self.app_url, "📱 Разобрать в приложении")]] if self.app_url else []
+            lines.append(T(lang, f"\nВсего новых за сутки: {total}", f"\nNew in the last day: {total}"))
+        rows = [[app_button(self.app_url, T(lang, "📱 Разобрать в приложении", "📱 Go through them in the app"))]] if self.app_url else []
         return "\n".join(lines), rows + [[HOME_BTN]]
 
-    def watch_screen(self, fresh):
+    def watch_screen(self, fresh, lang="ru"):
         """⭐ New vacancies at companies from favourites."""
-        lines = [f"⭐ <b>{len(fresh)} {plural(len(fresh), 'новая вакансия', 'новые вакансии', 'новых вакансий')} у избранных компаний</b>", ""]
+        k = len(fresh)
+        lines = [T(lang, f"⭐ <b>{k} {plural(k, 'новая вакансия', 'новые вакансии', 'новых вакансий')} у избранных компаний</b>",
+                   f"⭐ <b>{k} {'new job' if k == 1 else 'new jobs'} at favourite companies</b>"), ""]
         for _, item in fresh[:8]:
             title = esc(short(title_of(item), 60))
             if item.get("link"):
                 title = f'<a href="{esc(item["link"])}">{title}</a>'
             lines.append(f"• <b>{esc(short(item.get('company', ''), 30))}</b>: {title}")
         if len(fresh) > 8:
-            lines.append(f"…и ещё {len(fresh) - 8}")
-        rows = [[app_button(self.app_url, "⭐ Открыть в приложении")]] if self.app_url else []
+            lines.append(T(lang, f"…и ещё {len(fresh) - 8}", f"…and {len(fresh) - 8} more"))
+        rows = [[app_button(self.app_url, T(lang, "⭐ Открыть в приложении", "⭐ Open in the app"))]] if self.app_url else []
         return "\n".join(lines), rows + [[HOME_BTN]]
 
-    def reminder_screen(self, due):
-        lines = ["⏰ <b>Тишина уже неделю</b>", ""]
+    def reminder_screen(self, due, lang="ru"):
+        lines = [T(lang, "⏰ <b>Тишина уже неделю</b>", "⏰ <b>A week of silence</b>"), ""]
         for _, item in due[:8]:
             track = item["track"]
             lines.append(f"• {esc(short(title_of(item), 50))}" + (f" — {esc(short(item.get('company', ''), 30))}" if item.get("company") else "")
-                         + f"\n   <i>{extras.STAGES[track['stage']].lower()}, {extras.silent_days(item)} дн. без новостей</i>")
-        lines.append("\nМожно написать короткое письмо-напоминание или отметить этап: «Ещё → 📋 Мои отклики».")
-        rows = [[app_button(self.app_url, "📋 Открыть отклики")]] if self.app_url else []
+                         + (f"\n   <i>{EN_STAGES.get(track['stage'], track['stage'])}, {extras.silent_days(item)} days with no news</i>" if lang == "en" else
+                            f"\n   <i>{extras.STAGES[track['stage']].lower()}, {extras.silent_days(item)} дн. без новостей</i>"))
+        lines.append(T(lang, "\nМожно написать короткое письмо-напоминание или отметить этап: «Ещё → 📋 Мои отклики».",
+                       "\nYou can send a short follow-up or mark the stage: «More → 📋 My applications»."))
+        rows = [[app_button(self.app_url, T(lang, "📋 Открыть отклики", "📋 Open applications"))]] if self.app_url else []
         return "\n".join(lines), rows + [[HOME_BTN]]
 
     # ------------------------------------------------------------ 📡 pool and 🌐 sites: screens
@@ -1528,7 +1554,7 @@ class JobRadar:
     # ------------------------------------------------------------ 👥 family: the guest's side
 
     async def guest_show_home(self, guest, target=None):
-        caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url, new=webapp.feed_new_count(guest))
+        caption, buttons = home_screen(guest.load_inbox(), app_url=self.app_url, new=webapp.feed_new_count(guest), lang=lang_of(guest))
         if target is not None:
             return await self.edit_screen(target, caption, buttons, refresh_picture=True, guest=guest)
         msg = await self.send_screen(caption, buttons, guest=guest, home=True)
@@ -1600,10 +1626,13 @@ class JobRadar:
         if guest is None:
             if self.too_fast(event.sender_id):
                 return
-            guest, why = guests.join(reg, await event.get_sender())  # open access (the owner asked, 2026-10-05): anyone may use the bot
+            sender = await event.get_sender()
+            guest, why = guests.join(reg, sender)  # open access (the owner asked, 2026-10-05): anyone may use the bot
             if guest is None:
                 return await event.respond(guests.BLOCKED_TEXT if why == "blocked" else "Сейчас нет свободных мест. Загляните позже.")
             guests.save_registry(reg)
+            if (getattr(sender, "lang_code", None) or "ru")[:2] not in RU_FAMILY:  # a newcomer gets the language of their Telegram
+                guest.update_state(lang="en")
             log.info("new person: %s (%s) -> %s", guest.name, guest.id, guest.dir.name)
             await self.on_joined(guest)
             return await self.guest_show_home(guest)  # setup happens in the app (its own onboarding)
