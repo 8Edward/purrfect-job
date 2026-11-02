@@ -3,7 +3,9 @@ rem One-time sign-in of Claude Code for the bot's AI help with resumes (uses you
 rem Double-click: a browser opens, sign in with the same account as in the Claude app.
 setlocal
 set "EXE="
-for /d %%P in ("%LOCALAPPDATA%\Packages\Claude_*") do for /d %%V in ("%%P\LocalCache\Roaming\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
+rem Newer app versions keep Claude Code in %LOCALAPPDATA%\Claude-Data\claude_<id>\claude-code\<version>\<hash>
+for /d %%P in ("%LOCALAPPDATA%\Claude-Data\*") do for /d %%V in ("%%P\claude-code\*") do for /d %%H in ("%%V\*") do if exist "%%H\claude.exe" set "EXE=%%H\claude.exe"
+if not defined EXE for /d %%P in ("%LOCALAPPDATA%\Packages\Claude_*") do for /d %%V in ("%%P\LocalCache\Roaming\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
 rem After Settings -> Apps -> Claude -> Move, the app data lives in <drive>:\WpSystem\<SID>\AppData\Local\Packages
 if not defined EXE for %%D in (D E F) do for /d %%S in ("%%D:\WpSystem\*") do for /d %%P in ("%%S\AppData\Local\Packages\Claude_*") do for /d %%V in ("%%P\LocalCache\Roaming\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"
 if not defined EXE for /d %%V in ("%APPDATA%\Claude\claude-code\*") do if exist "%%V\claude.exe" set "EXE=%%V\claude.exe"

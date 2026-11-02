@@ -78,9 +78,11 @@ def find_exe(configured=None):
         if root.exists():
             bases |= set(root.glob("*/AppData/Local/Packages/Claude_*/LocalCache/Roaming"))
     bases -= {None}
+    roots = [base / "Claude" / "claude-code" for base in bases]
+    # since autumn 2026 the app keeps Claude Code outside the package: %LOCALAPPDATA%\Claude-Data\claude_<id>\claude-code
+    roots += list(local.glob("Claude-Data/*/claude-code"))
     found = []
-    for base in bases:
-        root = base / "Claude" / "claude-code"
+    for root in roots:
         # claude-code/<version>/claude.exe, and since the app update claude-code/<version>/<hash>/claude.exe
         for exe in list(root.glob("*/claude.exe")) + list(root.glob("*/*/claude.exe")):
             try:
